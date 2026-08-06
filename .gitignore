@@ -1,2 +1,18 @@
 venv
 docs
+data/
+runs/
+#*.pt
+# 킥보드 학습 데이터셋 (Roboflow에서 재다운로드 가능하므로 제외)
+a_detector/kickboard_finetune/train/
+a_detector/kickboard_finetune/valid/
+a_detector/kickboard_finetune/test/
+
+# 흉기 학습 데이터셋 (Roboflow에서 재다운로드 가능하므로 제외)
+a_detector/weapon_finetune/train/
+a_detector/weapon_finetune/val/
+a_detector/weapon_finetune/test/
+
+# 파이썬 캐시 파일
+__pycache__/
+*.pyc

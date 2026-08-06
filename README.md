@@ -12,3 +12,8 @@ omeccaProject 팀 프로젝트
 팀장 - 김관용
 부팀장 - 박지원
 팀원 - 장성혁, 이시헌, 김준호
+
+## 킥보드 데이터셋
+Roboflow에서 다운로드: https://universe.roboflow.com/han-a5nvo/kick_board
+Format: YOLOv11
+다운로드 후 이 폴더에 train/valid/test/data.yaml 그대로 압축 해제
