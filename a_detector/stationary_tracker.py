@@ -1,5 +1,5 @@
 import time
-
+from hazard_classes import DEBRIS_CLASSES
 
 def calc_iou(box1, box2):
     """두 박스가 얼마나 겹치는지 계산 (0~1). 같은 물체인지 판단하는 용도"""
@@ -29,7 +29,7 @@ class StationaryObjectTracker:
 
     def update(self, detections, now):
         events = []
-        target_classes = {"electric scooter"}  # 킥보드 모델 클래스명으로 지정
+        target_classes = DEBRIS_CLASSES  # 킥보드 모델 클래스명으로 지정
         current_dets = [d for d in detections if d["class"] in target_classes]
 
         matched_ids = set()

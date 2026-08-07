@@ -6,19 +6,19 @@ import cv2
 from ultralytics import YOLO
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "a_detector"))
+from hazard_classes import DEBRIS_CLASSES, WEAPON_CLASSES
 from stationary_tracker import StationaryObjectTracker
 
 from video_input import frame_generator
 from schema import build_event_payload, build_weapon_event_payload
 
 general_model = YOLO("yolo11n.pt")
-kickboard_model = YOLO("../runs/detect/kickboard_v1/weights/best.pt")
-weapon_model = YOLO("../runs/detect/weapon_v1/weights/best.pt")
+hazard_model = YOLO("../runs/detect/road_hazard_v1/weights/best.pt")
 
-ALL_MODELS = [general_model, kickboard_model, weapon_model]
+ALL_MODELS = [general_model, hazard_model]
 
-WEAPON_CLASSES = {"knife"}  # 친구 모델 클래스명 그대로
-
+DEBRIS_CLASSES = {"electric_scooter", "car_tire", "box", "traffic_cone", "fallen_tree"}
+WEAPON_CLASSES = {"knife", "blunt_weapon"}
 
 def detect(frame, conf_threshold=0.4):
     detections = []
