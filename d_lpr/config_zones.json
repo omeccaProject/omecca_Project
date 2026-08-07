@@ -1,0 +1,81 @@
+{
+  "_comment": "카메라별 가상 라인 / ROI 설정. 좌표는 원본 프레임 픽셀 기준(1920x1080).",
+  "cameras": [
+    {
+      "cam_id": "CAM-001",
+      "name": "시청 앞 사거리 (남향)",
+      "location": [37.5665, 126.978],
+      "lines": [
+        {
+          "line_id": "stop_A",
+          "name": "정지선(북→남)",
+          "p1": [300, 700],
+          "p2": [1600, 700],
+          "direction": "negative"
+        },
+        {
+          "line_id": "exit_A",
+          "name": "진출선(북→남)",
+          "p1": [300, 950],
+          "p2": [1600, 950],
+          "direction": "negative"
+        }
+      ],
+      "zones": [
+        {
+          "zone_id": "uturn_A",
+          "name": "유턴 금지 구간",
+          "zone_type": "uturn",
+          "uturn_allowed": false,
+          "polygon": [[250, 600], [1650, 600], [1650, 1020], [250, 1020]]
+        }
+      ],
+      "intersections": [
+        {
+          "intersection_id": "INT-A",
+          "stop_line": "stop_A",
+          "exit_line": "exit_A",
+          "signal_id": "SIG-A"
+        }
+      ]
+    },
+    {
+      "cam_id": "CAM-002",
+      "name": "중앙로 유턴 구간",
+      "location": [37.5701, 126.9822],
+      "lines": [
+        {
+          "line_id": "stop_B",
+          "name": "정지선(동→서)",
+          "p1": [900, 200],
+          "p2": [900, 900],
+          "direction": "positive"
+        }
+      ],
+      "zones": [
+        {
+          "zone_id": "uturn_B",
+          "name": "유턴 허용 구간",
+          "zone_type": "uturn",
+          "uturn_allowed": true,
+          "polygon": [[900, 150], [1800, 150], [1800, 950], [900, 950]]
+        },
+        {
+          "zone_id": "uturn_B2",
+          "name": "유턴 금지 구간(서측)",
+          "zone_type": "uturn",
+          "uturn_allowed": false,
+          "polygon": [[100, 150], [880, 150], [880, 950], [100, 950]]
+        }
+      ],
+      "intersections": [
+        {
+          "intersection_id": "INT-B",
+          "stop_line": "stop_B",
+          "exit_line": "",
+          "signal_id": "SIG-B"
+        }
+      ]
+    }
+  ]
+}
