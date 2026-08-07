@@ -55,7 +55,8 @@ class StationaryObjectTracker:
                         "event": "abandoned_object",
                         "class": det["class"],
                         "bbox": det["bbox"],
-                        "duration_sec": round(duration, 1)
+                        "duration_sec": round(duration, 1),
+                        "confidence": det["confidence"]
                     })
             else:
                 self.candidates[self.next_id] = {

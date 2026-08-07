@@ -1,0 +1,43 @@
+# 오메카3 - LPR / 차량 위반 감지 설정
+# 환경변수가 있으면 환경변수가 우선한다 (예: OMECA_LPR_MOCK=0)
+
+db:
+  # sqlite: 로컬 개발·시연 / mysql: 팀 통합 서버
+  driver: sqlite
+  sqlite_path: data/omeca.db
+  host: localhost
+  port: 3306
+  user: omeca
+  password: omeca
+  database: omeca
+
+lpr:
+  # true 이면 YOLO 가중치·EasyOCR·영상 없이도 전체 파이프라인이 동작한다
+  mock: true
+  gpu: false
+  min_plate_conf: 0.40      # 최소 인식 신뢰도 (실측: 통과율 82%, 통과분 정확도 0.957)
+  min_plate_area: 400       # 번호판 후보 최소 면적(px)
+  fuzzy_match: true         # 1글자 오차 유사 매칭 허용
+  vote_window: 5            # 프레임 다수결 창 크기
+  # 숫자/한글을 자리별로 나눠 인식. 한글이 숫자로 읽히는 오인식(실측 오류의 93%)을 차단
+  structured_ocr: true
+  # --- 아래 값은 합성 데이터 실측 근거 (python bench_lpr.py 로 재현) ---
+  upscale_height: 96        # OCR 입력 높이 정규화
+  deskew_limit: 35.0        # 35도까지 추정 오차 0.02도, 40도부터 판독 실패
+  denoise_min_height: 28    # 28px 미만에서 잡음 제거는 오히려 해로움(0.95→0.62)
+  min_plate_height: 24      # 24px 미만은 인식 신뢰도 급락 → 다음 프레임 대기
+
+violation:
+  zones_path: config_zones.json
+  track_history: 120        # track별 궤적 보관 프레임 수
+  uturn_angle_deg: 150.0    # 유턴 판정 진입/진출 각도차 임계값
+  uturn_min_points: 8       # 유턴 판정 최소 궤적 포인트
+  uturn_min_speed: 1.0      # 정지 차량 오탐 방지 최소 이동량(px/frame)
+  redlight_grace_sec: 0.3   # 신호 전환 직후 유예(딜레마 존)
+  cooldown_sec: 10.0        # 동일 track 동일 위반 재발행 방지
+  min_cross_speed: 0.5
+
+server:
+  host: 0.0.0.0
+  port: 8010
+  cors_origins: "*"

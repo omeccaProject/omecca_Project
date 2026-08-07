@@ -1,0 +1,17 @@
+target/
+!.mvn/wrapper/maven-wrapper.jar
+
+.idea/
+*.iws
+*.iml
+*.ipr
+
+.vscode/
+
+.DS_Store
+
+HELP.md
+build/
+
+application-local.yml
+.env
