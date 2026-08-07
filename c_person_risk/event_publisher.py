@@ -2,29 +2,36 @@ import requests
 import json
 from datetime import datetime
 
-# 팀 백엔드 서버 주소 (필요시 IP/포트 변경)
 API_URL = "http://localhost:8080/api/events"
 
-def send_event(event_type, confidence, bbox, details):
+def send_event(event_type, confidence, bbox, cam_id="CAM-01", meta=None):
     """
-    event_type: "WANTED_PERSON" 또는 "WEAPON_DETECTED"
+    event_type: "WANTED_PERSON" 또는 "WEAPON"
     confidence: float (0.0 ~ 1.0)
     bbox: [xmin, ymin, xmax, ymax]
-    details: Dict (예: {"name": "홍길동"} 또는 {"weapon_type": "knife"})
+    cam_id: 카메라 ID (테스트용 기본값, 나중에 실제 CCTV ID로 교체)
+    meta: Dict (예: {"matchedDbId": "W001"} 또는 {"weaponType": "knife"})
     """
     payload = {
-        "timestamp": datetime.utcnow().isoformat() + "Z",
-        "module": "c_person_risk",
-        "event_type": event_type,
-        "confidence": confidence,
+        "camId": cam_id,
+        "trackId": None,
+        "eventType": event_type,
+        "class": "person" if event_type == "WANTED_PERSON" else "object",
         "bbox": bbox,
-        "details": details
+        "confidence": confidence,
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "location": None,
+        "isRegisteredTarget": False,
+        "targetId": None,
+        "roiId": None,
+        "meta": meta or {},
+        "frameRefBefore": None,
+        "frameRefAfter": None,
     }
 
     try:
         response = requests.post(API_URL, json=payload, timeout=0.5)
         if response.status_code == 200:
-            print(f"[EVENT SENT] {event_type}: {details}")
+            print(f"[EVENT SENT] {event_type}: {meta}")
     except requests.exceptions.RequestException:
-        # 백엔드 미구동 시 로컬 로그만 출력 후 계속 진행
-        print(f"[EVENT LOG (Server Offline)] {event_type}: {details}")
+        print(f"[EVENT LOG (Server Offline)] {event_type}: {meta}")

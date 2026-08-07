@@ -25,7 +25,7 @@ class FaceDetector:
             print(f"[INFO] 수배자 DB 로드 완료: {person['id']} - {person['name']}")
 
     def detect_faces(self, rgb_small_frame):
-        face_locations = face_recognition.face_locations(rgb_small_frame)
+        face_locations = face_recognition.face_locations(rgb_small_frame, number_of_times_to_upsample=1)
         face_encodings = face_recognition.face_encodings(rgb_small_frame, face_locations)
 
         results = []
@@ -35,7 +35,7 @@ class FaceDetector:
             confidence = 0.0
 
             if len(self.known_face_encodings) > 0:
-                matches = face_recognition.compare_faces(self.known_face_encodings, face_encoding, tolerance=0.5)
+                matches = face_recognition.compare_faces(self.known_face_encodings, face_encoding, tolerance=0.4)
                 face_distances = face_recognition.face_distance(self.known_face_encodings, face_encoding)
                 best_match_index = face_distances.argmin()
 

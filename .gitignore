@@ -18,3 +18,4 @@ __pycache__/
 *.pyc
 known_faces/*.jpg
 known_faces/*.png
+c_person_risk/*.mp4
