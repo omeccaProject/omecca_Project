@@ -1,50 +1,54 @@
 import os
-import cv2
+import pickle
+import numpy as np
 import face_recognition
 
 class FaceDetector:
-    def __init__(self, known_faces_dir="known_faces"):
+    def __init__(self, db_path="face_embeddings.pkl"):
+        self.known_ids = []
+        self.known_names = []
         self.known_face_encodings = []
-        self.known_face_names = []
-        self.load_known_faces(known_faces_dir)
+        self.load_known_faces(db_path)
 
-    def load_known_faces(self, known_faces_dir):
-        if not os.path.exists(known_faces_dir):
+    def load_known_faces(self, db_path):
+        if not os.path.exists(db_path):
+            print(f"[WARN] {db_path} 없음. build_face_db.py 먼저 실행하세요.")
             return
 
-        for filename in os.listdir(known_faces_dir):
-            if filename.endswith(('.jpg', '.png', '.jpeg')):
-                filepath = os.path.join(known_faces_dir, filename)
-                image = face_recognition.load_image_file(filepath)
-                encodings = face_recognition.face_encodings(image)
-                if encodings:
-                    self.known_face_encodings.append(encodings[0])
-                    name = os.path.splitext(filename)[0]
-                    self.known_face_names.append(name)
-                    print(f"[INFO] 수배자 DB 로드 완료: {name}")
+        with open(db_path, "rb") as f:
+            db = pickle.load(f)
+
+        for person in db:
+            self.known_ids.append(person["id"])
+            self.known_names.append(person["name"])
+            self.known_face_encodings.append(person["embedding"])
+            print(f"[INFO] 수배자 DB 로드 완료: {person['id']} - {person['name']}")
 
     def detect_faces(self, rgb_small_frame):
-        # 축소된 프레임에서 위치 탐지 및 인코딩
         face_locations = face_recognition.face_locations(rgb_small_frame)
         face_encodings = face_recognition.face_encodings(rgb_small_frame, face_locations)
 
         results = []
         for face_encoding, face_location in zip(face_encodings, face_locations):
-            matches = face_recognition.compare_faces(self.known_face_encodings, face_encoding, tolerance=0.5)
+            matched_id = None
             name = "Unknown"
             confidence = 0.0
 
-            face_distances = face_recognition.face_distance(self.known_face_encodings, face_encoding)
-            if len(face_distances) > 0:
+            if len(self.known_face_encodings) > 0:
+                matches = face_recognition.compare_faces(self.known_face_encodings, face_encoding, tolerance=0.5)
+                face_distances = face_recognition.face_distance(self.known_face_encodings, face_encoding)
                 best_match_index = face_distances.argmin()
+
                 if matches[best_match_index]:
-                    name = self.known_face_names[best_match_index]
+                    matched_id = self.known_ids[best_match_index]
+                    name = self.known_names[best_match_index]
                     confidence = round((1.0 - face_distances[best_match_index]), 2)
 
             results.append({
+                "matchedDbId": matched_id,   # 스키마 meta.matchedDbId 에 그대로 들어감
                 "name": name,
-                "confidence": confidence,
-                "location": face_location  # (top, right, bottom, left)
+                "faceMatchScore": confidence,  # 스키마 meta.faceMatchScore 에 그대로 들어감
+                "location": face_location
             })
 
         return results
