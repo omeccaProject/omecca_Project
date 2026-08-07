@@ -11,3 +11,5 @@ a_detector/kickboard_finetune/test/
 # 파이썬 캐시 파일
 __pycache__/
 *.pyc
+known_faces/*.jpg
+known_faces/*.png
