@@ -21,3 +21,22 @@ export const EVENT_COLOR = {
 }
 
 export const EVENT_TYPES = Object.keys(EVENT_LABEL)
+
+// 위험도 등급 — 대시보드 상단 자동 정렬 기준.
+// 3=높음(즉각 대응 필요), 2=중간(현장 확인 필요), 1=낮음(참고/기록용)
+// 새 이벤트 유형이 생기면 여기에도 등급을 추가해야 함.
+export const EVENT_RISK = {
+  WANTED_PERSON: 3,
+  WEAPON: 3,
+  DUI_PATTERN: 3,
+  UNREGISTERED_VEHICLE: 2,
+  SIGNAL_VIOLATION: 2,
+  UTURN_VIOLATION: 2,
+  DEBRIS: 1,
+}
+
+export const RISK_LABEL = { 3: '높음', 2: '중간', 1: '낮음' }
+
+// 이벤트 리스트 패널의 위험도별 아코디언 섹션 제목
+export const TIER_LABEL = { 3: '고위험 이벤트', 2: '중위험 이벤트', 1: '정보 이벤트' }
+export const RISK_TIERS = [3, 2, 1]

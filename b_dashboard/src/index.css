@@ -2,8 +2,8 @@
 body {
   margin: 0;
   font-family: -apple-system, "Malgun Gothic", Arial, sans-serif;
-  background: #12151a;
-  color: #e7e9ec;
+  background: #eef1f8;
+  color: #1e2a4a;
 }
 ::-webkit-scrollbar { width: 8px; }
-::-webkit-scrollbar-thumb { background: #2a2f3a; border-radius: 4px; }
+::-webkit-scrollbar-thumb { background: #cbd3e6; border-radius: 4px; }

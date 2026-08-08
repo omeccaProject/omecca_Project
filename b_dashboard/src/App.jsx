@@ -1,10 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Header from './components/Header'
-import Viewer from './components/Viewer'
+import CctvGrid from './components/CctvGrid'
 import EventList from './components/EventList'
 import { fetchInitialEvents } from './api'
 import { useEventSocket } from './hooks/useEventSocket'
+import { EVENT_RISK } from './constants'
 import './App.css'
+
+// 위험도(높음→낮음) 우선, 같은 위험도면 최신순.
+// 정의되지 않은 이벤트 유형은 위험도 0으로 취급해 맨 뒤로 밀림.
+function compareByRiskThenTime(a, b) {
+  const riskDiff = (EVENT_RISK[b.eventType] || 0) - (EVENT_RISK[a.eventType] || 0)
+  if (riskDiff !== 0) return riskDiff
+  return new Date(b.occurredAt) - new Date(a.occurredAt)
+}
 
 export default function App() {
   const [events, setEvents] = useState([])
@@ -13,11 +22,11 @@ export default function App() {
   const [filterType, setFilterType] = useState('')
   const [filterCam, setFilterCam] = useState('')
 
-  // 새 이벤트 하나를 목록에 반영 (중복 id는 최신 값으로 교체 후 시간순 정렬)
+  // 새 이벤트 하나를 목록에 반영 (중복 id는 최신 값으로 교체 후 위험도→시간순 정렬)
   const upsertEvent = useCallback((ev, focusIfNew) => {
     setEvents((prev) => {
       const next = [ev, ...prev.filter((e) => e.id !== ev.id)]
-      next.sort((a, b) => new Date(b.occurredAt) - new Date(a.occurredAt))
+      next.sort(compareByRiskThenTime)
       return next
     })
     if (focusIfNew) {
@@ -35,8 +44,9 @@ export default function App() {
   const loadInitial = useCallback(() => {
     fetchInitialEvents(30)
       .then((list) => {
-        setEvents(list)
-        if (list.length > 0) setFocusedId((current) => current ?? list[0].id)
+        const sorted = [...list].sort(compareByRiskThenTime)
+        setEvents(sorted)
+        if (sorted.length > 0) setFocusedId((current) => current ?? sorted[0].id)
       })
       .catch(() => {})
   }, [])
@@ -72,8 +82,10 @@ export default function App() {
         onRefresh={loadInitial}
       />
       <main>
-        <Viewer event={focusedEvent} />
-        <EventList events={filtered} focusedId={focusedId} onSelect={(ev) => setFocusedId(ev.id)} />
+        <div className="top-row">
+          <CctvGrid events={filtered} focusedEvent={focusedEvent} onSelectCam={(ev) => setFocusedId(ev.id)} />
+          <EventList events={filtered} focusedId={focusedId} onSelect={(ev) => setFocusedId(ev.id)} />
+        </div>
       </main>
     </>
   )
