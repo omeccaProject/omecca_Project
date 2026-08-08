@@ -1,0 +1,6 @@
+train: train/images
+val: valid/images
+test: test/images
+
+nc: 7
+names: ['electric_scooter', 'car_tire', 'box', 'traffic_cone', 'fallen_tree', 'knife', 'blunt_weapon']

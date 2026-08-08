@@ -1,0 +1,30 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+.venv/
+.venv64/
+venv/
+env/
+
+# 로컬 DB / 로그
+data/
+*.db
+*.sqlite3
+*.log
+
+# 모델 가중치 (용량 문제로 커밋 금지, 별도 공유)
+weights/
+*.pt
+*.onnx
+
+# 샘플·결과물
+samples/
+output/
+*.mp4
+*.avi
+*.mkv
+
+.DS_Store
+.idea/
+.vscode/
