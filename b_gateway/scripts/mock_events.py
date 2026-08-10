@@ -2,7 +2,7 @@
 """Mock 이벤트 생성기 — YOLO 연동 전 파이프라인 검증용.
 
 공통 이벤트 스키마 규격서(원본 설계) 기준으로 페이로드를 생성한다.
-- eventType: 원래 합의된 7종 (DEBRIS/UTURN_VIOLATION 등, FALLING_OBJECT/ILLEGAL_UTURN 아님)
+- eventType: 원래 합의된 6종 (DEBRIS/UTURN_VIOLATION 등, FALLING_OBJECT/ILLEGAL_UTURN 아님)
 - objectClass: PERSON/VEHICLE/OBJECT 3종만 (세부 종류는 meta로)
 - location: {lat, lng} 좌표 객체 (문자열 아님)
 
@@ -27,7 +27,6 @@ EVENT_TYPES = [
     "WEAPON",
     "UNREGISTERED_VEHICLE",
     "DEBRIS",
-    "DUI_PATTERN",
     "SIGNAL_VIOLATION",
     "UTURN_VIOLATION",
 ]

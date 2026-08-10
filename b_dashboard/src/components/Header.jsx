@@ -9,7 +9,7 @@ export default function Header({
 }) {
   return (
     <header>
-      <h1>오메카3 관제 대시보드</h1>
+      <h1>통합 관제 대시보드</h1>
       <div className="status">
         <span className={`dot ${connected ? 'on' : 'off'}`} />
         <span>{connected ? '실시간 연결됨' : '연결 끊김'}</span>
