@@ -12,12 +12,35 @@ class FaceDetector:
         self.known_ids = []
         self.known_names = []
         self.known_face_encodings = []
+        self._last_mtime = None  # ← 추가: Hot-Reload 폴링용 파일 수정시간 기록
         self.load_known_faces(self.db_path)
+        self._update_mtime()  # ← 추가: 최초 로드 시점의 mtime 저장
+
+    def _update_mtime(self):
+        """현재 pkl 파일의 수정시간을 기록 (없으면 None)"""
+        try:
+            self._last_mtime = os.path.getmtime(self.db_path)
+        except FileNotFoundError:
+            self._last_mtime = None
 
     def reload_embeddings(self):
         """API 수배자 추가 시 서버 재시작 없이 메모리를 즉시 갱신하는 메서드 (Hot Reload)"""
         print("[INFO] 수배자 DB 메모리 재로드(Hot Reload) 요청...")
         self.load_known_faces(self.db_path)
+        self._update_mtime()  # ← 추가: 갱신 후 mtime도 같이 최신화 (안 하면 check_and_reload가 계속 재갱신 시도함)
+
+    def check_and_reload(self):
+        """
+        pkl 파일이 마지막 로드 이후 바뀌었는지 확인하고, 바뀌었으면 reload.
+        test_run.py 쪽에서 몇 초 간격으로만 호출할 것 (매 프레임 호출 금지 - 디스크 I/O 부담)
+        """
+        try:
+            mtime = os.path.getmtime(self.db_path)
+        except FileNotFoundError:
+            return
+
+        if mtime != self._last_mtime:
+            self.reload_embeddings()
 
     def load_known_faces(self, db_path):
         if not os.path.exists(db_path):
