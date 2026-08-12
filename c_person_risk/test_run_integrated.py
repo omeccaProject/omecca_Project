@@ -5,13 +5,17 @@ from pathlib import Path
 import cv2
 
 # ============================================================================
-# 1. 스크립트 실행 위치와 무관하게 프로젝트 루트 디렉터리를 최우선 임포트 경로로 고정
+# 1. 프로젝트 루트 및 A모듈(a_core) 경로 등록 (a_core 내부 임포트 충돌 방지)
 # ============================================================================
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+A_CORE_DIR = PROJECT_ROOT / "a_core"
+
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+if str(A_CORE_DIR) not in sys.path:
+    sys.path.insert(0, str(A_CORE_DIR))
 
-# 절대 경로 등록 후 각 모듈 정식 Import
+# 모듈 Import
 from a_core.yolo_infer import detect, WEAPON_CLASSES
 from c_person_risk.face_detect import FaceDetector
 from c_person_risk.event_publisher import send_event
