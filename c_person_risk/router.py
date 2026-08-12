@@ -30,15 +30,26 @@ async def register_wanted_person(
 
     new_encoding = encodings[0]
 
-    # 기존 pkl 데이터 로드
-    data = {"encodings": [], "names": [], "ids": []}
+    # 중복 등록 방지: 같은 wanted_id로 이미 등록된 사람이 있으면 막기
+    # (예전에 김철수 사진 3장이 W002/W003/W004로 각각 따로 등록됐던
+    #  그 문제가 API로도 똑같이 재발할 수 있어서 추가함)
+    data = []
     if os.path.exists(PKL_PATH):
         with open(PKL_PATH, "rb") as f:
-            data = pickle.load(f)
+            data = pickle.load(f)   # ← list 형식 그대로 로드 (더 이상 dict로 안 덮어씀)
 
-    data["encodings"].append(new_encoding)
-    data["names"].append(name)
-    data["ids"].append(wanted_id)
+    if any(person["id"] == wanted_id for person in data):
+        raise HTTPException(
+            status_code=409,
+            detail=f"이미 등록된 wanted_id입니다: {wanted_id}"
+        )
+
+    # face_detect.py가 기대하는 형식과 동일하게 딕셔너리로 추가
+    data.append({
+        "id": wanted_id,
+        "name": name,
+        "embedding": new_encoding
+    })
 
     # 원자적 저장
     save_embeddings_atomically(PKL_PATH, data)
