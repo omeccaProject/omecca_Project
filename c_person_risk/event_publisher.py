@@ -16,10 +16,10 @@ def send_event(event_type, confidence, bbox, cam_id="CAM-01", meta=None):
         "camId": cam_id,
         "trackId": None,
         "eventType": event_type,
-        "class": "person" if event_type == "WANTED_PERSON" else "object",
+        "objectClass": "PERSON" if event_type == "WANTED_PERSON" else "OBJECT",
         "bbox": bbox,
         "confidence": confidence,
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "occurredAt": datetime.utcnow().isoformat() + "Z",
         "location": None,
         "isRegisteredTarget": False,
         "targetId": None,
@@ -31,7 +31,9 @@ def send_event(event_type, confidence, bbox, cam_id="CAM-01", meta=None):
 
     try:
         response = requests.post(API_URL, json=payload, timeout=0.5)
-        if response.status_code == 200:
+        if response.status_code == 201:
             print(f"[EVENT SENT] {event_type}: {meta}")
+        else:
+            print(f"[EVENT REJECTED {response.status_code}] {event_type}: {response.text}")
     except requests.exceptions.RequestException:
         print(f"[EVENT LOG (Server Offline)] {event_type}: {meta}")

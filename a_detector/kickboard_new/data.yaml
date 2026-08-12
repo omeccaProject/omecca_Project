@@ -1,0 +1,13 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 1
+names: ['kb']
+
+roboflow:
+  workspace: -wf8kf
+  project: kickboard-ibhkj-i81hv
+  version: 1
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/-wf8kf/kickboard-ibhkj-i81hv/dataset/1

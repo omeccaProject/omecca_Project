@@ -1,8 +1,8 @@
 # a_detector/hazard_classes.py
 """
-통합 낙하물/흉기 모델(road_hazard_v1)의 클래스 목록.
-yolo_infer.py, stationary_tracker.py가 공통으로 참조.
+낙하물 모델(road_hazard_v2)의 클래스 목록.
+흉기는 별도 모델로 분리 → weapon_classes.py에서 관리 예정.
 """
 
-DEBRIS_CLASSES = {"electric_scooter", "car_tire", "box", "traffic_cone", "fallen_tree"}
-WEAPON_CLASSES = {"knife", "blunt_weapon"}
+DEBRIS_CLASSES = {"electric_scooter", "traffic_cone", "road_debris"}
+WEAPON_CLASSES = {"knife", "blunt_weapon"}   # 별도 모델용, 유지
