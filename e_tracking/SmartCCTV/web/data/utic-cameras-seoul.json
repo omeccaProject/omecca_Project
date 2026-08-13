@@ -1,0 +1,3041 @@
+{
+  "description": "서울교통정보센터(UTIC) 제공 서울 지역 실시간 CCTV 좌표 데이터",
+  "source_file": "OpenDataCCTV.xlsx",
+  "filter_criteria": "CENTERNAME == '서울교통정보센터' AND 37.4 <= lat <= 37.75 AND 126.7 <= lng <= 127.25",
+  "total_source_count": 14589,
+  "seoul_count": 303,
+  "excluded_count": 14286,
+  "coord_error_count": 0,
+  "cameras": [
+    {
+      "cam_id": "L010001",
+      "cctv_id": "L010001",
+      "name": "2,3호터널",
+      "center_name": "서울교통정보센터",
+      "lng": 126.98853882157705,
+      "lat": 37.54324759275993,
+      "source": "UTIC",
+      "rn": "12780"
+    },
+    {
+      "cam_id": "L010003",
+      "cctv_id": "L010003",
+      "name": "63빌딩",
+      "center_name": "서울교통정보센터",
+      "lng": 126.94014,
+      "lat": 37.51961,
+      "source": "UTIC",
+      "rn": "12781"
+    },
+    {
+      "cam_id": "L010004",
+      "cctv_id": "L010004",
+      "name": "AT센터",
+      "center_name": "서울교통정보센터",
+      "lng": 127.03887,
+      "lat": 37.469765,
+      "source": "UTIC",
+      "rn": "12782"
+    },
+    {
+      "cam_id": "L010005",
+      "cctv_id": "L010005",
+      "name": "가락시장",
+      "center_name": "서울교통정보센터",
+      "lng": 127.11389,
+      "lat": 37.49733,
+      "source": "UTIC",
+      "rn": "12783"
+    },
+    {
+      "cam_id": "L010006",
+      "cctv_id": "L010006",
+      "name": "가락시장역",
+      "center_name": "서울교통정보센터",
+      "lng": 127.11895,
+      "lat": 37.49284,
+      "source": "UTIC",
+      "rn": "12784"
+    },
+    {
+      "cam_id": "L010008",
+      "cctv_id": "L010008",
+      "name": "강남세브란스",
+      "center_name": "서울교통정보센터",
+      "lng": 127.0471,
+      "lat": 37.49404,
+      "source": "UTIC",
+      "rn": "12785"
+    },
+    {
+      "cam_id": "L010009",
+      "cctv_id": "L010009",
+      "name": "강남역",
+      "center_name": "서울교통정보센터",
+      "lng": 127.02783,
+      "lat": 37.49823,
+      "source": "UTIC",
+      "rn": "12786"
+    },
+    {
+      "cam_id": "L010010",
+      "cctv_id": "L010010",
+      "name": "강남터미널",
+      "center_name": "서울교통정보센터",
+      "lng": 127.00893,
+      "lat": 37.5072,
+      "source": "UTIC",
+      "rn": "12787"
+    },
+    {
+      "cam_id": "L010011",
+      "cctv_id": "L010011",
+      "name": "강서구청",
+      "center_name": "서울교통정보센터",
+      "lng": 126.85266,
+      "lat": 37.55606,
+      "source": "UTIC",
+      "rn": "12788"
+    },
+    {
+      "cam_id": "L010012",
+      "cctv_id": "L010012",
+      "name": "강일IC",
+      "center_name": "서울교통정보센터",
+      "lng": 127.16602,
+      "lat": 37.57415,
+      "source": "UTIC",
+      "rn": "12789"
+    },
+    {
+      "cam_id": "L010013",
+      "cctv_id": "L010013",
+      "name": "개화교",
+      "center_name": "서울교통정보센터",
+      "lng": 126.79676,
+      "lat": 37.58481,
+      "source": "UTIC",
+      "rn": "12790"
+    },
+    {
+      "cam_id": "L010014",
+      "cctv_id": "L010014",
+      "name": "개화사거리",
+      "center_name": "서울교통정보센터",
+      "lng": 126.803709,
+      "lat": 37.572497,
+      "source": "UTIC",
+      "rn": "12791"
+    },
+    {
+      "cam_id": "L010035",
+      "cctv_id": "L010035",
+      "name": "거리공원오거리",
+      "center_name": "서울교통정보센터",
+      "lng": 126.89282,
+      "lat": 37.49751,
+      "source": "UTIC",
+      "rn": "12792"
+    },
+    {
+      "cam_id": "L010016",
+      "cctv_id": "L010016",
+      "name": "경기고",
+      "center_name": "서울교통정보센터",
+      "lng": 127.0573,
+      "lat": 37.52034,
+      "source": "UTIC",
+      "rn": "12793"
+    },
+    {
+      "cam_id": "L010018",
+      "cctv_id": "L010018",
+      "name": "경남아파트",
+      "center_name": "서울교통정보센터",
+      "lng": 127.00186,
+      "lat": 37.47492,
+      "source": "UTIC",
+      "rn": "12794"
+    },
+    {
+      "cam_id": "L010353",
+      "cctv_id": "L010353",
+      "name": "경동시장R",
+      "center_name": "서울교통정보센터",
+      "lng": 127.03847,
+      "lat": 37.57803,
+      "source": "UTIC",
+      "rn": "12795"
+    },
+    {
+      "cam_id": "L010020",
+      "cctv_id": "L010020",
+      "name": "경복궁역",
+      "center_name": "서울교통정보센터",
+      "lng": 126.972,
+      "lat": 37.576,
+      "source": "UTIC",
+      "rn": "12796"
+    },
+    {
+      "cam_id": "L010022",
+      "cctv_id": "L010022",
+      "name": "경인2지하차도",
+      "center_name": "서울교통정보센터",
+      "lng": 126.86367,
+      "lat": 37.53001,
+      "source": "UTIC",
+      "rn": "12797"
+    },
+    {
+      "cam_id": "L010023",
+      "cctv_id": "L010023",
+      "name": "고려대",
+      "center_name": "서울교통정보센터",
+      "lng": 127.03317,
+      "lat": 37.58659,
+      "source": "UTIC",
+      "rn": "12798"
+    },
+    {
+      "cam_id": "L010024",
+      "cctv_id": "L010024",
+      "name": "고려대역",
+      "center_name": "서울교통정보센터",
+      "lng": 127.03619,
+      "lat": 37.58991,
+      "source": "UTIC",
+      "rn": "12799"
+    },
+    {
+      "cam_id": "L010025",
+      "cctv_id": "L010025",
+      "name": "고척교",
+      "center_name": "서울교통정보센터",
+      "lng": 126.87136,
+      "lat": 37.49873,
+      "source": "UTIC",
+      "rn": "12800"
+    },
+    {
+      "cam_id": "L010026",
+      "cctv_id": "L010026",
+      "name": "공덕오거리",
+      "center_name": "서울교통정보센터",
+      "lng": 126.95112,
+      "lat": 37.54366,
+      "source": "UTIC",
+      "rn": "12801"
+    },
+    {
+      "cam_id": "L010028",
+      "cctv_id": "L010028",
+      "name": "광장사거리",
+      "center_name": "서울교통정보센터",
+      "lng": 127.10477,
+      "lat": 37.54531,
+      "source": "UTIC",
+      "rn": "12802"
+    },
+    {
+      "cam_id": "L010029",
+      "cctv_id": "L010029",
+      "name": "광화문",
+      "center_name": "서울교통정보센터",
+      "lng": 126.97847,
+      "lat": 37.57554,
+      "source": "UTIC",
+      "rn": "12803"
+    },
+    {
+      "cam_id": "L010030",
+      "cctv_id": "L010030",
+      "name": "광화문광장",
+      "center_name": "서울교통정보센터",
+      "lng": 126.97739,
+      "lat": 37.57261,
+      "source": "UTIC",
+      "rn": "12804"
+    },
+    {
+      "cam_id": "L010031",
+      "cctv_id": "L010031",
+      "name": "광흥창역",
+      "center_name": "서울교통정보센터",
+      "lng": 126.93149,
+      "lat": 37.54779,
+      "source": "UTIC",
+      "rn": "12805"
+    },
+    {
+      "cam_id": "L010032",
+      "cctv_id": "L010032",
+      "name": "교보타워R",
+      "center_name": "서울교통정보센터",
+      "lng": 127.0243,
+      "lat": 37.50407,
+      "source": "UTIC",
+      "rn": "12806"
+    },
+    {
+      "cam_id": "L010033",
+      "cctv_id": "L010033",
+      "name": "교육개발원입구",
+      "center_name": "서울교통정보센터",
+      "lng": 127.039,
+      "lat": 37.47787,
+      "source": "UTIC",
+      "rn": "12807"
+    },
+    {
+      "cam_id": "L010034",
+      "cctv_id": "L010034",
+      "name": "구로IC",
+      "center_name": "서울교통정보센터",
+      "lng": 126.87874,
+      "lat": 37.48648,
+      "source": "UTIC",
+      "rn": "12808"
+    },
+    {
+      "cam_id": "L010036",
+      "cctv_id": "L010036",
+      "name": "구로역",
+      "center_name": "서울교통정보센터",
+      "lng": 126.88022,
+      "lat": 37.50305,
+      "source": "UTIC",
+      "rn": "12809"
+    },
+    {
+      "cam_id": "L010038",
+      "cctv_id": "L010038",
+      "name": "구룡터널",
+      "center_name": "서울교통정보센터",
+      "lng": 127.0593,
+      "lat": 37.4759,
+      "source": "UTIC",
+      "rn": "12810"
+    },
+    {
+      "cam_id": "L010039",
+      "cctv_id": "L010039",
+      "name": "구반포R",
+      "center_name": "서울교통정보센터",
+      "lng": 126.98654,
+      "lat": 37.5014,
+      "source": "UTIC",
+      "rn": "12811"
+    },
+    {
+      "cam_id": "L010040",
+      "cctv_id": "L010040",
+      "name": "구의사거리",
+      "center_name": "서울교통정보센터",
+      "lng": 127.08527,
+      "lat": 37.54525,
+      "source": "UTIC",
+      "rn": "12812"
+    },
+    {
+      "cam_id": "L010041",
+      "cctv_id": "L010041",
+      "name": "구파발",
+      "center_name": "서울교통정보센터",
+      "lng": 126.91653,
+      "lat": 37.63891,
+      "source": "UTIC",
+      "rn": "12813"
+    },
+    {
+      "cam_id": "L010042",
+      "cctv_id": "L010042",
+      "name": "국립4.19묘지입구",
+      "center_name": "서울교통정보센터",
+      "lng": 127.01444,
+      "lat": 37.6483,
+      "source": "UTIC",
+      "rn": "12814"
+    },
+    {
+      "cam_id": "L010043",
+      "cctv_id": "L010043",
+      "name": "국립국악원",
+      "center_name": "서울교통정보센터",
+      "lng": 127.00829,
+      "lat": 37.47864,
+      "source": "UTIC",
+      "rn": "12815"
+    },
+    {
+      "cam_id": "L010044",
+      "cctv_id": "L010044",
+      "name": "국립현충원",
+      "center_name": "서울교통정보센터",
+      "lng": 126.97564,
+      "lat": 37.50423,
+      "source": "UTIC",
+      "rn": "12816"
+    },
+    {
+      "cam_id": "L010045",
+      "cctv_id": "L010045",
+      "name": "국회",
+      "center_name": "서울교통정보센터",
+      "lng": 126.91664,
+      "lat": 37.52858,
+      "source": "UTIC",
+      "rn": "12817"
+    },
+    {
+      "cam_id": "L010047",
+      "cctv_id": "L010047",
+      "name": "국회도서관",
+      "center_name": "서울교통정보센터",
+      "lng": 126.91926,
+      "lat": 37.53008,
+      "source": "UTIC",
+      "rn": "12818"
+    },
+    {
+      "cam_id": "L010048",
+      "cctv_id": "L010048",
+      "name": "군자교",
+      "center_name": "서울교통정보센터",
+      "lng": 127.07337,
+      "lat": 37.55982,
+      "source": "UTIC",
+      "rn": "12819"
+    },
+    {
+      "cam_id": "L010049",
+      "cctv_id": "L010049",
+      "name": "굽은다리역",
+      "center_name": "서울교통정보센터",
+      "lng": 127.1435,
+      "lat": 37.54653,
+      "source": "UTIC",
+      "rn": "12820"
+    },
+    {
+      "cam_id": "L010051",
+      "cctv_id": "L010051",
+      "name": "길동사거리",
+      "center_name": "서울교통정보센터",
+      "lng": 127.13829,
+      "lat": 37.5338,
+      "source": "UTIC",
+      "rn": "12821"
+    },
+    {
+      "cam_id": "L010052",
+      "cctv_id": "L010052",
+      "name": "길음",
+      "center_name": "서울교통정보센터",
+      "lng": 127.0223,
+      "lat": 37.60151,
+      "source": "UTIC",
+      "rn": "12822"
+    },
+    {
+      "cam_id": "L010054",
+      "cctv_id": "L010054",
+      "name": "김포공항입구",
+      "center_name": "서울교통정보센터",
+      "lng": 126.80677,
+      "lat": 37.56205,
+      "source": "UTIC",
+      "rn": "12823"
+    },
+    {
+      "cam_id": "L010055",
+      "cctv_id": "L010055",
+      "name": "까치고개",
+      "center_name": "서울교통정보센터",
+      "lng": 126.96763,
+      "lat": 37.47533,
+      "source": "UTIC",
+      "rn": "12824"
+    },
+    {
+      "cam_id": "L010056",
+      "cctv_id": "L010056",
+      "name": "남대문",
+      "center_name": "서울교통정보센터",
+      "lng": 126.97482,
+      "lat": 37.56096,
+      "source": "UTIC",
+      "rn": "12825"
+    },
+    {
+      "cam_id": "L010057",
+      "cctv_id": "L010057",
+      "name": "남태령고개",
+      "center_name": "서울교통정보센터",
+      "lng": 126.98883,
+      "lat": 37.45821,
+      "source": "UTIC",
+      "rn": "12826"
+    },
+    {
+      "cam_id": "L010058",
+      "cctv_id": "L010058",
+      "name": "내곡IC",
+      "center_name": "서울교통정보센터",
+      "lng": 127.07541,
+      "lat": 37.4586,
+      "source": "UTIC",
+      "rn": "12827"
+    },
+    {
+      "cam_id": "L010059",
+      "cctv_id": "L010059",
+      "name": "노량진삼거리",
+      "center_name": "서울교통정보센터",
+      "lng": 126.94042,
+      "lat": 37.51338,
+      "source": "UTIC",
+      "rn": "12828"
+    },
+    {
+      "cam_id": "L010061",
+      "cctv_id": "L010061",
+      "name": "녹번3R",
+      "center_name": "서울교통정보센터",
+      "lng": 126.93587,
+      "lat": 37.60025,
+      "source": "UTIC",
+      "rn": "12829"
+    },
+    {
+      "cam_id": "L010062",
+      "cctv_id": "L010062",
+      "name": "녹사평역",
+      "center_name": "서울교통정보센터",
+      "lng": 126.98769,
+      "lat": 37.53396,
+      "source": "UTIC",
+      "rn": "12830"
+    },
+    {
+      "cam_id": "L010063",
+      "cctv_id": "L010063",
+      "name": "논현역",
+      "center_name": "서울교통정보센터",
+      "lng": 127.02115,
+      "lat": 37.51083,
+      "source": "UTIC",
+      "rn": "12831"
+    },
+    {
+      "cam_id": "L010065",
+      "cctv_id": "L010065",
+      "name": "당곡사거리",
+      "center_name": "서울교통정보센터",
+      "lng": 126.9284,
+      "lat": 37.48889,
+      "source": "UTIC",
+      "rn": "12832"
+    },
+    {
+      "cam_id": "L010066",
+      "cctv_id": "L010066",
+      "name": "대공원후문",
+      "center_name": "서울교통정보센터",
+      "lng": 127.08884,
+      "lat": 37.55354,
+      "source": "UTIC",
+      "rn": "12833"
+    },
+    {
+      "cam_id": "L010067",
+      "cctv_id": "L010067",
+      "name": "대림삼거리",
+      "center_name": "서울교통정보센터",
+      "lng": 126.90919,
+      "lat": 37.49268,
+      "source": "UTIC",
+      "rn": "12834"
+    },
+    {
+      "cam_id": "L010068",
+      "cctv_id": "L010068",
+      "name": "대신R",
+      "center_name": "서울교통정보센터",
+      "lng": 126.94074,
+      "lat": 37.56071,
+      "source": "UTIC",
+      "rn": "12835"
+    },
+    {
+      "cam_id": "L010069",
+      "cctv_id": "L010069",
+      "name": "대진고교",
+      "center_name": "서울교통정보센터",
+      "lng": 127.07531,
+      "lat": 37.63896,
+      "source": "UTIC",
+      "rn": "12836"
+    },
+    {
+      "cam_id": "L010070",
+      "cctv_id": "L010070",
+      "name": "대치사거리",
+      "center_name": "서울교통정보센터",
+      "lng": 127.0588,
+      "lat": 37.50326,
+      "source": "UTIC",
+      "rn": "12837"
+    },
+    {
+      "cam_id": "L010071",
+      "cctv_id": "L010071",
+      "name": "대학로",
+      "center_name": "서울교통정보센터",
+      "lng": 127.00177,
+      "lat": 37.58183,
+      "source": "UTIC",
+      "rn": "12838"
+    },
+    {
+      "cam_id": "L010072",
+      "cctv_id": "L010072",
+      "name": "도봉검문소",
+      "center_name": "서울교통정보센터",
+      "lng": 127.04472,
+      "lat": 37.69283,
+      "source": "UTIC",
+      "rn": "12839"
+    },
+    {
+      "cam_id": "L010073",
+      "cctv_id": "L010073",
+      "name": "도산공원",
+      "center_name": "서울교통정보센터",
+      "lng": 127.03397,
+      "lat": 37.52178,
+      "source": "UTIC",
+      "rn": "12840"
+    },
+    {
+      "cam_id": "L010074",
+      "cctv_id": "L010074",
+      "name": "도선사거리",
+      "center_name": "서울교통정보센터",
+      "lng": 127.036425,
+      "lat": 37.566089,
+      "source": "UTIC",
+      "rn": "12841"
+    },
+    {
+      "cam_id": "L010075",
+      "cctv_id": "L010075",
+      "name": "도시철도공사",
+      "center_name": "서울교통정보센터",
+      "lng": 127.05813,
+      "lat": 37.56252,
+      "source": "UTIC",
+      "rn": "12842"
+    },
+    {
+      "cam_id": "L010076",
+      "cctv_id": "L010076",
+      "name": "독립문",
+      "center_name": "서울교통정보센터",
+      "lng": 126.96037,
+      "lat": 37.57242,
+      "source": "UTIC",
+      "rn": "12843"
+    },
+    {
+      "cam_id": "L010077",
+      "cctv_id": "L010077",
+      "name": "동1로지하차도",
+      "center_name": "서울교통정보센터",
+      "lng": 127.08007,
+      "lat": 37.59475,
+      "source": "UTIC",
+      "rn": "12844"
+    },
+    {
+      "cam_id": "L010078",
+      "cctv_id": "L010078",
+      "name": "동교동삼거리",
+      "center_name": "서울교통정보센터",
+      "lng": 126.92653,
+      "lat": 37.55898,
+      "source": "UTIC",
+      "rn": "12845"
+    },
+    {
+      "cam_id": "L010080",
+      "cctv_id": "L010080",
+      "name": "동대문운동장",
+      "center_name": "서울교통정보센터",
+      "lng": 127.00757,
+      "lat": 37.5662,
+      "source": "UTIC",
+      "rn": "12846"
+    },
+    {
+      "cam_id": "L010081",
+      "cctv_id": "L010081",
+      "name": "동묘앞역",
+      "center_name": "서울교통정보센터",
+      "lng": 127.01554,
+      "lat": 37.57283,
+      "source": "UTIC",
+      "rn": "12847"
+    },
+    {
+      "cam_id": "L010082",
+      "cctv_id": "L010082",
+      "name": "동호대교남단",
+      "center_name": "서울교통정보센터",
+      "lng": 127.02372,
+      "lat": 37.5315,
+      "source": "UTIC",
+      "rn": "12848"
+    },
+    {
+      "cam_id": "L010083",
+      "cctv_id": "L010083",
+      "name": "둔촌사거리",
+      "center_name": "서울교통정보센터",
+      "lng": 127.13402,
+      "lat": 37.52096,
+      "source": "UTIC",
+      "rn": "12849"
+    },
+    {
+      "cam_id": "L010377",
+      "cctv_id": "L010377",
+      "name": "등촌삼거리",
+      "center_name": "서울교통정보센터",
+      "lng": 126.86404,
+      "lat": 37.5512,
+      "source": "UTIC",
+      "rn": "12850"
+    },
+    {
+      "cam_id": "L010085",
+      "cctv_id": "L010085",
+      "name": "디지털단지",
+      "center_name": "서울교통정보센터",
+      "lng": 126.89039,
+      "lat": 37.47909,
+      "source": "UTIC",
+      "rn": "12851"
+    },
+    {
+      "cam_id": "L010086",
+      "cctv_id": "L010086",
+      "name": "떡전교",
+      "center_name": "서울교통정보센터",
+      "lng": 127.05176,
+      "lat": 37.5857,
+      "source": "UTIC",
+      "rn": "12852"
+    },
+    {
+      "cam_id": "L010087",
+      "cctv_id": "L010087",
+      "name": "르네상스",
+      "center_name": "서울교통정보센터",
+      "lng": 127.04292,
+      "lat": 37.50298,
+      "source": "UTIC",
+      "rn": "12853"
+    },
+    {
+      "cam_id": "L010088",
+      "cctv_id": "L010088",
+      "name": "마포대교남단",
+      "center_name": "서울교통정보센터",
+      "lng": 126.92986,
+      "lat": 37.5287,
+      "source": "UTIC",
+      "rn": "12854"
+    },
+    {
+      "cam_id": "L010089",
+      "cctv_id": "L010089",
+      "name": "말미R",
+      "center_name": "서울교통정보센터",
+      "lng": 126.89802,
+      "lat": 37.46639,
+      "source": "UTIC",
+      "rn": "12855"
+    },
+    {
+      "cam_id": "L010090",
+      "cctv_id": "L010090",
+      "name": "망우사거리",
+      "center_name": "서울교통정보센터",
+      "lng": 127.10025,
+      "lat": 37.59957,
+      "source": "UTIC",
+      "rn": "12856"
+    },
+    {
+      "cam_id": "L010091",
+      "cctv_id": "L010091",
+      "name": "매봉터널",
+      "center_name": "서울교통정보센터",
+      "lng": 127.04961,
+      "lat": 37.48853,
+      "source": "UTIC",
+      "rn": "12857"
+    },
+    {
+      "cam_id": "L010610",
+      "cctv_id": "L010610",
+      "name": "먹골역",
+      "center_name": "서울교통정보센터",
+      "lng": 127.078665,
+      "lat": 37.607178,
+      "source": "UTIC",
+      "rn": "12858"
+    },
+    {
+      "cam_id": "L010092",
+      "cctv_id": "L010092",
+      "name": "명동역",
+      "center_name": "서울교통정보센터",
+      "lng": 126.98462,
+      "lat": 37.56062,
+      "source": "UTIC",
+      "rn": "12859"
+    },
+    {
+      "cam_id": "L010380",
+      "cctv_id": "L010380",
+      "name": "명동입구",
+      "center_name": "서울교통정보센터",
+      "lng": 126.98173,
+      "lat": 37.56345,
+      "source": "UTIC",
+      "rn": "12860"
+    },
+    {
+      "cam_id": "L010094",
+      "cctv_id": "L010094",
+      "name": "명일E마트",
+      "center_name": "서울교통정보센터",
+      "lng": 127.15634,
+      "lat": 37.5555,
+      "source": "UTIC",
+      "rn": "12861"
+    },
+    {
+      "cam_id": "L010095",
+      "cctv_id": "L010095",
+      "name": "목동교",
+      "center_name": "서울교통정보센터",
+      "lng": 126.89031,
+      "lat": 37.53069,
+      "source": "UTIC",
+      "rn": "12862"
+    },
+    {
+      "cam_id": "L010096",
+      "cctv_id": "L010096",
+      "name": "목동오거리",
+      "center_name": "서울교통정보센터",
+      "lng": 126.86452,
+      "lat": 37.52645,
+      "source": "UTIC",
+      "rn": "12863"
+    },
+    {
+      "cam_id": "L010098",
+      "cctv_id": "L010098",
+      "name": "문래고가밑",
+      "center_name": "서울교통정보센터",
+      "lng": 126.89691,
+      "lat": 37.5132,
+      "source": "UTIC",
+      "rn": "12864"
+    },
+    {
+      "cam_id": "L010099",
+      "cctv_id": "L010099",
+      "name": "미아사거리",
+      "center_name": "서울교통정보센터",
+      "lng": 127.03028,
+      "lat": 37.60881,
+      "source": "UTIC",
+      "rn": "12865"
+    },
+    {
+      "cam_id": "L010100",
+      "cctv_id": "L010100",
+      "name": "박미고개",
+      "center_name": "서울교통정보센터",
+      "lng": 126.90376,
+      "lat": 37.44716,
+      "source": "UTIC",
+      "rn": "12866"
+    },
+    {
+      "cam_id": "L010101",
+      "cctv_id": "L010101",
+      "name": "박석고개R",
+      "center_name": "서울교통정보센터",
+      "lng": 126.92004,
+      "lat": 37.62702,
+      "source": "UTIC",
+      "rn": "12867"
+    },
+    {
+      "cam_id": "L010102",
+      "cctv_id": "L010102",
+      "name": "반포IC",
+      "center_name": "서울교통정보센터",
+      "lng": 127.01838,
+      "lat": 37.50279,
+      "source": "UTIC",
+      "rn": "12868"
+    },
+    {
+      "cam_id": "L010103",
+      "cctv_id": "L010103",
+      "name": "반포대교남단",
+      "center_name": "서울교통정보센터",
+      "lng": 126.99865,
+      "lat": 37.50957,
+      "source": "UTIC",
+      "rn": "12869"
+    },
+    {
+      "cam_id": "L010104",
+      "cctv_id": "L010104",
+      "name": "발산역",
+      "center_name": "서울교통정보센터",
+      "lng": 126.83817,
+      "lat": 37.55877,
+      "source": "UTIC",
+      "rn": "12870"
+    },
+    {
+      "cam_id": "L010105",
+      "cctv_id": "L010105",
+      "name": "방학사거리",
+      "center_name": "서울교통정보센터",
+      "lng": 127.04263,
+      "lat": 37.66267,
+      "source": "UTIC",
+      "rn": "12871"
+    },
+    {
+      "cam_id": "L010106",
+      "cctv_id": "L010106",
+      "name": "방학신동아",
+      "center_name": "서울교통정보센터",
+      "lng": 127.02746,
+      "lat": 37.66166,
+      "source": "UTIC",
+      "rn": "12872"
+    },
+    {
+      "cam_id": "L010107",
+      "cctv_id": "L010107",
+      "name": "방화대교남단",
+      "center_name": "서울교통정보센터",
+      "lng": 126.82025,
+      "lat": 37.58388,
+      "source": "UTIC",
+      "rn": "12873"
+    },
+    {
+      "cam_id": "L010108",
+      "cctv_id": "L010108",
+      "name": "배봉초교",
+      "center_name": "서울교통정보센터",
+      "lng": 127.06861,
+      "lat": 37.57882,
+      "source": "UTIC",
+      "rn": "12874"
+    },
+    {
+      "cam_id": "L010109",
+      "cctv_id": "L010109",
+      "name": "번동사거리",
+      "center_name": "서울교통정보센터",
+      "lng": 127.03423,
+      "lat": 37.63549,
+      "source": "UTIC",
+      "rn": "12875"
+    },
+    {
+      "cam_id": "L010111",
+      "cctv_id": "L010111",
+      "name": "보라매역",
+      "center_name": "서울교통정보센터",
+      "lng": 126.92007,
+      "lat": 37.49976,
+      "source": "UTIC",
+      "rn": "12876"
+    },
+    {
+      "cam_id": "L010112",
+      "cctv_id": "L010112",
+      "name": "복정사거리",
+      "center_name": "서울교통정보센터",
+      "lng": 127.12643,
+      "lat": 37.47042,
+      "source": "UTIC",
+      "rn": "12877"
+    },
+    {
+      "cam_id": "L010611",
+      "cctv_id": "L010611",
+      "name": "봉원고가",
+      "center_name": "서울교통정보센터",
+      "lng": 126.94676,
+      "lat": 37.566577,
+      "source": "UTIC",
+      "rn": "12878"
+    },
+    {
+      "cam_id": "L010113",
+      "cctv_id": "L010113",
+      "name": "봉은교서단",
+      "center_name": "서울교통정보센터",
+      "lng": 127.06625,
+      "lat": 37.51611,
+      "source": "UTIC",
+      "rn": "12879"
+    },
+    {
+      "cam_id": "L010114",
+      "cctv_id": "L010114",
+      "name": "봉은사삼거리",
+      "center_name": "서울교통정보센터",
+      "lng": 127.05633,
+      "lat": 37.51372,
+      "source": "UTIC",
+      "rn": "12880"
+    },
+    {
+      "cam_id": "L010115",
+      "cctv_id": "L010115",
+      "name": "북서울꿈의숲",
+      "center_name": "서울교통정보센터",
+      "lng": 127.03781,
+      "lat": 37.61319,
+      "source": "UTIC",
+      "rn": "12881"
+    },
+    {
+      "cam_id": "L010116",
+      "cctv_id": "L010116",
+      "name": "북한남",
+      "center_name": "서울교통정보센터",
+      "lng": 127.00155,
+      "lat": 37.54405,
+      "source": "UTIC",
+      "rn": "12882"
+    },
+    {
+      "cam_id": "L010117",
+      "cctv_id": "L010117",
+      "name": "사당역",
+      "center_name": "서울교통정보센터",
+      "lng": 126.98136,
+      "lat": 37.47688,
+      "source": "UTIC",
+      "rn": "12883"
+    },
+    {
+      "cam_id": "L010118",
+      "cctv_id": "L010118",
+      "name": "삼각지",
+      "center_name": "서울교통정보센터",
+      "lng": 126.97442,
+      "lat": 37.53563,
+      "source": "UTIC",
+      "rn": "12884"
+    },
+    {
+      "cam_id": "L010119",
+      "cctv_id": "L010119",
+      "name": "삼릉공원",
+      "center_name": "서울교통정보센터",
+      "lng": 127.04185,
+      "lat": 37.50984,
+      "source": "UTIC",
+      "rn": "12885"
+    },
+    {
+      "cam_id": "L010120",
+      "cctv_id": "L010120",
+      "name": "삼성역",
+      "center_name": "서울교통정보센터",
+      "lng": 127.06362,
+      "lat": 37.5088,
+      "source": "UTIC",
+      "rn": "12886"
+    },
+    {
+      "cam_id": "L010121",
+      "cctv_id": "L010121",
+      "name": "삼양R",
+      "center_name": "서울교통정보센터",
+      "lng": 127.02114,
+      "lat": 37.61969,
+      "source": "UTIC",
+      "rn": "12887"
+    },
+    {
+      "cam_id": "L010122",
+      "cctv_id": "L010122",
+      "name": "삼양동입구",
+      "center_name": "서울교통정보센터",
+      "lng": 127.03005,
+      "lat": 37.61689,
+      "source": "UTIC",
+      "rn": "12888"
+    },
+    {
+      "cam_id": "L010123",
+      "cctv_id": "L010123",
+      "name": "삼전사거리",
+      "center_name": "서울교통정보센터",
+      "lng": 127.08795,
+      "lat": 37.5047,
+      "source": "UTIC",
+      "rn": "12889"
+    },
+    {
+      "cam_id": "L010124",
+      "cctv_id": "L010124",
+      "name": "삼정",
+      "center_name": "서울교통정보센터",
+      "lng": 127.03134,
+      "lat": 37.50655,
+      "source": "UTIC",
+      "rn": "12890"
+    },
+    {
+      "cam_id": "L010126",
+      "cctv_id": "L010126",
+      "name": "상계7,9,10단지",
+      "center_name": "서울교통정보센터",
+      "lng": 127.05854,
+      "lat": 37.66136,
+      "source": "UTIC",
+      "rn": "12891"
+    },
+    {
+      "cam_id": "L010127",
+      "cctv_id": "L010127",
+      "name": "상계초교",
+      "center_name": "서울교통정보센터",
+      "lng": 127.06675,
+      "lat": 37.65729,
+      "source": "UTIC",
+      "rn": "12892"
+    },
+    {
+      "cam_id": "L010128",
+      "cctv_id": "L010128",
+      "name": "상도",
+      "center_name": "서울교통정보센터",
+      "lng": 126.9478,
+      "lat": 37.50303,
+      "source": "UTIC",
+      "rn": "12893"
+    },
+    {
+      "cam_id": "L010129",
+      "cctv_id": "L010129",
+      "name": "상암교",
+      "center_name": "서울교통정보센터",
+      "lng": 126.8992,
+      "lat": 37.56652,
+      "source": "UTIC",
+      "rn": "12894"
+    },
+    {
+      "cam_id": "L010130",
+      "cctv_id": "L010130",
+      "name": "상암사거리",
+      "center_name": "서울교통정보센터",
+      "lng": 126.89889,
+      "lat": 37.57308,
+      "source": "UTIC",
+      "rn": "12895"
+    },
+    {
+      "cam_id": "L010131",
+      "cctv_id": "L010131",
+      "name": "상암초교",
+      "center_name": "서울교통정보센터",
+      "lng": 126.892496,
+      "lat": 37.577141,
+      "source": "UTIC",
+      "rn": "12896"
+    },
+    {
+      "cam_id": "L010132",
+      "cctv_id": "L010132",
+      "name": "상왕십리역",
+      "center_name": "서울교통정보센터",
+      "lng": 127.03025,
+      "lat": 37.56426,
+      "source": "UTIC",
+      "rn": "12897"
+    },
+    {
+      "cam_id": "L010133",
+      "cctv_id": "L010133",
+      "name": "상일IC",
+      "center_name": "서울교통정보센터",
+      "lng": 127.17915,
+      "lat": 37.54903,
+      "source": "UTIC",
+      "rn": "12898"
+    },
+    {
+      "cam_id": "L010134",
+      "cctv_id": "L010134",
+      "name": "생태공원",
+      "center_name": "서울교통정보센터",
+      "lng": 127.15271,
+      "lat": 37.5386,
+      "source": "UTIC",
+      "rn": "12899"
+    },
+    {
+      "cam_id": "L010135",
+      "cctv_id": "L010135",
+      "name": "서대문역",
+      "center_name": "서울교통정보센터",
+      "lng": 126.96665,
+      "lat": 37.56613,
+      "source": "UTIC",
+      "rn": "12900"
+    },
+    {
+      "cam_id": "L010136",
+      "cctv_id": "L010136",
+      "name": "서부트럭터미널",
+      "center_name": "서울교통정보센터",
+      "lng": 126.8431,
+      "lat": 37.50939,
+      "source": "UTIC",
+      "rn": "12901"
+    },
+    {
+      "cam_id": "L010138",
+      "cctv_id": "L010138",
+      "name": "서울교남단",
+      "center_name": "서울교통정보센터",
+      "lng": 126.91347,
+      "lat": 37.51891,
+      "source": "UTIC",
+      "rn": "12902"
+    },
+    {
+      "cam_id": "L010139",
+      "cctv_id": "L010139",
+      "name": "서울대입구R",
+      "center_name": "서울교통정보센터",
+      "lng": 126.95301,
+      "lat": 37.48141,
+      "source": "UTIC",
+      "rn": "12903"
+    },
+    {
+      "cam_id": "L010140",
+      "cctv_id": "L010140",
+      "name": "서울성모병원",
+      "center_name": "서울교통정보센터",
+      "lng": 127.0037,
+      "lat": 37.50215,
+      "source": "UTIC",
+      "rn": "12904"
+    },
+    {
+      "cam_id": "L010141",
+      "cctv_id": "L010141",
+      "name": "서울세관사거리",
+      "center_name": "서울교통정보센터",
+      "lng": 127.03501,
+      "lat": 37.51507,
+      "source": "UTIC",
+      "rn": "12905"
+    },
+    {
+      "cam_id": "L010143",
+      "cctv_id": "L010143",
+      "name": "서울역",
+      "center_name": "서울교통정보센터",
+      "lng": 126.97343,
+      "lat": 37.55486,
+      "source": "UTIC",
+      "rn": "12906"
+    },
+    {
+      "cam_id": "L010144",
+      "cctv_id": "L010144",
+      "name": "서울혁신파크",
+      "center_name": "서울교통정보센터",
+      "lng": 126.93163,
+      "lat": 37.60882,
+      "source": "UTIC",
+      "rn": "12907"
+    },
+    {
+      "cam_id": "L010145",
+      "cctv_id": "L010145",
+      "name": "서초IC",
+      "center_name": "서울교통정보센터",
+      "lng": 127.02632,
+      "lat": 37.48329,
+      "source": "UTIC",
+      "rn": "12908"
+    },
+    {
+      "cam_id": "L010146",
+      "cctv_id": "L010146",
+      "name": "서초역사거리",
+      "center_name": "서울교통정보센터",
+      "lng": 127.00808,
+      "lat": 37.49171,
+      "source": "UTIC",
+      "rn": "12909"
+    },
+    {
+      "cam_id": "L010147",
+      "cctv_id": "L010147",
+      "name": "석촌역",
+      "center_name": "서울교통정보센터",
+      "lng": 127.10762,
+      "lat": 37.50519,
+      "source": "UTIC",
+      "rn": "12910"
+    },
+    {
+      "cam_id": "L010148",
+      "cctv_id": "L010148",
+      "name": "선사사거리",
+      "center_name": "서울교통정보센터",
+      "lng": 127.12947,
+      "lat": 37.55494,
+      "source": "UTIC",
+      "rn": "12911"
+    },
+    {
+      "cam_id": "L010149",
+      "cctv_id": "L010149",
+      "name": "선암IC",
+      "center_name": "서울교통정보센터",
+      "lng": 127.02036,
+      "lat": 37.46046,
+      "source": "UTIC",
+      "rn": "12912"
+    },
+    {
+      "cam_id": "L010150",
+      "cctv_id": "L010150",
+      "name": "성균관대입구",
+      "center_name": "서울교통정보센터",
+      "lng": 127.00136,
+      "lat": 37.58547,
+      "source": "UTIC",
+      "rn": "12913"
+    },
+    {
+      "cam_id": "L010151",
+      "cctv_id": "L010151",
+      "name": "성동교남단",
+      "center_name": "서울교통정보센터",
+      "lng": 127.04384,
+      "lat": 37.55177,
+      "source": "UTIC",
+      "rn": "12914"
+    },
+    {
+      "cam_id": "L010152",
+      "cctv_id": "L010152",
+      "name": "성산2교",
+      "center_name": "서울교통정보센터",
+      "lng": 126.9122197,
+      "lat": 37.5652843315,
+      "source": "UTIC",
+      "rn": "12915"
+    },
+    {
+      "cam_id": "L010153",
+      "cctv_id": "L010153",
+      "name": "성산대교남단",
+      "center_name": "서울교통정보센터",
+      "lng": 126.88679,
+      "lat": 37.54571,
+      "source": "UTIC",
+      "rn": "12916"
+    },
+    {
+      "cam_id": "L010154",
+      "cctv_id": "L010154",
+      "name": "성산대교북단",
+      "center_name": "서울교통정보센터",
+      "lng": 126.89488,
+      "lat": 37.55784,
+      "source": "UTIC",
+      "rn": "12917"
+    },
+    {
+      "cam_id": "L010155",
+      "cctv_id": "L010155",
+      "name": "성수대교",
+      "center_name": "서울교통정보센터",
+      "lng": 127.03455,
+      "lat": 37.53263,
+      "source": "UTIC",
+      "rn": "12918"
+    },
+    {
+      "cam_id": "L010156",
+      "cctv_id": "L010156",
+      "name": "성수대교남단교차로",
+      "center_name": "서울교통정보센터",
+      "lng": 127.03447,
+      "lat": 37.53055,
+      "source": "UTIC",
+      "rn": "12919"
+    },
+    {
+      "cam_id": "L010404",
+      "cctv_id": "L010404",
+      "name": "성신여대입구",
+      "center_name": "서울교통정보센터",
+      "lng": 127.01662,
+      "lat": 37.59292,
+      "source": "UTIC",
+      "rn": "12920"
+    },
+    {
+      "cam_id": "L010158",
+      "cctv_id": "L010158",
+      "name": "세곡사거리",
+      "center_name": "서울교통정보센터",
+      "lng": 127.10857,
+      "lat": 37.46449,
+      "source": "UTIC",
+      "rn": "12921"
+    },
+    {
+      "cam_id": "L010161",
+      "cctv_id": "L010161",
+      "name": "수락지하도",
+      "center_name": "서울교통정보센터",
+      "lng": 127.05556,
+      "lat": 37.6865,
+      "source": "UTIC",
+      "rn": "12922"
+    },
+    {
+      "cam_id": "L010162",
+      "cctv_id": "L010162",
+      "name": "수색교",
+      "center_name": "서울교통정보센터",
+      "lng": 126.8872229,
+      "lat": 37.587286772,
+      "source": "UTIC",
+      "rn": "12923"
+    },
+    {
+      "cam_id": "L010164",
+      "cctv_id": "L010164",
+      "name": "수서IC",
+      "center_name": "서울교통정보센터",
+      "lng": 127.0981438,
+      "lat": 37.49277034,
+      "source": "UTIC",
+      "rn": "12924"
+    },
+    {
+      "cam_id": "L010165",
+      "cctv_id": "L010165",
+      "name": "수서역",
+      "center_name": "서울교통정보센터",
+      "lng": 127.10155,
+      "lat": 37.48706,
+      "source": "UTIC",
+      "rn": "12925"
+    },
+    {
+      "cam_id": "L010166",
+      "cctv_id": "L010166",
+      "name": "수유사거리",
+      "center_name": "서울교통정보센터",
+      "lng": 127.02318,
+      "lat": 37.63577,
+      "source": "UTIC",
+      "rn": "12926"
+    },
+    {
+      "cam_id": "L010168",
+      "cctv_id": "L010168",
+      "name": "시립동부병원",
+      "center_name": "서울교통정보센터",
+      "lng": 127.03056,
+      "lat": 37.57379,
+      "source": "UTIC",
+      "rn": "12927"
+    },
+    {
+      "cam_id": "L010169",
+      "cctv_id": "L010169",
+      "name": "시청",
+      "center_name": "서울교통정보센터",
+      "lng": 126.97762,
+      "lat": 37.56618,
+      "source": "UTIC",
+      "rn": "12928"
+    },
+    {
+      "cam_id": "L010170",
+      "cctv_id": "L010170",
+      "name": "시흥IC",
+      "center_name": "서울교통정보센터",
+      "lng": 126.898,
+      "lat": 37.47858,
+      "source": "UTIC",
+      "rn": "12929"
+    },
+    {
+      "cam_id": "L010171",
+      "cctv_id": "L010171",
+      "name": "시흥대교",
+      "center_name": "서울교통정보센터",
+      "lng": 126.89329,
+      "lat": 37.45234,
+      "source": "UTIC",
+      "rn": "12930"
+    },
+    {
+      "cam_id": "L010174",
+      "cctv_id": "L010174",
+      "name": "신당로터리",
+      "center_name": "서울교통정보센터",
+      "lng": 127.01645,
+      "lat": 37.5652,
+      "source": "UTIC",
+      "rn": "12931"
+    },
+    {
+      "cam_id": "L010175",
+      "cctv_id": "L010175",
+      "name": "신도림역",
+      "center_name": "서울교통정보센터",
+      "lng": 126.89041,
+      "lat": 37.51053,
+      "source": "UTIC",
+      "rn": "12932"
+    },
+    {
+      "cam_id": "L010417",
+      "cctv_id": "L010417",
+      "name": "신림사거리",
+      "center_name": "서울교통정보센터",
+      "lng": 126.92951,
+      "lat": 37.48443,
+      "source": "UTIC",
+      "rn": "12933"
+    },
+    {
+      "cam_id": "L010177",
+      "cctv_id": "L010177",
+      "name": "신사오거리",
+      "center_name": "서울교통정보센터",
+      "lng": 126.91594,
+      "lat": 37.59931,
+      "source": "UTIC",
+      "rn": "12934"
+    },
+    {
+      "cam_id": "L010178",
+      "cctv_id": "L010178",
+      "name": "신설로터리",
+      "center_name": "서울교통정보센터",
+      "lng": 127.0236,
+      "lat": 37.57557,
+      "source": "UTIC",
+      "rn": "12935"
+    },
+    {
+      "cam_id": "L010179",
+      "cctv_id": "L010179",
+      "name": "신영삼거리",
+      "center_name": "서울교통정보센터",
+      "lng": 126.96161,
+      "lat": 37.60341,
+      "source": "UTIC",
+      "rn": "12936"
+    },
+    {
+      "cam_id": "L010180",
+      "cctv_id": "L010180",
+      "name": "신월IC",
+      "center_name": "서울교통정보센터",
+      "lng": 126.83491,
+      "lat": 37.52593,
+      "source": "UTIC",
+      "rn": "12937"
+    },
+    {
+      "cam_id": "L010181",
+      "cctv_id": "L010181",
+      "name": "신정교동단",
+      "center_name": "서울교통정보센터",
+      "lng": 126.88184,
+      "lat": 37.51519,
+      "source": "UTIC",
+      "rn": "12938"
+    },
+    {
+      "cam_id": "L010182",
+      "cctv_id": "L010182",
+      "name": "신정네거리역",
+      "center_name": "서울교통정보센터",
+      "lng": 126.85202,
+      "lat": 37.52162,
+      "source": "UTIC",
+      "rn": "12939"
+    },
+    {
+      "cam_id": "L010183",
+      "cctv_id": "L010183",
+      "name": "신촌",
+      "center_name": "서울교통정보센터",
+      "lng": 126.93753,
+      "lat": 37.5549,
+      "source": "UTIC",
+      "rn": "12940"
+    },
+    {
+      "cam_id": "L010184",
+      "cctv_id": "L010184",
+      "name": "신풍",
+      "center_name": "서울교통정보센터",
+      "lng": 126.90864,
+      "lat": 37.50002,
+      "source": "UTIC",
+      "rn": "12941"
+    },
+    {
+      "cam_id": "L010186",
+      "cctv_id": "L010186",
+      "name": "안국역",
+      "center_name": "서울교통정보센터",
+      "lng": 126.98274,
+      "lat": 37.57541,
+      "source": "UTIC",
+      "rn": "12942"
+    },
+    {
+      "cam_id": "L010187",
+      "cctv_id": "L010187",
+      "name": "안암오거리",
+      "center_name": "서울교통정보센터",
+      "lng": 127.02972,
+      "lat": 37.58266,
+      "source": "UTIC",
+      "rn": "12943"
+    },
+    {
+      "cam_id": "L010188",
+      "cctv_id": "L010188",
+      "name": "안양교",
+      "center_name": "서울교통정보센터",
+      "lng": 126.87219,
+      "lat": 37.49232,
+      "source": "UTIC",
+      "rn": "12944"
+    },
+    {
+      "cam_id": "L010189",
+      "cctv_id": "L010189",
+      "name": "압구정R",
+      "center_name": "서울교통정보센터",
+      "lng": 127.02778,
+      "lat": 37.52724,
+      "source": "UTIC",
+      "rn": "12945"
+    },
+    {
+      "cam_id": "L010190",
+      "cctv_id": "L010190",
+      "name": "약수고가",
+      "center_name": "서울교통정보센터",
+      "lng": 127.01067,
+      "lat": 37.55512,
+      "source": "UTIC",
+      "rn": "12946"
+    },
+    {
+      "cam_id": "L010191",
+      "cctv_id": "L010191",
+      "name": "양재IC",
+      "center_name": "서울교통정보센터",
+      "lng": 127.0401726,
+      "lat": 37.46363635,
+      "source": "UTIC",
+      "rn": "12947"
+    },
+    {
+      "cam_id": "L010192",
+      "cctv_id": "L010192",
+      "name": "양재역",
+      "center_name": "서울교통정보센터",
+      "lng": 127.03394,
+      "lat": 37.48434,
+      "source": "UTIC",
+      "rn": "12948"
+    },
+    {
+      "cam_id": "L010195",
+      "cctv_id": "L010195",
+      "name": "양화대교남단",
+      "center_name": "서울교통정보센터",
+      "lng": 126.90038,
+      "lat": 37.53866,
+      "source": "UTIC",
+      "rn": "12949"
+    },
+    {
+      "cam_id": "L010194",
+      "cctv_id": "L010194",
+      "name": "양화대교북단",
+      "center_name": "서울교통정보센터",
+      "lng": 126.90816,
+      "lat": 37.54696,
+      "source": "UTIC",
+      "rn": "12950"
+    },
+    {
+      "cam_id": "L010198",
+      "cctv_id": "L010198",
+      "name": "어린이대공원역",
+      "center_name": "서울교통정보센터",
+      "lng": 127.07383,
+      "lat": 37.54717,
+      "source": "UTIC",
+      "rn": "12951"
+    },
+    {
+      "cam_id": "L010199",
+      "cctv_id": "L010199",
+      "name": "여의공원",
+      "center_name": "서울교통정보센터",
+      "lng": 126.92016,
+      "lat": 37.52557,
+      "source": "UTIC",
+      "rn": "12952"
+    },
+    {
+      "cam_id": "L010200",
+      "cctv_id": "L010200",
+      "name": "여의교남단",
+      "center_name": "서울교통정보센터",
+      "lng": 126.92683,
+      "lat": 37.51489,
+      "source": "UTIC",
+      "rn": "12953"
+    },
+    {
+      "cam_id": "L010201",
+      "cctv_id": "L010201",
+      "name": "여의교북단",
+      "center_name": "서울교통정보센터",
+      "lng": 126.92807,
+      "lat": 37.5171,
+      "source": "UTIC",
+      "rn": "12954"
+    },
+    {
+      "cam_id": "L010204",
+      "cctv_id": "L010204",
+      "name": "여의도국민은행",
+      "center_name": "서울교통정보센터",
+      "lng": 126.91874,
+      "lat": 37.52846,
+      "source": "UTIC",
+      "rn": "12955"
+    },
+    {
+      "cam_id": "L010205",
+      "cctv_id": "L010205",
+      "name": "여의하류IC",
+      "center_name": "서울교통정보센터",
+      "lng": 126.9082,
+      "lat": 37.53288,
+      "source": "UTIC",
+      "rn": "12956"
+    },
+    {
+      "cam_id": "L010426",
+      "cctv_id": "L010426",
+      "name": "역삼역",
+      "center_name": "서울교통정보센터",
+      "lng": 127.0365622,
+      "lat": 37.50071403,
+      "source": "UTIC",
+      "rn": "12957"
+    },
+    {
+      "cam_id": "L010207",
+      "cctv_id": "L010207",
+      "name": "역촌R",
+      "center_name": "서울교통정보센터",
+      "lng": 126.923,
+      "lat": 37.606,
+      "source": "UTIC",
+      "rn": "12958"
+    },
+    {
+      "cam_id": "L010208",
+      "cctv_id": "L010208",
+      "name": "연세대",
+      "center_name": "서울교통정보센터",
+      "lng": 126.93463,
+      "lat": 37.55975,
+      "source": "UTIC",
+      "rn": "12959"
+    },
+    {
+      "cam_id": "L010209",
+      "cctv_id": "L010209",
+      "name": "연신내",
+      "center_name": "서울교통정보센터",
+      "lng": 126.92125,
+      "lat": 37.61868,
+      "source": "UTIC",
+      "rn": "12960"
+    },
+    {
+      "cam_id": "L010210",
+      "cctv_id": "L010210",
+      "name": "연희IC",
+      "center_name": "서울교통정보센터",
+      "lng": 126.92919,
+      "lat": 37.56494,
+      "source": "UTIC",
+      "rn": "12961"
+    },
+    {
+      "cam_id": "L010211",
+      "cctv_id": "L010211",
+      "name": "염곡",
+      "center_name": "서울교통정보센터",
+      "lng": 127.04301,
+      "lat": 37.46609,
+      "source": "UTIC",
+      "rn": "12962"
+    },
+    {
+      "cam_id": "L010212",
+      "cctv_id": "L010212",
+      "name": "염곡IC",
+      "center_name": "서울교통정보센터",
+      "lng": 127.055515,
+      "lat": 37.459046,
+      "source": "UTIC",
+      "rn": "12963"
+    },
+    {
+      "cam_id": "L010213",
+      "cctv_id": "L010213",
+      "name": "염천교",
+      "center_name": "서울교통정보센터",
+      "lng": 126.971584,
+      "lat": 37.559516,
+      "source": "UTIC",
+      "rn": "12964"
+    },
+    {
+      "cam_id": "L010214",
+      "cctv_id": "L010214",
+      "name": "영동대교남단",
+      "center_name": "서울교통정보센터",
+      "lng": 127.05435,
+      "lat": 37.52605,
+      "source": "UTIC",
+      "rn": "12965"
+    },
+    {
+      "cam_id": "L010215",
+      "cctv_id": "L010215",
+      "name": "영동대교북단",
+      "center_name": "서울교통정보센터",
+      "lng": 127.05949,
+      "lat": 37.53383,
+      "source": "UTIC",
+      "rn": "12966"
+    },
+    {
+      "cam_id": "L010216",
+      "cctv_id": "L010216",
+      "name": "영동전화국",
+      "center_name": "서울교통정보센터",
+      "lng": 127.04439,
+      "lat": 37.50341,
+      "source": "UTIC",
+      "rn": "12967"
+    },
+    {
+      "cam_id": "L010431",
+      "cctv_id": "L010431",
+      "name": "영등포구청",
+      "center_name": "서울교통정보센터",
+      "lng": 126.89746,
+      "lat": 37.5279,
+      "source": "UTIC",
+      "rn": "12968"
+    },
+    {
+      "cam_id": "L010218",
+      "cctv_id": "L010218",
+      "name": "영등포시장",
+      "center_name": "서울교통정보센터",
+      "lng": 126.90475,
+      "lat": 37.51985,
+      "source": "UTIC",
+      "rn": "12969"
+    },
+    {
+      "cam_id": "L010219",
+      "cctv_id": "L010219",
+      "name": "영등포역",
+      "center_name": "서울교통정보센터",
+      "lng": 126.90712,
+      "lat": 37.51627,
+      "source": "UTIC",
+      "rn": "12970"
+    },
+    {
+      "cam_id": "L010220",
+      "cctv_id": "L010220",
+      "name": "영등포전화국R",
+      "center_name": "서울교통정보센터",
+      "lng": 126.90573,
+      "lat": 37.52575,
+      "source": "UTIC",
+      "rn": "12971"
+    },
+    {
+      "cam_id": "L010221",
+      "cctv_id": "L010221",
+      "name": "예일여고",
+      "center_name": "서울교통정보센터",
+      "lng": 126.9174863,
+      "lat": 37.6109312789,
+      "source": "UTIC",
+      "rn": "12972"
+    },
+    {
+      "cam_id": "L010609",
+      "cctv_id": "L010609",
+      "name": "오금교",
+      "center_name": "서울교통정보센터",
+      "lng": 126.874668,
+      "lat": 37.507264,
+      "source": "UTIC",
+      "rn": "12973"
+    },
+    {
+      "cam_id": "L010222",
+      "cctv_id": "L010222",
+      "name": "오금교서단",
+      "center_name": "서울교통정보센터",
+      "lng": 126.87221,
+      "lat": 37.50966,
+      "source": "UTIC",
+      "rn": "12974"
+    },
+    {
+      "cam_id": "L010223",
+      "cctv_id": "L010223",
+      "name": "오금사거리",
+      "center_name": "서울교통정보센터",
+      "lng": 127.12393,
+      "lat": 37.50448,
+      "source": "UTIC",
+      "rn": "12975"
+    },
+    {
+      "cam_id": "L010224",
+      "cctv_id": "L010224",
+      "name": "오류IC",
+      "center_name": "서울교통정보센터",
+      "lng": 126.84834,
+      "lat": 37.49831,
+      "source": "UTIC",
+      "rn": "12976"
+    },
+    {
+      "cam_id": "L010225",
+      "cctv_id": "L010225",
+      "name": "오륜R",
+      "center_name": "서울교통정보센터",
+      "lng": 127.1395,
+      "lat": 37.50694,
+      "source": "UTIC",
+      "rn": "12977"
+    },
+    {
+      "cam_id": "L010226",
+      "cctv_id": "L010226",
+      "name": "오목교",
+      "center_name": "서울교통정보센터",
+      "lng": 126.8812,
+      "lat": 37.52348,
+      "source": "UTIC",
+      "rn": "12978"
+    },
+    {
+      "cam_id": "L010227",
+      "cctv_id": "L010227",
+      "name": "온수",
+      "center_name": "서울교통정보센터",
+      "lng": 126.83714,
+      "lat": 37.4928,
+      "source": "UTIC",
+      "rn": "12979"
+    },
+    {
+      "cam_id": "L010229",
+      "cctv_id": "L010229",
+      "name": "올림픽공원",
+      "center_name": "서울교통정보센터",
+      "lng": 127.11248,
+      "lat": 37.5171,
+      "source": "UTIC",
+      "rn": "12980"
+    },
+    {
+      "cam_id": "L010231",
+      "cctv_id": "L010231",
+      "name": "올림픽대교남단",
+      "center_name": "서울교통정보센터",
+      "lng": 127.11764222,
+      "lat": 37.52571352,
+      "source": "UTIC",
+      "rn": "12981"
+    },
+    {
+      "cam_id": "L010233",
+      "cctv_id": "L010233",
+      "name": "왕십리역오거리",
+      "center_name": "서울교통정보센터",
+      "lng": 127.0352,
+      "lat": 37.56116,
+      "source": "UTIC",
+      "rn": "12982"
+    },
+    {
+      "cam_id": "L010234",
+      "cctv_id": "L010234",
+      "name": "외발산사거리",
+      "center_name": "서울교통정보센터",
+      "lng": 126.81685,
+      "lat": 37.55137,
+      "source": "UTIC",
+      "rn": "12983"
+    },
+    {
+      "cam_id": "L010235",
+      "cctv_id": "L010235",
+      "name": "용곡삼거리",
+      "center_name": "서울교통정보센터",
+      "lng": 127.08599,
+      "lat": 37.56936,
+      "source": "UTIC",
+      "rn": "12984"
+    },
+    {
+      "cam_id": "L010432",
+      "cctv_id": "L010432",
+      "name": "용비IC",
+      "center_name": "서울교통정보센터",
+      "lng": 127.02938,
+      "lat": 37.54256,
+      "source": "UTIC",
+      "rn": "12985"
+    },
+    {
+      "cam_id": "L010237",
+      "cctv_id": "L010237",
+      "name": "용산가족공원",
+      "center_name": "서울교통정보센터",
+      "lng": 126.9833,
+      "lat": 37.51958,
+      "source": "UTIC",
+      "rn": "12986"
+    },
+    {
+      "cam_id": "L010238",
+      "cctv_id": "L010238",
+      "name": "용산구청",
+      "center_name": "서울교통정보센터",
+      "lng": 126.96668,
+      "lat": 37.53805,
+      "source": "UTIC",
+      "rn": "12987"
+    },
+    {
+      "cam_id": "L010239",
+      "cctv_id": "L010239",
+      "name": "우신초교",
+      "center_name": "서울교통정보센터",
+      "lng": 126.91049,
+      "lat": 37.51087,
+      "source": "UTIC",
+      "rn": "12988"
+    },
+    {
+      "cam_id": "L010240",
+      "cctv_id": "L010240",
+      "name": "워커힐",
+      "center_name": "서울교통정보센터",
+      "lng": 127.10929,
+      "lat": 37.55151,
+      "source": "UTIC",
+      "rn": "12989"
+    },
+    {
+      "cam_id": "L010241",
+      "cctv_id": "L010241",
+      "name": "원남R",
+      "center_name": "서울교통정보센터",
+      "lng": 126.99715,
+      "lat": 37.57626,
+      "source": "UTIC",
+      "rn": "12990"
+    },
+    {
+      "cam_id": "L010242",
+      "cctv_id": "L010242",
+      "name": "원불교",
+      "center_name": "서울교통정보센터",
+      "lng": 126.96522,
+      "lat": 37.50744,
+      "source": "UTIC",
+      "rn": "12991"
+    },
+    {
+      "cam_id": "L010243",
+      "cctv_id": "L010243",
+      "name": "원효대교남단",
+      "center_name": "서울교통정보센터",
+      "lng": 126.93783,
+      "lat": 37.52305,
+      "source": "UTIC",
+      "rn": "12992"
+    },
+    {
+      "cam_id": "L010244",
+      "cctv_id": "L010244",
+      "name": "월계1교",
+      "center_name": "서울교통정보센터",
+      "lng": 127.06254,
+      "lat": 37.63227,
+      "source": "UTIC",
+      "rn": "12993"
+    },
+    {
+      "cam_id": "L010245",
+      "cctv_id": "L010245",
+      "name": "월계2교",
+      "center_name": "서울교통정보센터",
+      "lng": 127.04967,
+      "lat": 37.6244,
+      "source": "UTIC",
+      "rn": "12994"
+    },
+    {
+      "cam_id": "L010246",
+      "cctv_id": "L010246",
+      "name": "월계진아",
+      "center_name": "서울교통정보센터",
+      "lng": 127.06434,
+      "lat": 37.62847,
+      "source": "UTIC",
+      "rn": "12995"
+    },
+    {
+      "cam_id": "L010247",
+      "cctv_id": "L010247",
+      "name": "월곡역",
+      "center_name": "서울교통정보센터",
+      "lng": 127.041757,
+      "lat": 37.602264,
+      "source": "UTIC",
+      "rn": "12996"
+    },
+    {
+      "cam_id": "L010017",
+      "cctv_id": "L010017",
+      "name": "월드컵경기장",
+      "center_name": "서울교통정보센터",
+      "lng": 126.89327995309,
+      "lat": 37.5676406,
+      "source": "UTIC",
+      "rn": "12997"
+    },
+    {
+      "cam_id": "L010248",
+      "cctv_id": "L010248",
+      "name": "월드컵정문",
+      "center_name": "서울교통정보센터",
+      "lng": 126.8945,
+      "lat": 37.56899,
+      "source": "UTIC",
+      "rn": "12998"
+    },
+    {
+      "cam_id": "L010249",
+      "cctv_id": "L010249",
+      "name": "월릉교",
+      "center_name": "서울교통정보센터",
+      "lng": 127.07224,
+      "lat": 37.61667,
+      "source": "UTIC",
+      "rn": "12999"
+    },
+    {
+      "cam_id": "L010252",
+      "cctv_id": "L010252",
+      "name": "은마아파트",
+      "center_name": "서울교통정보센터",
+      "lng": 127.060775,
+      "lat": 37.498892,
+      "source": "UTIC",
+      "rn": "13000"
+    },
+    {
+      "cam_id": "L010253",
+      "cctv_id": "L010253",
+      "name": "은평구청",
+      "center_name": "서울교통정보센터",
+      "lng": 126.92731,
+      "lat": 37.6017,
+      "source": "UTIC",
+      "rn": "13001"
+    },
+    {
+      "cam_id": "L010254",
+      "cctv_id": "L010254",
+      "name": "을지로1가",
+      "center_name": "서울교통정보센터",
+      "lng": 126.98297,
+      "lat": 37.5662,
+      "source": "UTIC",
+      "rn": "13002"
+    },
+    {
+      "cam_id": "L010255",
+      "cctv_id": "L010255",
+      "name": "을지로2가",
+      "center_name": "서울교통정보센터",
+      "lng": 126.98728,
+      "lat": 37.56637,
+      "source": "UTIC",
+      "rn": "13003"
+    },
+    {
+      "cam_id": "L010256",
+      "cctv_id": "L010256",
+      "name": "을지로3R",
+      "center_name": "서울교통정보센터",
+      "lng": 126.99008,
+      "lat": 37.56644,
+      "source": "UTIC",
+      "rn": "13004"
+    },
+    {
+      "cam_id": "L010257",
+      "cctv_id": "L010257",
+      "name": "을지로4가",
+      "center_name": "서울교통정보센터",
+      "lng": 126.99799,
+      "lat": 37.56652,
+      "source": "UTIC",
+      "rn": "13005"
+    },
+    {
+      "cam_id": "L010258",
+      "cctv_id": "L010258",
+      "name": "을지병원R",
+      "center_name": "서울교통정보센터",
+      "lng": 127.02792,
+      "lat": 37.51993,
+      "source": "UTIC",
+      "rn": "13006"
+    },
+    {
+      "cam_id": "L010259",
+      "cctv_id": "L010259",
+      "name": "응봉고개",
+      "center_name": "서울교통정보센터",
+      "lng": 127.03439,
+      "lat": 37.55323,
+      "source": "UTIC",
+      "rn": "13007"
+    },
+    {
+      "cam_id": "L010260",
+      "cctv_id": "L010260",
+      "name": "응암오거리",
+      "center_name": "서울교통정보센터",
+      "lng": 126.917162,
+      "lat": 37.590201,
+      "source": "UTIC",
+      "rn": "13008"
+    },
+    {
+      "cam_id": "L010261",
+      "cctv_id": "L010261",
+      "name": "이대역",
+      "center_name": "서울교통정보센터",
+      "lng": 126.94573,
+      "lat": 37.5566,
+      "source": "UTIC",
+      "rn": "13009"
+    },
+    {
+      "cam_id": "L010262",
+      "cctv_id": "L010262",
+      "name": "이수교",
+      "center_name": "서울교통정보센터",
+      "lng": 126.98509,
+      "lat": 37.49925,
+      "source": "UTIC",
+      "rn": "13010"
+    },
+    {
+      "cam_id": "L010263",
+      "cctv_id": "L010263",
+      "name": "이수역",
+      "center_name": "서울교통정보센터",
+      "lng": 126.9824,
+      "lat": 37.4846,
+      "source": "UTIC",
+      "rn": "13011"
+    },
+    {
+      "cam_id": "L010264",
+      "cctv_id": "L010264",
+      "name": "이화사거리",
+      "center_name": "서울교통정보센터",
+      "lng": 127.00235,
+      "lat": 37.576,
+      "source": "UTIC",
+      "rn": "13012"
+    },
+    {
+      "cam_id": "L010265",
+      "cctv_id": "L010265",
+      "name": "일원터널",
+      "center_name": "서울교통정보센터",
+      "lng": 127.07568,
+      "lat": 37.48654,
+      "source": "UTIC",
+      "rn": "13013"
+    },
+    {
+      "cam_id": "L010268",
+      "cctv_id": "L010268",
+      "name": "잠실대교북단",
+      "center_name": "서울교통정보센터",
+      "lng": 127.08826,
+      "lat": 37.52834,
+      "source": "UTIC",
+      "rn": "13014"
+    },
+    {
+      "cam_id": "L010269",
+      "cctv_id": "L010269",
+      "name": "잠실역",
+      "center_name": "서울교통정보센터",
+      "lng": 127.0988,
+      "lat": 37.51424,
+      "source": "UTIC",
+      "rn": "13015"
+    },
+    {
+      "cam_id": "L010270",
+      "cctv_id": "L010270",
+      "name": "잠원IC",
+      "center_name": "서울교통정보센터",
+      "lng": 127.01567,
+      "lat": 37.50955,
+      "source": "UTIC",
+      "rn": "13016"
+    },
+    {
+      "cam_id": "L010271",
+      "cctv_id": "L010271",
+      "name": "장승배기",
+      "center_name": "서울교통정보센터",
+      "lng": 126.93955,
+      "lat": 37.5052,
+      "source": "UTIC",
+      "rn": "13017"
+    },
+    {
+      "cam_id": "L010272",
+      "cctv_id": "L010272",
+      "name": "장안R",
+      "center_name": "서울교통정보센터",
+      "lng": 127.07193,
+      "lat": 37.5725,
+      "source": "UTIC",
+      "rn": "13018"
+    },
+    {
+      "cam_id": "L010273",
+      "cctv_id": "L010273",
+      "name": "장안교",
+      "center_name": "서울교통정보센터",
+      "lng": 127.0795,
+      "lat": 37.58155,
+      "source": "UTIC",
+      "rn": "13019"
+    },
+    {
+      "cam_id": "L010274",
+      "cctv_id": "L010274",
+      "name": "장지교",
+      "center_name": "서울교통정보센터",
+      "lng": 127.126726,
+      "lat": 37.475745,
+      "source": "UTIC",
+      "rn": "13020"
+    },
+    {
+      "cam_id": "L010275",
+      "cctv_id": "L010275",
+      "name": "장충로터리",
+      "center_name": "서울교통정보센터",
+      "lng": 127.00593,
+      "lat": 37.55924,
+      "source": "UTIC",
+      "rn": "13021"
+    },
+    {
+      "cam_id": "L010276",
+      "cctv_id": "L010276",
+      "name": "장평교",
+      "center_name": "서울교통정보센터",
+      "lng": 127.07944,
+      "lat": 37.57187,
+      "source": "UTIC",
+      "rn": "13022"
+    },
+    {
+      "cam_id": "L010277",
+      "cctv_id": "L010277",
+      "name": "전농",
+      "center_name": "서울교통정보센터",
+      "lng": 127.05787,
+      "lat": 37.57775,
+      "source": "UTIC",
+      "rn": "13023"
+    },
+    {
+      "cam_id": "L010279",
+      "cctv_id": "L010279",
+      "name": "정의여중",
+      "center_name": "서울교통정보센터",
+      "lng": 127.03643,
+      "lat": 37.6511,
+      "source": "UTIC",
+      "rn": "13024"
+    },
+    {
+      "cam_id": "L010459",
+      "cctv_id": "L010459",
+      "name": "종로1가",
+      "center_name": "서울교통정보센터",
+      "lng": 126.98323,
+      "lat": 37.57003,
+      "source": "UTIC",
+      "rn": "13025"
+    },
+    {
+      "cam_id": "L010281",
+      "cctv_id": "L010281",
+      "name": "종로2가",
+      "center_name": "서울교통정보센터",
+      "lng": 126.98803,
+      "lat": 37.5704,
+      "source": "UTIC",
+      "rn": "13026"
+    },
+    {
+      "cam_id": "L010159",
+      "cctv_id": "L010159",
+      "name": "종로3가",
+      "center_name": "서울교통정보센터",
+      "lng": 126.9920452,
+      "lat": 37.5702045,
+      "source": "UTIC",
+      "rn": "13027"
+    },
+    {
+      "cam_id": "L010460",
+      "cctv_id": "L010460",
+      "name": "종로4가",
+      "center_name": "서울교통정보센터",
+      "lng": 126.9985,
+      "lat": 37.57102,
+      "source": "UTIC",
+      "rn": "13028"
+    },
+    {
+      "cam_id": "L010284",
+      "cctv_id": "L010284",
+      "name": "종합운동장",
+      "center_name": "서울교통정보센터",
+      "lng": 127.07795,
+      "lat": 37.51202,
+      "source": "UTIC",
+      "rn": "13029"
+    },
+    {
+      "cam_id": "L010285",
+      "cctv_id": "L010285",
+      "name": "중계역",
+      "center_name": "서울교통정보센터",
+      "lng": 127.06429,
+      "lat": 37.64547,
+      "source": "UTIC",
+      "rn": "13030"
+    },
+    {
+      "cam_id": "L010286",
+      "cctv_id": "L010286",
+      "name": "중랑교",
+      "center_name": "서울교통정보센터",
+      "lng": 127.06956,
+      "lat": 37.59211,
+      "source": "UTIC",
+      "rn": "13031"
+    },
+    {
+      "cam_id": "L010287",
+      "cctv_id": "L010287",
+      "name": "중화중교",
+      "center_name": "서울교통정보센터",
+      "lng": 127.09495,
+      "lat": 37.58629,
+      "source": "UTIC",
+      "rn": "13032"
+    },
+    {
+      "cam_id": "L010288",
+      "cctv_id": "L010288",
+      "name": "증산교",
+      "center_name": "서울교통정보센터",
+      "lng": 126.90307,
+      "lat": 37.5773,
+      "source": "UTIC",
+      "rn": "13033"
+    },
+    {
+      "cam_id": "L010289",
+      "cctv_id": "L010289",
+      "name": "증산역",
+      "center_name": "서울교통정보센터",
+      "lng": 126.9106,
+      "lat": 37.58451,
+      "source": "UTIC",
+      "rn": "13034"
+    },
+    {
+      "cam_id": "L010290",
+      "cctv_id": "L010290",
+      "name": "창덕궁R",
+      "center_name": "서울교통정보센터",
+      "lng": 126.99,
+      "lat": 37.57729,
+      "source": "UTIC",
+      "rn": "13035"
+    },
+    {
+      "cam_id": "L010291",
+      "cctv_id": "L010291",
+      "name": "창동교",
+      "center_name": "서울교통정보센터",
+      "lng": 127.05486,
+      "lat": 37.65324,
+      "source": "UTIC",
+      "rn": "13036"
+    },
+    {
+      "cam_id": "L010292",
+      "cctv_id": "L010292",
+      "name": "천호대교남단",
+      "center_name": "서울교통정보센터",
+      "lng": 127.11892,
+      "lat": 37.54111,
+      "source": "UTIC",
+      "rn": "13037"
+    },
+    {
+      "cam_id": "L010293",
+      "cctv_id": "L010293",
+      "name": "천호사거리",
+      "center_name": "서울교통정보센터",
+      "lng": 127.12317,
+      "lat": 37.53849,
+      "source": "UTIC",
+      "rn": "13038"
+    },
+    {
+      "cam_id": "L010294",
+      "cctv_id": "L010294",
+      "name": "철도빌딩",
+      "center_name": "서울교통정보센터",
+      "lng": 126.96921,
+      "lat": 37.55323,
+      "source": "UTIC",
+      "rn": "13039"
+    },
+    {
+      "cam_id": "L010295",
+      "cctv_id": "L010295",
+      "name": "철산대교",
+      "center_name": "서울교통정보센터",
+      "lng": 126.87825,
+      "lat": 37.47533,
+      "source": "UTIC",
+      "rn": "13040"
+    },
+    {
+      "cam_id": "L010296",
+      "cctv_id": "L010296",
+      "name": "청계2가",
+      "center_name": "서울교통정보센터",
+      "lng": 126.98737,
+      "lat": 37.56783,
+      "source": "UTIC",
+      "rn": "13041"
+    },
+    {
+      "cam_id": "L010297",
+      "cctv_id": "L010297",
+      "name": "청계5가",
+      "center_name": "서울교통정보센터",
+      "lng": 127.00227,
+      "lat": 37.56993,
+      "source": "UTIC",
+      "rn": "13042"
+    },
+    {
+      "cam_id": "L010298",
+      "cctv_id": "L010298",
+      "name": "청계6가",
+      "center_name": "서울교통정보센터",
+      "lng": 127.00838,
+      "lat": 37.5709,
+      "source": "UTIC",
+      "rn": "13043"
+    },
+    {
+      "cam_id": "L010299",
+      "cctv_id": "L010299",
+      "name": "청계8가",
+      "center_name": "서울교통정보센터",
+      "lng": 127.02354,
+      "lat": 37.57205,
+      "source": "UTIC",
+      "rn": "13044"
+    },
+    {
+      "cam_id": "L010482",
+      "cctv_id": "L010482",
+      "name": "청계광장",
+      "center_name": "서울교통정보센터",
+      "lng": 126.97863,
+      "lat": 37.56889,
+      "source": "UTIC",
+      "rn": "13045"
+    },
+    {
+      "cam_id": "L010300",
+      "cctv_id": "L010300",
+      "name": "청담공원",
+      "center_name": "서울교통정보센터",
+      "lng": 127.05061,
+      "lat": 37.51867,
+      "source": "UTIC",
+      "rn": "13046"
+    },
+    {
+      "cam_id": "L010301",
+      "cctv_id": "L010301",
+      "name": "청담교",
+      "center_name": "서울교통정보센터",
+      "lng": 127.06543,
+      "lat": 37.5182,
+      "source": "UTIC",
+      "rn": "13047"
+    },
+    {
+      "cam_id": "L010302",
+      "cctv_id": "L010302",
+      "name": "청담대교북단",
+      "center_name": "서울교통정보센터",
+      "lng": 127.06685,
+      "lat": 37.53133,
+      "source": "UTIC",
+      "rn": "13048"
+    },
+    {
+      "cam_id": "L010303",
+      "cctv_id": "L010303",
+      "name": "청담사거리",
+      "center_name": "서울교통정보센터",
+      "lng": 127.04751,
+      "lat": 37.52448,
+      "source": "UTIC",
+      "rn": "13049"
+    },
+    {
+      "cam_id": "L010304",
+      "cctv_id": "L010304",
+      "name": "청량리",
+      "center_name": "서울교통정보센터",
+      "lng": 127.046,
+      "lat": 37.58,
+      "source": "UTIC",
+      "rn": "13050"
+    },
+    {
+      "cam_id": "L010305",
+      "cctv_id": "L010305",
+      "name": "청운초교",
+      "center_name": "서울교통정보센터",
+      "lng": 126.970233,
+      "lat": 37.585115,
+      "source": "UTIC",
+      "rn": "13051"
+    },
+    {
+      "cam_id": "L010306",
+      "cctv_id": "L010306",
+      "name": "충정로",
+      "center_name": "서울교통정보센터",
+      "lng": 126.96293,
+      "lat": 37.55976,
+      "source": "UTIC",
+      "rn": "13052"
+    },
+    {
+      "cam_id": "L010307",
+      "cctv_id": "L010307",
+      "name": "코엑스",
+      "center_name": "서울교통정보센터",
+      "lng": 127.06079,
+      "lat": 37.5141,
+      "source": "UTIC",
+      "rn": "13053"
+    },
+    {
+      "cam_id": "L010308",
+      "cctv_id": "L010308",
+      "name": "탄천1교",
+      "center_name": "서울교통정보센터",
+      "lng": 127.08075,
+      "lat": 37.49949,
+      "source": "UTIC",
+      "rn": "13054"
+    },
+    {
+      "cam_id": "L010309",
+      "cctv_id": "L010309",
+      "name": "탄천2교",
+      "center_name": "서울교통정보센터",
+      "lng": 127.07052,
+      "lat": 37.50181,
+      "source": "UTIC",
+      "rn": "13055"
+    },
+    {
+      "cam_id": "L010311",
+      "cctv_id": "L010311",
+      "name": "태양아파트",
+      "center_name": "서울교통정보센터",
+      "lng": 127.04411,
+      "lat": 37.57223,
+      "source": "UTIC",
+      "rn": "13056"
+    },
+    {
+      "cam_id": "L010312",
+      "cctv_id": "L010312",
+      "name": "테크노마트",
+      "center_name": "서울교통정보센터",
+      "lng": 127.09592,
+      "lat": 37.53527,
+      "source": "UTIC",
+      "rn": "13057"
+    },
+    {
+      "cam_id": "L010313",
+      "cctv_id": "L010313",
+      "name": "퇴계2가",
+      "center_name": "서울교통정보센터",
+      "lng": 126.99109,
+      "lat": 37.56169,
+      "source": "UTIC",
+      "rn": "13058"
+    },
+    {
+      "cam_id": "L010477",
+      "cctv_id": "L010477",
+      "name": "퇴계4가",
+      "center_name": "서울교통정보센터",
+      "lng": 126.99886,
+      "lat": 37.56248,
+      "source": "UTIC",
+      "rn": "13059"
+    },
+    {
+      "cam_id": "L010315",
+      "cctv_id": "L010315",
+      "name": "퇴계5가",
+      "center_name": "서울교통정보센터",
+      "lng": 127.002131,
+      "lat": 37.562849,
+      "source": "UTIC",
+      "rn": "13060"
+    },
+    {
+      "cam_id": "L010316",
+      "cctv_id": "L010316",
+      "name": "포스코",
+      "center_name": "서울교통정보센터",
+      "lng": 127.05675,
+      "lat": 37.50722,
+      "source": "UTIC",
+      "rn": "13061"
+    },
+    {
+      "cam_id": "L010479",
+      "cctv_id": "L010479",
+      "name": "하계역",
+      "center_name": "서울교통정보센터",
+      "lng": 127.06808,
+      "lat": 37.6357,
+      "source": "UTIC",
+      "rn": "13062"
+    },
+    {
+      "cam_id": "L010318",
+      "cctv_id": "L010318",
+      "name": "학여울역",
+      "center_name": "서울교통정보센터",
+      "lng": 127.0703,
+      "lat": 37.49641,
+      "source": "UTIC",
+      "rn": "13063"
+    },
+    {
+      "cam_id": "L010481",
+      "cctv_id": "L010481",
+      "name": "한강대교남단",
+      "center_name": "서울교통정보센터",
+      "lng": 126.95552,
+      "lat": 37.51346,
+      "source": "UTIC",
+      "rn": "13064"
+    },
+    {
+      "cam_id": "L010480",
+      "cctv_id": "L010480",
+      "name": "한강대교북단",
+      "center_name": "서울교통정보센터",
+      "lng": 126.96152,
+      "lat": 37.52268,
+      "source": "UTIC",
+      "rn": "13065"
+    },
+    {
+      "cam_id": "L010321",
+      "cctv_id": "L010321",
+      "name": "한강중학교",
+      "center_name": "서울교통정보센터",
+      "lng": 126.99199,
+      "lat": 37.52651,
+      "source": "UTIC",
+      "rn": "13066"
+    },
+    {
+      "cam_id": "L010322",
+      "cctv_id": "L010322",
+      "name": "한남고가",
+      "center_name": "서울교통정보센터",
+      "lng": 127.00729,
+      "lat": 37.53337,
+      "source": "UTIC",
+      "rn": "13067"
+    },
+    {
+      "cam_id": "L010487",
+      "cctv_id": "L010487",
+      "name": "한남대교남단",
+      "center_name": "서울교통정보센터",
+      "lng": 127.01665,
+      "lat": 37.52367,
+      "source": "UTIC",
+      "rn": "13068"
+    },
+    {
+      "cam_id": "L010486",
+      "cctv_id": "L010486",
+      "name": "한남대교남단2",
+      "center_name": "서울교통정보센터",
+      "lng": 127.01654,
+      "lat": 37.52377,
+      "source": "UTIC",
+      "rn": "13069"
+    },
+    {
+      "cam_id": "L010325",
+      "cctv_id": "L010325",
+      "name": "한성대입구",
+      "center_name": "서울교통정보센터",
+      "lng": 127.00595,
+      "lat": 37.58822,
+      "source": "UTIC",
+      "rn": "13070"
+    },
+    {
+      "cam_id": "L010326",
+      "cctv_id": "L010326",
+      "name": "한양대",
+      "center_name": "서울교통정보센터",
+      "lng": 127.04326,
+      "lat": 37.55699,
+      "source": "UTIC",
+      "rn": "13071"
+    },
+    {
+      "cam_id": "L010327",
+      "cctv_id": "L010327",
+      "name": "합정역",
+      "center_name": "서울교통정보센터",
+      "lng": 126.91345,
+      "lat": 37.54895,
+      "source": "UTIC",
+      "rn": "13072"
+    },
+    {
+      "cam_id": "L010328",
+      "cctv_id": "L010328",
+      "name": "행주대교남단",
+      "center_name": "서울교통정보센터",
+      "lng": 126.80435,
+      "lat": 37.59221,
+      "source": "UTIC",
+      "rn": "13073"
+    },
+    {
+      "cam_id": "L010329",
+      "cctv_id": "L010329",
+      "name": "홍남교",
+      "center_name": "서울교통정보센터",
+      "lng": 126.92613,
+      "lat": 37.57554,
+      "source": "UTIC",
+      "rn": "13074"
+    },
+    {
+      "cam_id": "L010331",
+      "cctv_id": "L010331",
+      "name": "홍은",
+      "center_name": "서울교통정보센터",
+      "lng": 126.94111,
+      "lat": 37.59151,
+      "source": "UTIC",
+      "rn": "13075"
+    },
+    {
+      "cam_id": "L010332",
+      "cctv_id": "L010332",
+      "name": "화곡역",
+      "center_name": "서울교통정보센터",
+      "lng": 126.84018,
+      "lat": 37.5417,
+      "source": "UTIC",
+      "rn": "13076"
+    },
+    {
+      "cam_id": "L010333",
+      "cctv_id": "L010333",
+      "name": "화곡입구",
+      "center_name": "서울교통정보센터",
+      "lng": 126.82633,
+      "lat": 37.53924,
+      "source": "UTIC",
+      "rn": "13077"
+    },
+    {
+      "cam_id": "L010334",
+      "cctv_id": "L010334",
+      "name": "화랑대사거리",
+      "center_name": "서울교통정보센터",
+      "lng": 127.0875,
+      "lat": 37.6215,
+      "source": "UTIC",
+      "rn": "13078"
+    },
+    {
+      "cam_id": "L010336",
+      "cctv_id": "L010336",
+      "name": "화양고가",
+      "center_name": "서울교통정보센터",
+      "lng": 127.06748,
+      "lat": 37.54868,
+      "source": "UTIC",
+      "rn": "13079"
+    },
+    {
+      "cam_id": "L010337",
+      "cctv_id": "L010337",
+      "name": "회기역",
+      "center_name": "서울교통정보센터",
+      "lng": 127.05591,
+      "lat": 37.59022,
+      "source": "UTIC",
+      "rn": "13080"
+    },
+    {
+      "cam_id": "L010338",
+      "cctv_id": "L010338",
+      "name": "회현R",
+      "center_name": "서울교통정보센터",
+      "lng": 126.98263,
+      "lat": 37.56023,
+      "source": "UTIC",
+      "rn": "13081"
+    },
+    {
+      "cam_id": "L010340",
+      "cctv_id": "L010340",
+      "name": "힐튼호텔",
+      "center_name": "서울교통정보센터",
+      "lng": 126.97664,
+      "lat": 37.55601,
+      "source": "UTIC",
+      "rn": "13082"
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 venv
 docs
-data/
+/data/
 runs/
 *.pt
 
@@ -9,12 +9,22 @@ a_detector/*_raw/
 a_detector/road_hazard_finetune/train/
 a_detector/road_hazard_finetune/valid/
 a_detector/road_hazard_finetune/test/
+a_detector/road_hazard_v2/train/
+a_detector/road_hazard_v2/valid/
+a_detector/road_hazard_v2/test/
+a_detector/road_hazard_v3/train/
+a_detector/road_hazard_v3/valid/
+a_detector/road_hazard_v3/test/
+a_detector/kickboard_new/test/
+a_detector/kickboard_new/train/
+a_detector/kickboard_new/valid/
 
 # 파이썬 캐시 파일
 __pycache__/
 *.pyc
 known_faces/*.jpg
 known_faces/*.png
-c_person_risk/*.mp4.DS_Store
+c_person_risk/*.mp4
+.DS_Store
 .env
-server/node_modules/
+node_modules/

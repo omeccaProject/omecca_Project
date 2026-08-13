@@ -29,8 +29,7 @@ class StationaryObjectTracker:
 
     def update(self, detections, now):
         events = []
-        target_classes = DEBRIS_CLASSES  # 킥보드 모델 클래스명으로 지정
-        current_dets = [d for d in detections if d["class"] in target_classes]
+        current_dets = [d for d in detections if d["class"] in DEBRIS_CLASSES]
 
         matched_ids = set()
 
@@ -46,9 +45,15 @@ class StationaryObjectTracker:
             if best_match_id is not None:
                 self.candidates[best_match_id]["bbox"] = det["bbox"]
                 self.candidates[best_match_id]["last_seen"] = now
+                self.candidates[best_match_id]["class"] = det["class"]
                 matched_ids.add(best_match_id)
 
                 duration = now - self.candidates[best_match_id]["first_seen"]
+
+                # ★추가: 진행 상황 로그 (2초 단위로만 찍어서 너무 시끄럽지 않게)
+                if int(duration) % 2 == 0:
+                    print(f"  ⏱️  후보 추적 중: {det['class']} · {duration:.1f}초 / {self.threshold_sec}초")
+
                 if duration >= self.threshold_sec and best_match_id not in self.already_alerted:
                     self.already_alerted.add(best_match_id)
                     events.append({
@@ -61,9 +66,11 @@ class StationaryObjectTracker:
             else:
                 self.candidates[self.next_id] = {
                     "bbox": det["bbox"],
+                    "class": det["class"],
                     "first_seen": now,
                     "last_seen": now
                 }
+                print(f"  🆕 낙하물 후보 등록: {det['class']} (conf={det['confidence']})")
                 matched_ids.add(self.next_id)
                 self.next_id += 1
 
@@ -72,6 +79,7 @@ class StationaryObjectTracker:
             if now - cand["last_seen"] > 3 and cid not in matched_ids
         ]
         for cid in stale_ids:
+            print(f"  ❌ 후보 소멸: {self.candidates[cid]['class']} (화면에서 사라짐)")
             del self.candidates[cid]
             self.already_alerted.discard(cid)
 
