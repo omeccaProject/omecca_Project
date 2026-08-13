@@ -1,8 +1,14 @@
 import cv2
 import time
+import os
 from face_detect import FaceDetector
 from weapon_detect import WeaponDetector
 from event_publisher import send_event
+
+# 스크립트 파일 위치 기준 절대 경로 자동 계산 (경로 폴백 방지)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+MODEL_PATH = os.path.join(BASE_DIR, "models", "best.pt")
+VIDEO_PATH = os.path.join(BASE_DIR, "1sample.mp4")
 
 # 9클래스 흉기 -> B파트 규격 2클래스(knife, blunt_weapon) 매핑
 CLASS_MAPPER = {
@@ -17,9 +23,10 @@ CLASS_MAPPER = {
 }
 
 face_detector = FaceDetector()
-weapon_detector = WeaponDetector("models/best.pt")
+weapon_detector = WeaponDetector(MODEL_PATH)
 
-cap = cv2.VideoCapture("1sample.mp4")
+# 영상 파일 존재 확인 후 로드
+cap = cv2.VideoCapture(VIDEO_PATH if os.path.exists(VIDEO_PATH) else "1sample.mp4")
 
 frame_count = 0
 skip_frames = 3
