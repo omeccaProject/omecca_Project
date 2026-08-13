@@ -7,43 +7,39 @@ from event_publisher import send_event
 face_detector = FaceDetector()
 weapon_detector = WeaponDetector("models/best.pt")
 
-cap = cv2.VideoCapture("sample.mp4")
+cap = cv2.VideoCapture("1sample.mp4")
 
 frame_count = 0
 skip_frames = 3
 current_faces = []
 
-# 이벤트 중복 발송 방지용 타임스탬프 저장소
 last_sent_time = {
-    "WANTED_PERSON": {},  # key: name, value: last_time
-    "WEAPON": 0            # value: last_time
+    "WANTED_PERSON": {},
+    "WEAPON": 0
 }
-COOLDOWN_SEC = 3.0  # 동일 이벤트 재전송 대기 시간(초)
+COOLDOWN_SEC = 3.0
 
-last_pkl_check = 0          # ← 추가: Hot-Reload 폴링 체크용
-PKL_CHECK_INTERVAL = 5      # ← 추가: 5초마다 한 번만 pkl 변경 확인 (매 프레임 확인 X)
-
+last_pkl_check = 0
+PKL_CHECK_INTERVAL = 5
 
 def resize_to_fit(frame, max_width=720, max_height=1280):
-    """세로/가로 어떤 영상이든 비율 유지하면서 화면에 맞게 축소"""
     h, w = frame.shape[:2]
     scale = min(max_width / w, max_height / h, 1.0)
     if scale < 1.0:
         frame = cv2.resize(frame, (int(w * scale), int(h * scale)))
     return frame
 
-
 while cap.isOpened():
     ret, frame = cap.read()
     if not ret:
-        break
+        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+        continue
 
-    frame = resize_to_fit(frame)  # ← 세로 영상 잘림 방지
-
+    frame = resize_to_fit(frame)
     frame_count += 1
     current_time = time.time()
 
-    # 0. Hot-Reload 폴링: 5초 간격으로 pkl 파일 변경 여부 확인 후, 바뀌었으면 자동 재로드
+    # 0. Hot-Reload 폴링 감지
     if current_time - last_pkl_check > PKL_CHECK_INTERVAL:
         face_detector.check_and_reload()
         last_pkl_check = current_time
@@ -65,14 +61,14 @@ while cap.isOpened():
         cv2.putText(frame, f"WEAPON: {w['label']}", (x1, y1 - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
 
-    # 2. 얼굴 인식 및 이벤트 발행 (프레임 스킵)
+    # 2. Person-Crop 2단계 얼굴 인식 및 이벤트 발행 (프레임 스킵)
     if frame_count % skip_frames == 0:
-        small_frame = cv2.resize(frame, (0, 0), fx=0.5, fy=0.5)
-        rgb_small_frame = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
-        current_faces = face_detector.detect_faces(rgb_small_frame)
+        # fx=0.5 축소 단계 제거 및 원본 Crop 100% 탐지 적용
+        current_faces = face_detector.detect_faces_with_person_crop(frame, person_conf=0.35)
 
     for f in current_faces:
-        top, right, bottom, left = [coord * 2 for coord in f["location"]]
+        # *2 배율 복원 제거 (detect_faces_with_person_crop에서 절대좌표 산출 완료)
+        top, right, bottom, left = f["location"]
         name = f["name"]
         score = f["faceMatchScore"]
 
@@ -90,7 +86,7 @@ while cap.isOpened():
                 )
                 last_sent_time["WANTED_PERSON"][name] = current_time
 
-        color = (0, 0, 255) if name != "Unknown" else (255, 0, 0)
+        color = (0, 255, 0) if name != "Unknown" else (255, 0, 0)
         cv2.rectangle(frame, (left, top), (right, bottom), color, 2)
         cv2.putText(frame, f"{name} ({score})", (left, top - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
