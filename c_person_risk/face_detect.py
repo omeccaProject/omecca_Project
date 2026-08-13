@@ -13,6 +13,7 @@ class FaceDetector:
         self.known_ids = []
         self.known_names = []
         self.known_embeddings = []
+        self.last_mtime = 0
         self.load_db()
 
     def load_db(self):
@@ -20,6 +21,7 @@ class FaceDetector:
             print(f"[WARN] 수배자 DB 파일 없음: {self.db_path}")
             return
         try:
+            self.last_mtime = os.path.getmtime(self.db_path)
             with open(self.db_path, "rb") as f:
                 data = pickle.load(f)
             
@@ -45,6 +47,13 @@ class FaceDetector:
             print(f"[INFO] 수배자 DB 로드 완료: {len(self.known_ids)}명 ({self.known_names})")
         except Exception as e:
             print(f"[ERROR] DB 로드 실패: {e}")
+
+    def check_and_reload(self):
+        if os.path.exists(self.db_path):
+            current_mtime = os.path.getmtime(self.db_path)
+            if current_mtime > self.last_mtime:
+                print(f"[INFO] 수배자 DB 변동 감지 -> Hot Reload 실행")
+                self.load_db()
 
     def detect_faces(self, frame, person_boxes=None):
         rgb_frame = frame[:, :, ::-1]
