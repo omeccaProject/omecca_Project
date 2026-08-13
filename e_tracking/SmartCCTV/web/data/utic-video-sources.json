@@ -1,0 +1,36 @@
+{
+  "description": "UTIC 서울 CCTV(cam_id 기준)의 실제 영상 공급원 레지스트리. web/data/utic-cameras-seoul.json(카메라 위치/이름 메타데이터)과는 완전히 분리된 데이터다. UTIC 담당자 공식 답변: UTIC 개방데이터는 CCTV 목록/메타데이터만 제공하며, 실제 영상 스트림은 각 CCTV를 운영하는 기관/지자체가 개별적으로 제공한다.",
+  "howToAdd": "특정 CCTV의 실제 영상 스트림 URL을 확보하면, 아래 sources 배열에 항목을 하나 추가하면 된다. 코드 수정이나 재배포 없이, 해당 cam_id를 지도에서 클릭하는 즉시 우측 영상 패널에 자동으로 연결된다 (map.js의 UticCameraManager.selectRecord() 참고).",
+  "schema": {
+    "cam_id": "utic-cameras-seoul.json의 cam_id와 정확히 일치해야 함 (예: L010263)",
+    "video_url": "실제로 확인된 스트리밍 또는 파일 URL. 추측해서 넣지 말 것",
+    "video_format": "실제로 확인된 형식만 기입 (예: HLS, MP4, RTSP). 모르면 필드를 비워두거나 null",
+    "source_type": "영상을 실제로 제공하는 기관/방식 구분자. 예: SEOUL_TOPIS, SPATIC, MANUAL 등 - 추측하지 말고 실제 확인된 값만 입력"
+  },
+  "sources": [
+    {
+      "cam_id": "L010263",
+      "video_url": "https://strm1.spatic.go.kr/live/76.stream/chunklist_w1824089310.m3u8",
+      "video_format": "HLS",
+      "source_type": "서울교통정보센터"
+    },
+    {
+      "cam_id": "L010117",
+      "video_url": "https://strm1.spatic.go.kr/live/75.stream/chunklist_w902267922.m3u8",
+      "video_format": "HLS",
+      "source_type": "서울교통정보센터"
+    },
+    {
+      "cam_id": "L010018",
+      "video_url": "https://strm2.spatic.go.kr/live/243.stream/chunklist_w575481354.m3u8",
+      "video_format": "HLS",
+      "source_type": "서울교통정보센터"
+    },
+    {
+      "cam_id": "L010055",
+      "video_url": "https://strm1.spatic.go.kr/live/73.stream/chunklist_w2053157549.m3u8",
+      "video_format": "HLS",
+      "source_type": "서울교통정보센터"
+    }
+  ]
+}

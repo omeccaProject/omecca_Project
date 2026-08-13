@@ -1,6 +1,6 @@
 venv
 docs
-data/
+/data/
 runs/
 *.pt
 
