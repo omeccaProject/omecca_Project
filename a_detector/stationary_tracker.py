@@ -29,7 +29,6 @@ class StationaryObjectTracker:
 
     def update(self, detections, now):
         events = []
-        from hazard_classes import DEBRIS_CLASSES
         current_dets = [d for d in detections if d["class"] in DEBRIS_CLASSES]
 
         matched_ids = set()
