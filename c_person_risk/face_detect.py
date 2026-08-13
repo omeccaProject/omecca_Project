@@ -15,10 +15,9 @@ class FaceDetector:
         self.known_names = []
         self.known_face_encodings = []
         self._last_mtime = None
-        
-        # YOLO Person 탐지용 모델 초기화 (1회만 로드)
+
         self.person_model = YOLO("yolov8n.pt")
-        
+
         self.load_known_faces(self.db_path)
         self._update_mtime()
 
@@ -74,8 +73,9 @@ class FaceDetector:
     def detect_faces_with_person_crop(self, frame, person_conf=0.35):
         """
         2단계 Person Crop 파이프라인
-        - YOLO로 사람 영역선출 후 원본 해상도(100%) Crop 내부에서 얼굴 인식
+        - YOLO로 사람 영역 선출 후 원본 해상도(100%) Crop 내부에서 얼굴 인식
         - 절대좌표 오프셋 변환 반환 (*2 배율 연산 불필요)
+        - personBbox: 이 얼굴이 속한 사람의 YOLO 전체 영역 (흉기 소지 판정용)
         """
         with self.lock:
             known_ids_snap = list(self.known_ids)
@@ -113,7 +113,6 @@ class FaceDetector:
                             name = known_names_snap[best_match_index]
                             confidence = round(float(1.0 - face_distances[best_match_index]), 2)
 
-                    # Crop 오프셋 기준 글로벌 절대좌표 계산
                     global_top = py1 + top
                     global_right = px1 + right
                     global_bottom = py1 + bottom
@@ -123,7 +122,8 @@ class FaceDetector:
                         "matchedDbId": matched_id,
                         "name": name,
                         "faceMatchScore": confidence,
-                        "location": (global_top, global_right, global_bottom, global_left)
+                        "location": (global_top, global_right, global_bottom, global_left),
+                        "personBbox": (px1, py1, px2, py2)
                     })
 
         return results

@@ -28,7 +28,7 @@ current_faces = []
 # 이벤트 중복 발송 방지 타임스탬프 (인물별, 흉기종류별 독립 쿨다운)
 last_sent_time = {
     "WANTED_PERSON": {},  # key: name, value: timestamp
-    "WEAPON": {}          # key: mapped_label, value: timestamp
+    "WEAPON": {}          # key: w_label, value: timestamp
 }
 COOLDOWN_SEC = 3.0
 
@@ -52,18 +52,17 @@ while cap.isOpened():
     frame_count += 1
     current_time = time.time()
 
-    # 0. Hot-Reload 폴링 감지 (5초 간격)
+    # 0. Hot-Reload 폴링 감지 (1초 간격)
     if current_time - last_pkl_check > PKL_CHECK_INTERVAL:
         face_detector.check_and_reload()
         last_pkl_check = current_time
 
-    # 1. 흉기 탐지 및 이벤트 발행
+    # 1. 흉기 탐지 및 이벤트 발행 (매 프레임)
     weapons = weapon_detector.detect_weapons(frame)
     for w in weapons:
         w_label = w["label"]
-        mapped_label = CLASS_MAPPER.get(w_label, w_label)  # 2클래스 매핑
+        mapped_label = CLASS_MAPPER.get(w_label, w_label)
         
-        # 흉기 종류별 독립 쿨다운 적용 (dict 연산 버그 수정)
         last_w_time = last_sent_time["WEAPON"].get(w_label, 0)
         if current_time - last_w_time > COOLDOWN_SEC:
             send_event(
@@ -74,41 +73,58 @@ while cap.isOpened():
             )
             last_sent_time["WEAPON"][w_label] = current_time
 
-        # 화면 시각화 (매핑된 2클래스 라벨로 통일 표기)
+        # 흉기 시각화 (빨간색)
         x1, y1, x2, y2 = w["bbox"]
         cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
         cv2.putText(frame, f"WEAPON: {mapped_label}", (x1, y1 - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
 
-    # 2. Person-Crop 2단계 얼굴 인식 (프레임 스킵)
+    # 2. Person-Crop 2단계 얼굴 인식 (3프레임 스킵)
     if frame_count % skip_frames == 0:
         current_faces = face_detector.detect_faces_with_person_crop(frame, person_conf=0.35)
 
-    # 얼굴 시각화 및 수배자 이벤트 전송
+    # 3. 얼굴 시각화 및 수배자(+흉기 소지 여부) 이벤트 전송
     for f in current_faces:
         top, right, bottom, left = f["location"]
         name = f["name"]
         score = f["faceMatchScore"]
 
-        # 수배자(Unknown이 아닌 인물)만 이벤트 전송 및 화면 박스 표시
         if name != "Unknown":
+            # personBbox 안전 참조 (없을 경우 얼굴 Bbox로 대체)
+            px1, py1, px2, py2 = f.get("personBbox", (left, top, right, bottom))
+            
+            armed_weapons = []
+            for w in weapons:
+                wx1, wy1, wx2, wy2 = w["bbox"]
+                wcx, wcy = (wx1 + wx2) / 2, (wy1 + wy2) / 2
+                if px1 <= wcx <= px2 and py1 <= wcy <= py2:
+                    armed_weapons.append(CLASS_MAPPER.get(w["label"], w["label"]))
+
+            # [always-defined 스키마]
+            meta = {
+                "matchedDbId": f["matchedDbId"],
+                "personName": name,
+                "isArmed": bool(armed_weapons),
+                "armedWith": armed_weapons[0] if armed_weapons else None
+            }
+
             last_time = last_sent_time["WANTED_PERSON"].get(name, 0)
             if current_time - last_time > COOLDOWN_SEC:
                 send_event(
                     event_type="WANTED_PERSON",
                     confidence=score,
                     bbox=[left, top, right, bottom],
-                    meta={
-                        "matchedDbId": f["matchedDbId"],
-                        "personName": name
-                    }
+                    meta=meta
                 )
                 last_sent_time["WANTED_PERSON"][name] = current_time
 
-            # 녹색 수배자 바운딩 박스 표시
-            cv2.rectangle(frame, (left, top), (right, bottom), (0, 255, 0), 2)
-            cv2.putText(frame, f"WANTED: {name} ({score})", (left, top - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+            # 시각화: 무장 시 주황색, 미무장 시 녹색
+            label_text = f"WANTED: {name} (ARMED)" if armed_weapons else f"WANTED: {name} ({score})"
+            box_color = (0, 165, 255) if armed_weapons else (0, 255, 0)
+            
+            cv2.rectangle(frame, (left, top), (right, bottom), box_color, 2)
+            cv2.putText(frame, label_text, (left, top - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, box_color, 2)
 
     cv2.imshow("OmniGuard - Risk Pipeline Test", frame)
     if cv2.waitKey(1) & 0xFF == ord('q'):
