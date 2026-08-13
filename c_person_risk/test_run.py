@@ -20,6 +20,9 @@ last_sent_time = {
 }
 COOLDOWN_SEC = 3.0  # 동일 이벤트 재전송 대기 시간(초)
 
+last_pkl_check = 0          # ← 추가: Hot-Reload 폴링 체크용
+PKL_CHECK_INTERVAL = 5      # ← 추가: 5초마다 한 번만 pkl 변경 확인 (매 프레임 확인 X)
+
 
 def resize_to_fit(frame, max_width=720, max_height=1280):
     """세로/가로 어떤 영상이든 비율 유지하면서 화면에 맞게 축소"""
@@ -35,20 +38,25 @@ while cap.isOpened():
     if not ret:
         break
 
-    frame = resize_to_fit(frame)  # ← 추가: 세로 영상 잘림 방지
+    frame = resize_to_fit(frame)  # ← 세로 영상 잘림 방지
 
     frame_count += 1
     current_time = time.time()
+
+    # 0. Hot-Reload 폴링: 5초 간격으로 pkl 파일 변경 여부 확인 후, 바뀌었으면 자동 재로드
+    if current_time - last_pkl_check > PKL_CHECK_INTERVAL:
+        face_detector.check_and_reload()
+        last_pkl_check = current_time
 
     # 1. 흉기 탐지 및 이벤트 발행
     weapons = weapon_detector.detect_weapons(frame)
     for w in weapons:
         if current_time - last_sent_time["WEAPON"] > COOLDOWN_SEC:
             send_event(
-                event_type="WEAPON",  # ← 수정: 스키마 규격 eventType과 일치
+                event_type="WEAPON",
                 confidence=w["confidence"],
                 bbox=w["bbox"],
-                meta={"weaponType": w["label"]}  # ← 수정: camelCase 통일
+                meta={"weaponType": w["label"]}
             )
             last_sent_time["WEAPON"] = current_time
 
@@ -66,7 +74,7 @@ while cap.isOpened():
     for f in current_faces:
         top, right, bottom, left = [coord * 2 for coord in f["location"]]
         name = f["name"]
-        score = f["faceMatchScore"]  # ← 수정: confidence -> faceMatchScore
+        score = f["faceMatchScore"]
 
         if name != "Unknown":
             last_time = last_sent_time["WANTED_PERSON"].get(name, 0)
@@ -76,8 +84,8 @@ while cap.isOpened():
                     confidence=score,
                     bbox=[left, top, right, bottom],
                     meta={
-                        "matchedDbId": f["matchedDbId"],  # ← 추가: 스키마 필드
-                        "personName": name                # ← 수정: camelCase 통일
+                        "matchedDbId": f["matchedDbId"],
+                        "personName": name
                     }
                 )
                 last_sent_time["WANTED_PERSON"][name] = current_time

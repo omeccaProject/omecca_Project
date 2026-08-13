@@ -104,12 +104,14 @@ def main():
         for event in tracker.update(debris_candidates, now):
             payload = build_event_payload(CAM_ID, event, roi_id="roi_sidewalk_01")
             print("[DEBRIS] 이벤트 전송 예정:")
+            print("[DEBRIS] 이벤트 전송 예정:")
             print(json.dumps(payload, ensure_ascii=False, indent=2))
 
         # 2. 흉기 이벤트 — 탐지 즉시 발생
         for det in detections:
             if det["class"] in WEAPON_CLASSES:
                 payload = build_weapon_event_payload(CAM_ID, det)
+                print("[WEAPON] 이벤트 전송 예정:")
                 print("[WEAPON] 이벤트 전송 예정:")
                 print(json.dumps(payload, ensure_ascii=False, indent=2))
 

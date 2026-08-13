@@ -1,8 +1,14 @@
+event_publisher.py
+
+
 import requests
 import json
+import os
 from datetime import datetime
 
 API_URL = "http://localhost:8080/api/events"
+# b_gateway의 GATEWAY_API_KEY 환경변수와 같은 값이어야 함 (기본값은 서로 일치)
+API_KEY = os.environ.get("GATEWAY_API_KEY", "omecca-dev-key-2026")
 
 def send_event(event_type, confidence, bbox, cam_id="CAM-01", meta=None):
     """
@@ -16,10 +22,10 @@ def send_event(event_type, confidence, bbox, cam_id="CAM-01", meta=None):
         "camId": cam_id,
         "trackId": None,
         "eventType": event_type,
-        "class": "person" if event_type == "WANTED_PERSON" else "object",
+        "objectClass": "PERSON" if event_type == "WANTED_PERSON" else "OBJECT",
         "bbox": bbox,
         "confidence": confidence,
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "occurredAt": datetime.utcnow().isoformat() + "Z",
         "location": None,
         "isRegisteredTarget": False,
         "targetId": None,
@@ -30,8 +36,10 @@ def send_event(event_type, confidence, bbox, cam_id="CAM-01", meta=None):
     }
 
     try:
-        response = requests.post(API_URL, json=payload, timeout=0.5)
-        if response.status_code == 200:
+        response = requests.post(API_URL, json=payload, headers={"X-API-Key": API_KEY}, timeout=0.5)
+        if response.status_code == 201:
             print(f"[EVENT SENT] {event_type}: {meta}")
+        else:
+            print(f"[EVENT REJECTED {response.status_code}] {event_type}: {response.text}")
     except requests.exceptions.RequestException:
         print(f"[EVENT LOG (Server Offline)] {event_type}: {meta}")
