@@ -35,6 +35,7 @@ app.use("/api/utic", uticRouter);
 // 영상을 가져오면 항상 동일하게 동작한다 - web/map.js의 CONFIG.FORZA_DEMO_SOURCES가
 // "http://localhost:<PORT>/videos/forza_A.mp4" 형태의 절대 URL로 이 경로를 참조한다.
 app.use("/videos", express.static(path.resolve(__dirname, "../videos")));
+app.use(express.static(path.resolve(__dirname, "../web")));   // ← 추가: web/index.html을 "/"에서 서빙
 
 // realtime_anomaly.py(AI) → /api/map/events(POST) → WebSocket(/events) → web/map.js
 // 새 통신 방식이 아니라, 이 파일이 이미 쓰고 있는 Express REST 구조를 그대로 확장한 것이다.

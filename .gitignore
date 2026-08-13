@@ -25,3 +25,6 @@ __pycache__/
 known_faces/*.jpg
 known_faces/*.png
 c_person_risk/*.mp4
+
+.env
+node_modules/

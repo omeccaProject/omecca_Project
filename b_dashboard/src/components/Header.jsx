@@ -6,10 +6,27 @@ export default function Header({
   filterType, onFilterTypeChange,
   filterCam, onFilterCamChange,
   onRefresh,
+  view, onViewChange,          // ← 추가
 }) {
   return (
     <header>
       <h1>통합 관제 대시보드</h1>
+
+      <div className="view-tabs">                                          {/* ← 추가 시작 */}
+        <button
+          className={view === 'events' ? 'active' : ''}
+          onClick={() => onViewChange('events')}
+        >
+          이벤트 대시보드
+        </button>
+        <button
+          className={view === 'map' ? 'active' : ''}
+          onClick={() => onViewChange('map')}
+        >
+          GIS 지도
+        </button>
+      </div>                                                                {/* ← 추가 끝 */}
+
       <div className="status">
         <span className={`dot ${connected ? 'on' : 'off'}`} />
         <span>{connected ? '실시간 연결됨' : '연결 끊김'}</span>

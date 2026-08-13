@@ -95,3 +95,10 @@ main { display: flex; flex-direction: column; gap: 16px; padding: 20px 24px; }
 .event-row .time { font-size: 11px; color: var(--text-muted); }
 .event-row .conf { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 
+/* GIS 지도 탭 전환 */
+.view-tabs { display: flex; gap: 6px; margin: 0 8px; }
+.view-tabs button {
+  border: 1px solid var(--border); background: var(--panel-bg); color: var(--text-muted);
+  padding: 6px 14px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.view-tabs button.active { background: var(--accent); color: #fff; border-color: var(--accent); }

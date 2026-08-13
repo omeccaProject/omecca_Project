@@ -17,13 +17,14 @@ def build_event_payload(cam_id, event, roi_id=None, track_id=None):
         "camId": cam_id,
         "trackId": track_id,
         "eventType": "DEBRIS",
-        "objectClass": "OBJECT",           # ERD ENUM 대문자 표기 (PERSON/VEHICLE/OBJECT)
-        "detectedClass": event["class"],   # electric_scooter, road_debris 등
+        "objectClass": "OBJECT",
         "bbox": _to_bbox_xywh(event["bbox"]),
         "confidence": event.get("confidence"),
-        "occurredAt": _now_iso(),          # ERD 필드명(occurred_at)에 맞춤
-        "lat": None,                       # 담당: 김준호(E). A는 채우지 않음
-        "lng": None,
+        "occurredAt": _now_iso(),
+        "location": {
+            "lat": None,       # 담당: 김준호(E). A는 채우지 않음
+            "lng": None,
+        },
         "isRegisteredTarget": False,
         "targetId": None,
         "roiId": roi_id,
@@ -33,7 +34,6 @@ def build_event_payload(cam_id, event, roi_id=None, track_id=None):
         "frameRefBefore": None,
         "frameRefAfter": None
     }
-
 
 def build_weapon_event_payload(cam_id, detection):
     """흉기 이벤트 - 탐지 즉시 생성 (정지판별 불필요)"""
@@ -46,8 +46,10 @@ def build_weapon_event_payload(cam_id, detection):
         "bbox": _to_bbox_xywh(detection["bbox"]),
         "confidence": detection["confidence"],
         "occurredAt": _now_iso(),
-        "lat": None,
-        "lng": None,
+        "location": {                       # ← 중첩 객체로 변경
+            "lat": None,                    # 담당: 김준호(E). A는 채우지 않음
+            "lng": None,
+        },
         "isRegisteredTarget": False,
         "targetId": None,
         "roiId": None,

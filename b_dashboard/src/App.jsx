@@ -21,6 +21,7 @@ export default function App() {
   const [autoFocus, setAutoFocus] = useState(true)
   const [filterType, setFilterType] = useState('')
   const [filterCam, setFilterCam] = useState('')
+  const [view, setView] = useState('events')   // ← 추가: 'events' | 'map'
 
   // 새 이벤트 하나를 목록에 반영 (중복 id는 최신 값으로 교체 후 위험도→시간순 정렬)
   const upsertEvent = useCallback((ev, focusIfNew) => {
@@ -37,8 +38,6 @@ export default function App() {
     }
   }, [])
 
-  // WebSocket 훅 — 대시보드 입장에선 "새 이벤트가 오면 upsertEvent 호출해줘"만 넘기면 끝.
-  // /topic/events 구독, 재연결 등은 훅 안에서 전부 처리됨. 이 컴포넌트는 WebSocket이 뭔지 몰라도 됨.
   const connected = useEventSocket((ev) => upsertEvent(ev, true))
 
   const loadInitial = useCallback(() => {
@@ -51,7 +50,6 @@ export default function App() {
       .catch(() => {})
   }, [])
 
-  // 최초 진입 시 한 번, 게이트웨이에 이미 쌓여있던 이벤트를 불러온다.
   useEffect(() => {
     loadInitial()
   }, [loadInitial])
@@ -80,12 +78,22 @@ export default function App() {
         filterCam={filterCam}
         onFilterCamChange={setFilterCam}
         onRefresh={loadInitial}
+        view={view}                 // ← 추가
+        onViewChange={setView}      // ← 추가
       />
       <main>
-        <div className="top-row">
-          <CctvGrid events={filtered} focusedEvent={focusedEvent} onSelectCam={(ev) => setFocusedId(ev.id)} />
-          <EventList events={filtered} focusedId={focusedId} onSelect={(ev) => setFocusedId(ev.id)} />
-        </div>
+        {view === 'events' ? (
+          <div className="top-row">
+            <CctvGrid events={filtered} focusedEvent={focusedEvent} onSelectCam={(ev) => setFocusedId(ev.id)} />
+            <EventList events={filtered} focusedId={focusedId} onSelect={(ev) => setFocusedId(ev.id)} />
+          </div>
+        ) : (
+          <iframe
+            src="http://localhost:4000"
+            title="GIS 지도"
+            style={{ width: '100%', height: 'calc(100vh - 120px)', border: 'none' }}
+          />
+        )}
       </main>
     </>
   )
