@@ -3,6 +3,7 @@ import os
 import time
 import json
 import cv2
+import requests
 from ultralytics import YOLO
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "a_detector"))
@@ -19,6 +20,25 @@ ALL_MODELS = [general_model, hazard_model]
 
 DEBRIS_CLASSES = {"electric_scooter", "car_tire", "box", "traffic_cone", "fallen_tree"}
 WEAPON_CLASSES = {"knife", "blunt_weapon"}
+
+# b_gateway 전송 설정. b_gateway의 GATEWAY_API_KEY 환경변수와 같은 값이어야 함
+# (기본값은 서로 일치하게 맞춰둠).
+GATEWAY_URL = os.environ.get("GATEWAY_URL", "http://localhost:8080") + "/api/events"
+API_KEY = os.environ.get("GATEWAY_API_KEY", "omecca-dev-key-2026")
+
+
+def send_to_gateway(payload):
+    """이벤트를 b_gateway로 전송한다. 게이트웨이가 죽어있어도 탐지 루프는 계속 돌아야 하므로
+    실패해도 예외를 밖으로 던지지 않고 로그만 남긴다."""
+    try:
+        resp = requests.post(GATEWAY_URL, json=payload, headers={"X-API-Key": API_KEY}, timeout=3)
+        if resp.status_code == 201:
+            print(f"  → 게이트웨이 전송 성공 ({resp.status_code})")
+        else:
+            print(f"  → 게이트웨이 전송 거부 ({resp.status_code}): {resp.text[:200]}")
+    except requests.exceptions.RequestException as e:
+        print(f"  → 게이트웨이 전송 실패(연결 안 됨): {e}")
+
 
 def detect(frame, conf_threshold=0.4):
     detections = []
@@ -61,15 +81,17 @@ if __name__ == "__main__":
         debris_events = tracker.update(detections, now)
         for event in debris_events:
             payload = build_event_payload(CAM_ID, event, roi_id="roi_sidewalk_01")
-            print("🚨 [DEBRIS] 이벤트 전송 예정:")
+            print("🚨 [DEBRIS] 이벤트 전송:")
             print(json.dumps(payload, ensure_ascii=False, indent=2))
+            send_to_gateway(payload)
 
         # 2. 흉기 이벤트 - 탐지 즉시 발생
         for det in detections:
             if det["class"] in WEAPON_CLASSES:
                 payload = build_weapon_event_payload(CAM_ID, det)
-                print("🔪 [WEAPON] 이벤트 전송 예정:")
+                print("🔪 [WEAPON] 이벤트 전송:")
                 print(json.dumps(payload, ensure_ascii=False, indent=2))
+                send_to_gateway(payload)
 
         frame = draw_detections(frame, detections)
         cv2.imshow("A Module Full Pipeline Test", frame)

@@ -1,0 +1,1602 @@
+/* ==================================================
+   디자인 토큰 (Design Tokens)
+   -------------------------------------------------
+   색상/타이포/간격을 한 곳에 모아두면
+   나중에 톤을 바꾸거나 브랜딩을 조정할 때 이 블록만 고치면 된다.
+
+   [data-theme="dark"]  = 관제실 다크 UI (기본값)
+   [data-theme="light"] = 라이트 UI
+   두 테마는 "UI 테마"이며, 지도 베이스맵(일반/위성/다크맵/라이트맵)과는
+   완전히 독립적으로 동작한다. (BaseMapManager 참고)
+================================================== */
+:root,
+html[data-theme="dark"] {
+  /* 배경 (완전한 검정이 아닌 짙은 네이비 - 관제실 모니터 톤) */
+  --bg: #0a0f1c;
+  --bg-panel: #10182a;
+  --bg-elevated: #182238;
+  --bg-elevated-hover: #1e2a45;
+
+  /* 경계선 / 구분선 */
+  --border: #253046;
+  --border-soft: #1b2540;
+
+  /* 텍스트 */
+  --text-primary: #e7ecf6;
+  --text-secondary: #8996b3;
+  --text-tertiary: #576081;
+
+  /* 상태 색상 */
+  --accent-normal: #38bdf8; /* 정상 - 하늘색 */
+  --accent-normal-dim: #38bdf833;
+  --accent-warning: #f59e0b; /* 주의 - 주황 */
+  --accent-warning-dim: #f59e0b33;
+  --accent-alert: #ef4444; /* 위험 - 빨강 */
+  --accent-alert-dim: #ef444433;
+  --accent-alert-glow: rgba(239, 68, 68, 0.55);
+  --accent-info: #64748b; /* 정보/종료 - 회색 */
+  --accent-info-dim: #64748b33;
+
+  /* 공공데이터 단속카메라 전용 색상 - 딥네이비 계열. 지도(다크맵/위성지도) 위에 얹히는 색이라
+     UI 테마와 무관하게 항상 같은 값을 쓰고, 얇은 하늘색-화이트 외곽선 + Glow로 시인성을 확보한다. */
+  --accent-traffic: #234d82;
+  --accent-traffic-light: #3f74bd;
+  --accent-traffic-outline: #eaf6ff;
+  --accent-traffic-glow: rgba(88, 166, 255, 0.6);
+
+  /* UTIC(도시교통정보센터) 실시간 CCTV 전용 색상 - 단속카메라(네이비)와 구분되는 딥틸 계열 */
+  --accent-utic: #0f6d55;
+  --accent-utic-light: #1c9c7b;
+  --accent-utic-outline: #eaffef;
+  --accent-utic-glow: rgba(45, 212, 158, 0.6);
+
+  /* 그림자 */
+  --shadow-panel: 0 12px 28px rgba(0, 0, 0, 0.55);
+
+  /* 타이포그래피 */
+  --font-display: "Pretendard Variable", "Pretendard", -apple-system, "Malgun Gothic", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "D2Coding", monospace;
+
+  /* 레이아웃 */
+  --header-height: 56px;
+  --event-panel-width: 368px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+}
+
+html[data-theme="light"] {
+  --bg: #eef1f7;
+  --bg-panel: #ffffff;
+  --bg-elevated: #f5f7fb;
+  --bg-elevated-hover: #e9edf6;
+
+  --border: #d9dfec;
+  --border-soft: #e6eaf3;
+
+  --text-primary: #182238;
+  --text-secondary: #5b6683;
+  --text-tertiary: #93a0bd;
+
+  --accent-normal: #0284c7;
+  --accent-normal-dim: #0284c722;
+  --accent-warning: #d97706;
+  --accent-warning-dim: #d9770622;
+  --accent-alert: #dc2626;
+  --accent-alert-dim: #dc262622;
+  --accent-alert-glow: rgba(220, 38, 38, 0.35);
+  --accent-info: #64748b;
+  --accent-info-dim: #64748b22;
+
+  --accent-traffic: #234d82;
+  --accent-traffic-light: #3f74bd;
+  --accent-traffic-outline: #eaf6ff;
+  --accent-traffic-glow: rgba(88, 166, 255, 0.6);
+
+  --accent-utic: #0f6d55;
+  --accent-utic-light: #1c9c7b;
+  --accent-utic-outline: #eaffef;
+  --accent-utic-glow: rgba(45, 212, 158, 0.6);
+
+  --shadow-panel: 0 12px 24px rgba(24, 34, 56, 0.12);
+}
+
+/* ==================================================
+   리셋 & 기본 레이아웃
+================================================== */
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  -webkit-font-smoothing: antialiased;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+
+/* 스크롤바를 어두운 톤에 맞춰 얇게 */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+
+/* ==================================================
+   상단 헤더
+================================================== */
+.app-header {
+  height: var(--header-height);
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 0 20px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  position: relative;
+  z-index: 20;
+}
+
+.app-header__brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.app-header__badge {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, var(--accent-normal), #0ea5e9);
+  color: #06131f;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.app-header__title {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.app-header__title strong {
+  font-size: 15px;
+  letter-spacing: 0.02em;
+}
+
+.app-header__title span {
+  font-size: 11px;
+  color: var(--text-secondary);
+  letter-spacing: 0.04em;
+}
+
+/* 상태 요약 (시스템 상태 · CCTV 수 · 추적 차량 · 이상 차량) */
+.app-header__status {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 22px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  flex-wrap: wrap;
+}
+
+.status-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.status-chip strong {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.status-chip__icon {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.status-chip__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.status-chip--system.is-normal .status-chip__dot {
+  background: var(--accent-normal);
+  box-shadow: 0 0 0 3px var(--accent-normal-dim);
+}
+.status-chip--system.is-normal {
+  color: var(--accent-normal);
+}
+
+.status-chip--system.is-alert .status-chip__dot {
+  background: var(--accent-alert);
+  box-shadow: 0 0 0 3px var(--accent-alert-dim);
+  animation: dot-pulse 1.4s ease-in-out infinite;
+}
+.status-chip--system.is-alert {
+  color: var(--accent-alert);
+}
+
+@keyframes dot-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.status-chip--alert-count strong {
+  color: var(--accent-alert);
+}
+
+/* 헤더 우측 : 테마 토글 + 시계 */
+.app-header__right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+}
+
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.theme-toggle:hover {
+  background: var(--bg-elevated-hover);
+  color: var(--text-primary);
+}
+
+.theme-toggle__icon {
+  font-size: 13px;
+  line-height: 1;
+}
+
+/* 실시간 시계 */
+.app-header__clock {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: var(--text-secondary);
+  letter-spacing: 0.05em;
+  min-width: 70px;
+  text-align: right;
+}
+
+/* ==================================================
+   메인 레이아웃 (지도 + 이벤트 패널)
+================================================== */
+.app-body {
+  display: flex;
+  height: calc(100vh - var(--header-height));
+  width: 100%;
+}
+
+/* -------------------- 지도 영역 -------------------- */
+.map-pane {
+  position: relative;
+  flex: 1;
+  min-width: 0; /* flex 자식이 콘텐츠 크기로 밀리지 않도록 */
+}
+
+#map {
+  width: 100%;
+  height: 100%;
+  background: var(--bg);
+}
+
+/* ==================================================
+   Z-INDEX 레이어 구조 (전역 우선순위)
+   -------------------------------------------------
+   가장 낮음
+     1) Leaflet 지도/타일/오버레이/마커/클러스터/툴팁/팝업/컨트롤 (아래 .leaflet-* 블록)
+     2) 지도 위 일반 UI: 토스트(.ai-toast-container) - 기존 z-index(40) 유지
+     3) 헤더(.app-header, z-index 20)
+     4) CCTV 검색창(.cctv-search-panel) - z-index 1000
+     5) 영상 확대 모달(.video-modal, 배경+본문 포함) - z-index 9999
+   가장 높음
+
+   Leaflet은 자체적으로 내부 pane/control에 최대 z-index 1000까지 부여한다
+   (예: .leaflet-top/.leaflet-bottom = 1000, .leaflet-popup-pane = 700).
+   이 값이 그대로면 지도가 검색창/모달보다 위로 올라온다. 아래에서 Leaflet
+   내부 pane들의 상대적인 순서(타일 < 오버레이 < 마커 < 툴팁 < 팝업 < 컨트롤)는
+   유지한 채, 전체를 1~10 사이의 낮은 값으로 눌러서 지도가 항상 "맨 아래
+   레이어"에만 머무르도록 한다. (.map-pane에는 z-index를 주지 않아 새로운
+   stacking context가 생기지 않게 했고, 그 결과 .leaflet-* 값들이 검색창/모달의
+   z-index와 같은 기준선에서 직접 비교되므로 이 조정이 그대로 적용된다)
+================================================== */
+.leaflet-container {
+  z-index: 1;
+}
+/* Leaflet의 모든 pane(.leaflet-pane)이 공통으로 갖는 기본 z-index(원래 400)를
+   낮춘다. .leaflet-map-pane은 지도 이동/줌 시 transform이 걸려 자체 stacking
+   context를 만드는데, 이때 z-index가 명시돼 있지 않으면(auto) 실질적으로 0으로
+   취급되어 문제가 없을 수도 있지만 -  Leaflet이 명시한 대상(.leaflet-pane 등)을
+   그대로 확인해서 값을 직접 지정해 애매함 없이 항상 낮은 레이어에 고정한다. */
+.leaflet-pane,
+.leaflet-map-pane {
+  z-index: 3;
+}
+.leaflet-tile-pane {
+  z-index: 2;
+}
+.leaflet-overlay-pane {
+  z-index: 4; /* 이동 경로(Polyline), 클러스터 원 등 */
+}
+.leaflet-shadow-pane {
+  z-index: 5;
+}
+.leaflet-marker-pane {
+  z-index: 6; /* CCTV/차량 마커 */
+}
+.leaflet-tooltip-pane {
+  z-index: 7;
+}
+.leaflet-popup-pane {
+  z-index: 8; /* CCTV/차량 팝업 - 마커보다는 위, 앱 UI보다는 아래 */
+}
+.leaflet-control-container .leaflet-top,
+.leaflet-control-container .leaflet-bottom {
+  z-index: 9; /* 줌 컨트롤, 베이스맵 선택 컨트롤(.basemap-control) */
+}
+
+.leaflet-control-zoom a {
+  background: var(--bg-elevated) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border) !important;
+}
+.leaflet-control-attribution {
+  background: rgba(10, 15, 28, 0.65) !important;
+  color: var(--text-tertiary) !important;
+  font-size: 10px !important;
+}
+.leaflet-control-attribution a {
+  color: var(--text-secondary) !important;
+}
+html[data-theme="light"] .leaflet-control-attribution {
+  background: rgba(255, 255, 255, 0.75) !important;
+}
+
+/* ==================================================
+   AI 이벤트 토스트 알림 (ToastManager)
+   -------------------------------------------------
+   지도 상단 중앙에 3초간 표시되고 자동으로 사라진다.
+   여러 건이 연속으로 들어와도 위아래로 쌓인다.
+================================================== */
+.ai-toast-container {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.ai-toast {
+  min-width: 240px;
+  max-width: 320px;
+  padding: 10px 16px;
+  background: rgba(12, 17, 28, 0.94);
+  border: 1px solid var(--accent-alert);
+  border-left: 4px solid var(--accent-alert);
+  border-radius: 8px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5), 0 0 16px var(--accent-alert-glow);
+  color: #f4f6fb;
+  animation: ai-toast-in 220ms ease-out, ai-toast-out 320ms ease-in 2680ms forwards;
+}
+
+.ai-toast__title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #ff8a80;
+  margin-bottom: 3px;
+}
+
+.ai-toast__location {
+  font-size: 12.5px;
+  color: #f4f6fb;
+  margin-bottom: 2px;
+}
+
+.ai-toast__plate {
+  font-size: 11.5px;
+  font-family: var(--font-mono);
+  color: #c7d0e0;
+}
+
+@keyframes ai-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes ai-toast-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-toast {
+    animation: none;
+  }
+}
+
+/* ==================================================
+   지도 좌상단 : CCTV 검색 패널 (SearchManager)
+   -------------------------------------------------
+   주소/장소명으로 4,255개 CCTV 중 원하는 카메라를 빠르게 찾기 위한 패널.
+   결과 목록은 스크롤 가능한 영역으로 최대 20건까지 표시하고,
+   클릭 시 TrafficCameraManager.selectById()를 그대로 재사용한다.
+================================================== */
+.cctv-search-panel {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 1000; /* 검색창/검색결과 - Leaflet 지도(최대 9)보다 항상 위 */
+  width: 300px;
+  max-height: calc(100% - 90px);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-panel);
+  overflow: hidden;
+  backdrop-filter: blur(6px);
+}
+
+.cctv-search-panel__header {
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.cctv-search-panel__title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.cctv-search-panel__form {
+  display: flex;
+  gap: 6px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-soft);
+  flex-shrink: 0;
+}
+
+.cctv-search-panel__input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  font-size: 12.5px;
+  outline: none;
+  transition: border-color 120ms ease;
+}
+
+.cctv-search-panel__input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.cctv-search-panel__input:focus {
+  border-color: var(--accent-normal);
+}
+
+.cctv-search-panel__submit {
+  flex-shrink: 0;
+  width: 34px;
+  border: 1px solid var(--border);
+  background: var(--accent-normal-dim);
+  color: var(--accent-normal);
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.cctv-search-panel__submit:hover {
+  background: var(--accent-normal);
+  color: #06131f;
+}
+
+.cctv-search-panel__results {
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.cctv-search-panel__hint {
+  padding: 16px 14px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
+.cctv-search-panel__count {
+  padding: 8px 14px 4px;
+  font-size: 11.5px;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+}
+
+.cctv-search-panel__count strong {
+  color: var(--text-primary);
+}
+
+.cctv-search-panel__list {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 8px 8px;
+  gap: 4px;
+}
+
+.cctv-search-result {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.cctv-search-result:hover {
+  background: var(--bg-elevated-hover);
+  border-color: var(--border);
+}
+
+.cctv-search-result__icon {
+  font-size: 14px;
+  line-height: 1.3;
+  flex-shrink: 0;
+}
+
+.cctv-search-result__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cctv-search-result__name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.cctv-search-result__video-badge {
+  display: inline-block;
+  align-self: flex-start;
+  margin-top: 1px;
+  padding: 1px 6px;
+  font-size: 9.5px;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--text-tertiary);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  vertical-align: middle;
+}
+
+.cctv-search-result__video-badge--live {
+  color: var(--accent-utic);
+  background: var(--accent-utic-glow);
+  border-color: var(--accent-utic);
+}
+
+.cctv-search-result__meta {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-tertiary);
+}
+
+/* ==================================================
+   지도 우상단 : 베이스맵 선택 컨트롤 (BaseMapManager 가 렌더)
+================================================== */
+.basemap-control {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 5px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-panel);
+}
+
+.basemap-control__btn {
+  appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-display);
+  font-size: 11.5px;
+  padding: 6px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.basemap-control__btn:hover {
+  background: var(--bg-elevated-hover);
+  color: var(--text-primary);
+}
+
+.basemap-control__btn.is-active {
+  background: var(--accent-normal-dim);
+  color: var(--accent-normal);
+  border-color: var(--accent-normal-dim);
+  font-weight: 600;
+}
+
+/* ==================================================
+   공통 pulse 애니메이션 (단속카메라 위험 강조 등에서 재사용)
+================================================== */
+@keyframes cctv-pulse {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+/* ==================================================
+   차량(추적 대상) 마커
+   -------------------------------------------------
+   AI 이벤트가 발생했을 때만 생성된다. --alert 클래스가 붙으면
+   빨간 테두리 + glow + pulse로 "이상운전 차량"임을 강조한다.
+================================================== */
+.vehicle-marker {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  background: var(--bg-elevated);
+  border: 2px solid var(--accent-normal);
+  border-radius: 50%;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.4);
+  transition: transform 220ms linear, border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.vehicle-marker--alert {
+  border-color: var(--accent-alert);
+  box-shadow: 0 0 10px var(--accent-alert-glow), 0 3px 10px rgba(0, 0, 0, 0.5);
+}
+
+.vehicle-marker--alert::after {
+  content: "";
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--accent-alert-glow);
+  animation: cctv-pulse 1.6s ease-out infinite;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vehicle-marker--alert::after {
+    animation: none;
+  }
+}
+
+/* ==================================================
+   공공데이터 무인교통단속카메라 마커 (TrafficCameraManager)
+   -------------------------------------------------
+   이제 지도에 표시되는 유일한 카메라 마커. 딥네이비 원형 배지 +
+   얇은 하늘색-화이트 외곽선 + Glow로 다크맵/위성지도 위에서도 시인성을 확보하고,
+   Hover(확대+Glow 강화)와 선택(외곽선 두껍게+Glow 강화) 효과를 준다.
+   AI 이벤트가 감지되면 빨간색+pulse로 바뀐다 (.traffic-cam-marker--alert).
+   개수가 많아(서울만 수천 건) 클러스터로 묶어 표시한다.
+================================================== */
+.traffic-cam-marker {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-traffic);
+  cursor: pointer;
+  filter: drop-shadow(0 0 3px var(--accent-traffic-glow)) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+  transition: transform 140ms ease, filter 140ms ease;
+}
+
+.traffic-cam-marker svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* Hover: 약간 확대 + Glow/그림자 강화 */
+.traffic-cam-marker:hover {
+  transform: scale(1.16);
+  filter: drop-shadow(0 0 7px var(--accent-traffic-glow)) drop-shadow(0 0 2px var(--accent-traffic-outline))
+    drop-shadow(0 3px 7px rgba(0, 0, 0, 0.55));
+}
+
+/* 선택된 마커: 외곽선은 JS에서 두껍게 다시 그리고, 여기서는 Glow를 한층 더 강조 */
+.traffic-cam-marker--selected {
+  filter: drop-shadow(0 0 9px var(--accent-traffic-glow)) drop-shadow(0 0 3px var(--accent-traffic-outline))
+    drop-shadow(0 3px 8px rgba(0, 0, 0, 0.6));
+}
+
+.traffic-cam-marker--selected:hover {
+  transform: scale(1.16);
+}
+
+/* AI 이벤트가 감지된 카메라: 네이비 대신 위험색(빨강)으로 바뀌고 레이더 pulse가 붙는다 */
+.traffic-cam-marker--alert {
+  color: var(--accent-alert);
+  filter: drop-shadow(0 0 6px var(--accent-alert-glow)) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.55));
+}
+
+.traffic-cam-marker--alert:hover {
+  filter: drop-shadow(0 0 9px var(--accent-alert-glow)) drop-shadow(0 0 2px var(--accent-traffic-outline))
+    drop-shadow(0 3px 7px rgba(0, 0, 0, 0.6));
+}
+
+.traffic-cam-marker--alert.traffic-cam-marker--selected {
+  filter: drop-shadow(0 0 11px var(--accent-alert-glow)) drop-shadow(0 0 3px var(--accent-traffic-outline))
+    drop-shadow(0 3px 8px rgba(0, 0, 0, 0.65));
+}
+
+.traffic-cam-marker--alert::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--accent-alert-glow);
+  animation: cctv-pulse 1.8s ease-out infinite;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .traffic-cam-marker--alert::after {
+    animation: none;
+  }
+}
+
+.traffic-cam-cluster {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent-traffic-light), var(--accent-traffic));
+  border: 2px solid var(--accent-traffic-outline);
+  color: #f4f8ff;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 14px;
+  box-shadow: 0 0 10px var(--accent-traffic-glow), 0 3px 9px rgba(0, 0, 0, 0.5);
+  transition: transform 140ms ease;
+}
+
+.traffic-cam-cluster:hover {
+  transform: scale(1.08);
+}
+
+/* --------------------------------------------------
+   [현재 단계] 단속카메라(공공데이터) 시각적으로 숨김
+   ----------------------------------------------------
+   최종 관제 대상이 UTIC CCTV로 통일되면서, 단속카메라 마커/클러스터는
+   지도에 표시하지 않는다. 단, JS 쪽에서는 TrafficCameraManager의
+   clusterGroup을 여전히 지도에 addTo() 해두고 있다 - H4642 anomaly
+   detection 흐름(zoomToShowLayer, setAlert 등)이 "지도에 붙어있는
+   레이어"를 전제로 동작하기 때문에, 여기서 CSS로만 안 보이게 처리한다.
+   나중에 단속카메라를 다시 노출하고 싶으면 이 블록만 지우면 된다.
+-------------------------------------------------- */
+.traffic-cam-marker,
+.traffic-cam-cluster {
+  display: none !important;
+}
+
+/* ==================================================
+   UTIC(도시교통정보센터) 실시간 CCTV 마커 (UticCameraManager)
+   -------------------------------------------------
+   공공데이터 단속카메라(.traffic-cam-marker, 네이비)와 형태는 같지만
+   색상을 딥틸로 바꿔서 서로 다른 데이터 소스임을 구분한다.
+================================================== */
+.utic-cam-marker {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-utic);
+  cursor: pointer;
+  filter: drop-shadow(0 0 3px var(--accent-utic-glow)) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+  transition: transform 140ms ease, filter 140ms ease;
+}
+
+.utic-cam-marker svg {
+  width: 100%;
+  height: 100%;
+}
+
+.utic-cam-marker:hover {
+  transform: scale(1.16);
+  filter: drop-shadow(0 0 7px var(--accent-utic-glow)) drop-shadow(0 0 2px var(--accent-utic-outline))
+    drop-shadow(0 3px 7px rgba(0, 0, 0, 0.55));
+}
+
+.utic-cam-marker--selected {
+  filter: drop-shadow(0 0 9px var(--accent-utic-glow)) drop-shadow(0 0 3px var(--accent-utic-outline))
+    drop-shadow(0 3px 8px rgba(0, 0, 0, 0.6));
+}
+
+.utic-cam-marker--selected:hover {
+  transform: scale(1.16);
+}
+
+/* AI 이상탐지가 특정 카메라를 강조할 때(EventManager.setAlert) - 딥틸 대신 위험색(빨강) + pulse */
+.utic-cam-marker--alert {
+  color: var(--accent-alert);
+  filter: drop-shadow(0 0 6px var(--accent-alert-glow)) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.55));
+}
+
+.utic-cam-marker--alert:hover {
+  filter: drop-shadow(0 0 9px var(--accent-alert-glow)) drop-shadow(0 0 2px var(--accent-utic-outline))
+    drop-shadow(0 3px 7px rgba(0, 0, 0, 0.6));
+}
+
+.utic-cam-marker--alert.utic-cam-marker--selected {
+  filter: drop-shadow(0 0 11px var(--accent-alert-glow)) drop-shadow(0 0 3px var(--accent-utic-outline))
+    drop-shadow(0 3px 8px rgba(0, 0, 0, 0.65));
+}
+
+.utic-cam-marker--alert::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--accent-alert-glow);
+  animation: cctv-pulse 1.8s ease-out infinite;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .utic-cam-marker--alert::after {
+    animation: none;
+  }
+}
+
+.utic-cam-cluster {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent-utic-light), var(--accent-utic));
+  border: 2px solid var(--accent-utic-outline);
+  color: #f4fffa;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 13px;
+  box-shadow: 0 0 10px var(--accent-utic-glow), 0 3px 9px rgba(0, 0, 0, 0.5);
+  transition: transform 140ms ease;
+}
+
+.utic-cam-cluster:hover {
+  transform: scale(1.08);
+}
+
+/* ==================================================
+   Leaflet 팝업 다크/라이트 테마
+================================================== */
+.leaflet-popup-content-wrapper {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-panel);
+}
+
+.leaflet-popup-tip {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+}
+
+.leaflet-popup-close-button {
+  color: var(--text-secondary) !important;
+}
+
+.leaflet-popup-content {
+  margin: 0;
+  width: 262px !important;
+}
+
+/* 팝업 내부 커스텀 레이아웃 (PopupManager가 이 클래스들로 HTML을 채운다) */
+.cctv-popup {
+  font-family: var(--font-display);
+}
+
+.cctv-popup__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.cctv-popup__title {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.35;
+}
+
+.cctv-popup__code {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+  letter-spacing: 0.04em;
+}
+
+.cctv-popup__name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.cctv-popup__status {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  padding: 2px 8px;
+  border-radius: 999px;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+
+.cctv-popup__status--normal {
+  color: var(--accent-normal);
+  background: var(--accent-normal-dim);
+}
+
+.cctv-popup__status--alert {
+  color: var(--accent-alert);
+  background: var(--accent-alert-dim);
+}
+
+.cctv-popup__body {
+  padding: 12px 14px 14px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  row-gap: 8px;
+  column-gap: 14px;
+  font-size: 12.5px;
+}
+
+.cctv-popup__label {
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.cctv-popup__value {
+  color: var(--text-primary);
+  text-align: right;
+  font-family: var(--font-mono);
+}
+
+.cctv-popup__value--plate {
+  letter-spacing: 0.02em;
+  font-weight: 700;
+}
+
+.cctv-popup__value--alert {
+  color: var(--accent-alert);
+  font-weight: 700;
+}
+
+.cctv-popup__value--status-alert {
+  color: var(--accent-alert);
+  font-weight: 700;
+}
+
+.cctv-popup__value--status-normal {
+  color: var(--accent-normal);
+  font-weight: 700;
+}
+
+/* AI 신뢰도 게이지 바 */
+.cctv-popup__confidence {
+  grid-column: 1 / -1;
+  margin-top: 2px;
+}
+
+.cctv-popup__confidence-track {
+  height: 5px;
+  border-radius: 3px;
+  background: var(--border-soft);
+  overflow: hidden;
+  margin-top: 6px;
+}
+
+.cctv-popup__confidence-fill {
+  height: 100%;
+  background: var(--accent-alert);
+  border-radius: 3px;
+  transition: width 240ms ease;
+}
+
+/* ==================================================
+   실시간 CCTV 영상 패널 (VideoManager)
+   -------------------------------------------------
+   프로젝트 내부 /videos 폴더의 mp4를 muted+loop+autoplay로 재생하고,
+   영상 위에 선택된 카메라 정보를 반투명 그라디언트 오버레이로 표시한다.
+   영상이 바뀔 때는 .video-panel__frame 에 is-fading 클래스를
+   토글해 0.3~0.5초 정도의 fade 전환을 준다.
+================================================== */
+.video-panel {
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.video-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.video-panel__label {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* 영상 확대 버튼 (VideoModalManager) */
+.video-expand-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.video-expand-btn:hover {
+  background: var(--bg-elevated-hover);
+  color: var(--text-primary);
+  border-color: var(--accent-normal-dim);
+}
+
+.video-panel__frame {
+  position: relative;
+  margin: 0 18px 16px;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  transition: opacity 220ms ease;
+}
+
+.video-panel__frame.is-fading {
+  opacity: 0;
+}
+
+.video-panel__video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  background: #000;
+}
+
+/* 아직 카메라가 선택되기 전(데이터 로딩 중) */
+.video-panel__empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  background: linear-gradient(160deg, #0d1526, #05080f);
+  color: var(--text-tertiary);
+}
+
+.video-panel__empty-icon {
+  font-size: 22px;
+  opacity: 0.6;
+}
+
+.video-panel__empty-text {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* /videos 폴더에 mp4가 없어 재생에 실패했을 때만 표시 */
+.video-panel__error {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  text-align: center;
+  padding: 0 18px;
+  background: rgba(5, 8, 15, 0.92);
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.video-panel__error-icon {
+  font-size: 18px;
+}
+
+/* 영상 위 반투명 정보 오버레이: 상단엔 LIVE 배지, 하단엔 설치장소/시군구/제한속도/출처 */
+.video-panel__overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 9px;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(0, 0, 0, 0.4) 0%,
+    rgba(0, 0, 0, 0) 24%,
+    rgba(0, 0, 0, 0) 58%,
+    rgba(0, 0, 0, 0.78) 100%
+  );
+}
+
+.video-panel__overlay-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.video-panel__overlay-title {
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.75);
+}
+
+.video-panel__overlay-meta {
+  color: #dbe4f5;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.75);
+}
+
+.video-panel__badges {
+  align-self: flex-end;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.video-panel__ai-badge {
+  padding: 3px 8px;
+  background: rgba(56, 189, 248, 0.18);
+  border: 1px solid var(--accent-normal);
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  color: #d6f0ff;
+  white-space: nowrap;
+}
+
+.video-panel__live {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: #f4f6fb;
+}
+
+.video-panel__live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-alert);
+  animation: dot-pulse 1.4s ease-in-out infinite;
+}
+
+/* AI가 사전 분석해 둔 차량 박스를 영상 재생 시점에 맞춰 그리는 캔버스.
+   video-panel__overlay(텍스트/배지)보다 아래, <video>보다는 위에 위치한다. */
+.video-panel__overlay-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.video-panel__overlay {
+  z-index: 3;
+}
+
+/* ==================================================
+   CCTV 영상 확대 Modal (VideoModalManager)
+   -------------------------------------------------
+   video-frame(영상 + AI 오버레이 캔버스 + 배지)을 그대로 modal-body 안으로
+   옮겨서 표시한다. 재생 위치/AI 박스/배지 상태는 노드를 그대로 재사용하기
+   때문에 별도 동기화 로직 없이 유지된다.
+================================================== */
+.video-modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 9999; /* 모달 배경(overlay)+내용(inner) - 검색창(1000)보다 항상 위, 지도/Leaflet(최대 9)와는 비교 불가할 정도로 위 */
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: rgba(4, 7, 14, 0.82);
+  backdrop-filter: blur(3px);
+}
+
+.video-modal__inner {
+  width: 100%;
+  max-width: 1180px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+
+.video-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.video-modal__title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.video-modal__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.video-modal__close:hover {
+  background: var(--accent-alert-dim);
+  color: var(--accent-alert);
+  border-color: var(--accent-alert-dim);
+}
+
+.video-modal__body {
+  padding: 20px;
+}
+
+/* video-frame이 modal 안으로 옮겨졌을 때만 적용되는 크기 재정의.
+   기존 작은 CCTV 패널용 margin은 modal 안에서는 불필요하므로 0으로 되돌린다. */
+.video-panel__frame--modal {
+  margin: 0;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  max-height: 78vh;
+}
+
+/* 팝업 하단 액션 버튼 (예: 차량 팝업의 "CCTV 영상 보기") */
+.popup-btn {
+  grid-column: 1 / -1;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--accent-normal-dim);
+  background: var(--accent-normal-dim);
+  color: var(--accent-normal);
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: center;
+  transition: background-color 120ms ease;
+}
+
+.popup-btn:hover {
+  background: var(--accent-normal);
+  color: #06131f;
+}
+
+/* ==================================================
+   우측 AI 관제 이벤트 패널
+================================================== */
+.event-panel {
+  width: var(--event-panel-width);
+  flex-shrink: 0;
+  background: var(--bg-panel);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.event-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.event-panel__header h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.event-panel__count {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--accent-alert);
+  background: var(--accent-alert-dim);
+  padding: 2px 9px;
+  border-radius: 999px;
+  min-width: 22px;
+  text-align: center;
+}
+
+.event-panel__list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* 이벤트가 없을 때 표시되는 빈 상태 */
+.event-empty {
+  margin-top: 40px;
+  text-align: center;
+  color: var(--text-tertiary);
+}
+
+.event-empty p {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.event-empty span {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* 이벤트 카드 - 심각도(severity)에 따라 좌측 바 색상이 달라진다
+   info: 정상 종료 등 참고용 기록 / warning: 주의가 필요한 주행 / alert: 즉시 확인이 필요한 위험
+   클릭하면 해당 카메라 위치로 지도가 이동하고 영상/팝업이 전환된다. */
+.event-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent-info);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  cursor: pointer;
+  animation: event-card-in 180ms ease-out;
+  transition: background-color 120ms ease, border-color 120ms ease, transform 120ms ease;
+}
+
+.event-card:hover {
+  background: var(--bg-elevated-hover);
+  transform: translateX(2px);
+}
+
+.event-card--warning {
+  border-left-color: var(--accent-warning);
+}
+
+.event-card--alert {
+  border-left-color: var(--accent-alert);
+}
+
+@keyframes event-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .event-card {
+    animation: none;
+  }
+}
+
+.event-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.event-card__time {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+}
+
+.event-card__type {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.event-card--warning .event-card__type {
+  color: var(--accent-warning);
+}
+
+.event-card--alert .event-card__type {
+  color: var(--accent-alert);
+}
+
+.event-card__grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  row-gap: 5px;
+  column-gap: 10px;
+  font-size: 12px;
+}
+
+.event-card__label {
+  color: var(--text-tertiary);
+}
+
+.event-card__value {
+  text-align: right;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+
+.event-card__value--plate {
+  font-weight: 700;
+}
+
+/* ==================================================
+   반응형 (작은 화면에서는 패널을 지도 아래로)
+================================================== */
+@media (max-width: 900px) {
+  .app-header {
+    flex-wrap: wrap;
+    height: auto;
+    padding: 10px 16px;
+  }
+
+  .app-header__status {
+    order: 3;
+    width: 100%;
+    justify-content: flex-start;
+    gap: 14px;
+    padding-top: 6px;
+  }
+
+  .app-body {
+    flex-direction: column;
+    height: auto;
+    min-height: calc(100vh - var(--header-height));
+  }
+
+  .map-pane {
+    height: 56vh;
+  }
+
+  .event-panel {
+    width: 100%;
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
+}

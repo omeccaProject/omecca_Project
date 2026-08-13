@@ -1,0 +1,17 @@
+# realtime_anomaly.py 실행에 필요한 패키지
+# (기존 anomaly_detection.py / test_hls_yolo.py / test_hls_anomaly.py가
+#  이미 쓰고 있던 패키지와 동일하다 - 새로 추가된 것 없음)
+
+ultralytics>=8.3.0
+opencv-python>=4.9.0
+Pillow>=10.0.0
+numpy>=1.26.0
+
+# torch는 GPU 유무에 따라 설치 방법이 다르다.
+#
+# GPU(NVIDIA CUDA) 있는 팀원 노트북:
+#   https://pytorch.org/get-started/locally/ 에서 본인 CUDA 버전에 맞는
+#   설치 명령을 그대로 사용할 것 (pip install torch 만 하면 CPU 버전이 깔릴 수 있음)
+#
+# GPU 없는 노트북(CPU):
+#   pip install torch --break-system-packages

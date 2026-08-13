@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="ko" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Smart CCTV · GIS 관제 시스템</title>
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <!-- 공공데이터 단속카메라가 다수(수천 개)이므로 클러스터링용 플러그인 사용 (순수 Leaflet 확장) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+
+  <!-- 폰트: 본문/라벨용 Pretendard, 시각·좌표·신뢰도 등 데이터 표시용 JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link
+    href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.css"
+    rel="stylesheet"
+  />
+  <link
+    href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap"
+    rel="stylesheet"
+  />
+
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- ================================
+       상단 헤더 : 시스템 타이틀 + 실시간 상태 요약 + 다크/라이트 토글 + 시계
+  ================================ -->
+  <header class="app-header">
+    <div class="app-header__brand">
+      <span class="app-header__badge">AI</span>
+      <div class="app-header__title">
+        <strong>SMART CCTV</strong>
+        <span>GIS 관제 시스템</span>
+      </div>
+    </div>
+
+    <div class="app-header__status" id="status-summary">
+      <!-- JS(EventManager)가 시스템 상태 / CCTV 수 / 추적 차량 / 이상 차량을 렌더링 -->
+    </div>
+
+    <div class="app-header__right">
+      <button class="theme-toggle" id="theme-toggle" type="button" aria-label="다크/라이트 모드 전환">
+        <span class="theme-toggle__icon" id="theme-toggle-icon">🌙</span>
+        <span class="theme-toggle__label" id="theme-toggle-label">DARK</span>
+      </button>
+      <div class="app-header__clock" id="live-clock">--:--:--</div>
+    </div>
+  </header>
+
+  <!-- ================================
+       메인 영역 : 좌측 지도 / 우측 이벤트 패널
+  ================================ -->
+  <main class="app-body">
+    <!-- 좌측 : GIS 지도 -->
+    <section class="map-pane">
+      <div id="map"></div>
+
+      <!-- AI 이벤트 발생 시 3초간 표시되는 토스트 알림 (ToastManager가 채운다) -->
+      <div class="ai-toast-container" id="ai-toast-container"></div>
+
+      <!-- 지도 좌상단 : CCTV 검색 패널 (SearchManager가 제어) -->
+      <div class="cctv-search-panel" id="cctv-search-panel">
+        <div class="cctv-search-panel__header">
+          <span class="cctv-search-panel__title">🔍 CCTV 검색</span>
+        </div>
+        <form class="cctv-search-panel__form" id="cctv-search-form">
+          <input
+            type="text"
+            class="cctv-search-panel__input"
+            id="cctv-search-input"
+            placeholder="주소 또는 장소명 (예: 이수역, 동작구)"
+            autocomplete="off"
+          />
+          <button type="submit" class="cctv-search-panel__submit" aria-label="검색">🔎</button>
+        </form>
+        <div class="cctv-search-panel__results" id="cctv-search-results">
+          <div class="cctv-search-panel__hint" id="cctv-search-hint">
+            장소명, 도로명, 시군구명으로 검색할 수 있습니다
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 우측 : 실시간 CCTV 영상 + AI 관제 이벤트 패널 -->
+    <aside class="event-panel">
+      <!-- 실시간 CCTV 영상 패널 (VideoManager가 제어) -->
+      <section class="video-panel">
+        <div class="video-panel__header">
+          <span class="video-panel__label">📹 실시간 CCTV</span>
+          <button type="button" class="video-expand-btn" id="video-expand-btn" title="영상 확대" aria-label="영상 확대">⛶</button>
+        </div>
+
+        <div class="video-panel__frame" id="video-frame">
+          <!-- 프로젝트 내부 /videos 폴더의 mp4 파일이 재생된다 (VideoManager 참고) -->
+          <video id="cctv-video" class="video-panel__video" muted playsinline loop autoplay></video>
+
+          <!-- AI가 사전 분석해 둔 차량 박스를 영상 재생 시점에 맞춰 그리는 캔버스
+               (H4642 테스트 카메라 + Forza 데모 A/B/C/D 공용 - VideoManager._attachBoxOverlay 참고) -->
+          <canvas id="video-overlay-canvas" class="video-panel__overlay-canvas"></canvas>
+
+          <!-- 아직 카메라가 선택되기 전(데이터 로딩 중) 표시 -->
+          <div class="video-panel__empty" id="video-empty">
+            <span class="video-panel__empty-icon">📹</span>
+            <span class="video-panel__empty-text">카메라를 불러오는 중입니다…</span>
+          </div>
+
+          <!-- 영상 파일을 찾지 못했을 때만 표시 (예: /videos 폴더에 mp4가 아직 없는 경우) -->
+          <div class="video-panel__error" id="video-error" style="display: none">
+            <span class="video-panel__error-icon">⚠️</span>
+            <span class="video-panel__error-text">영상 파일을 찾을 수 없습니다.<br />/videos 폴더에 mp4 파일을 추가해주세요.</span>
+          </div>
+
+          <!-- 선택된 카메라 정보를 영상 위에 반투명하게 표시 -->
+          <div class="video-panel__overlay" id="video-overlay" style="display: none">
+            <span class="video-panel__badges">
+              <span class="video-panel__ai-badge" id="video-ai-badge" style="display: none">🤖 AI 분석 재생 중</span>
+              <span class="video-panel__live">
+                <span class="video-panel__live-dot"></span>
+                LIVE
+              </span>
+            </span>
+            <div class="video-panel__overlay-info">
+              <span class="video-panel__overlay-title" id="video-overlay-title">-</span>
+              <span class="video-panel__overlay-meta" id="video-overlay-meta">-</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div class="event-panel__header">
+        <h2>AI 관제 이벤트</h2>
+        <span class="event-panel__count" id="event-count">0</span>
+      </div>
+
+      <!-- 이벤트 카드가 쌓이는 리스트 영역. JS가 이 안에 카드를 렌더링한다 -->
+      <div class="event-panel__list" id="event-list">
+        <div class="event-empty" id="event-empty">
+          <p>감지된 이벤트가 없습니다</p>
+          <span>이상 주행이 감지되면 이 목록에 실시간으로 표시됩니다</span>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- ================================
+       CCTV 영상 확대 Modal (VideoModalManager가 제어)
+       video-frame(영상 + AI 오버레이 캔버스 + 배지)을 그대로 이 안으로 옮겨서
+       재생 위치/AI 박스/상태를 전부 유지한 채 크게 보여준다.
+  ================================ -->
+  <div class="video-modal" id="video-modal">
+    <div class="video-modal__inner">
+      <div class="video-modal__header">
+        <span class="video-modal__title" id="video-modal-title">-</span>
+        <button type="button" class="video-modal__close" id="video-modal-close" aria-label="닫기">✕</button>
+      </div>
+      <div class="video-modal__body" id="video-modal-body"></div>
+    </div>
+  </div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- 이동 경로에 방향 화살표를 그리기 위한 Leaflet 플러그인 (순수 Leaflet 확장, OpenLayers 아님) -->
+  <script src="https://unpkg.com/leaflet-polylinedecorator@1.6.0/dist/leaflet.polylineDecorator.js"></script>
+  <!-- 공공데이터 단속카메라 마커 클러스터링 플러그인 -->
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  <!-- UTIC 실시간 CCTV(HLS/.m3u8) 재생용. Safari 외 브라우저는 <video> 태그만으로 HLS를 재생하지
+       못하므로 hls.js가 필요하다 (VideoManager.switchVideo 참고). -->
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.15/dist/hls.min.js"></script>
+
+  <!-- 지도/이벤트 로직 -->
+  <script src="map.js"></script>
+</body>
+</html>

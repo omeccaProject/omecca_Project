@@ -1,4 +1,4 @@
--- omecca DB 스키마 (target / roi / event / report)
+-- omecca DB 스키마 (target / roi / event / report / user)
 -- 원래 설계(이벤트 스키마 규격서 / DB 스키마 설계서) 기준으로 복원됨
 -- 사용: mysql -u root -p < src/main/resources/schema.sql
 
@@ -90,3 +90,24 @@ CREATE TABLE report (
     UNIQUE KEY uk_report_event (event_id),
     INDEX idx_report_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 관제요원 계정 (회원가입 신청 -> 관리자 승인 -> 로그인)
+DROP TABLE IF EXISTS user;
+
+CREATE TABLE user (
+    id              BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    username        VARCHAR(50)   NOT NULL,
+    password        VARCHAR(255)  NOT NULL COMMENT 'BCrypt 해시',
+    name            VARCHAR(50)   NOT NULL,
+    role            ENUM('USER', 'ADMIN') NOT NULL DEFAULT 'USER',
+    status          ENUM('PENDING', 'APPROVED', 'REJECTED') NOT NULL DEFAULT 'PENDING',
+    approved_by     BIGINT UNSIGNED NULL,
+    approved_at     DATETIME(3)   NULL,
+    created_at      DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    UNIQUE KEY uk_user_username (username),
+    INDEX idx_user_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 최초 관리자 계정 시드 (아이디: admin / 비밀번호: admin1234 -- 로그인 후 꼭 변경할 것)
+INSERT INTO user (username, password, name, role, status, approved_at)
+VALUES ('admin', '$2a$10$p8JYOKgnKcXAv.THDHZk9OReP2DkXh3a4PJ6lwIjXLrpvNhUmA5ae', '관리자', 'ADMIN', 'APPROVED', NOW(3));

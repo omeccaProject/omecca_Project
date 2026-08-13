@@ -18,6 +18,7 @@ import time
 
 from app.core.bus import TOPIC_VIOLATION, bus
 from app.core.config import settings
+from app.core.gateway import GatewayClient
 from app.simulator import demo_scenarios
 from app.vehicle.repository import get_repository
 from app.violation.engine import ViolationEngine
@@ -80,6 +81,8 @@ def main() -> int:
         log.info("기존 위반/인식 로그 삭제 완료")
 
     engine, signal = build_engine()
+    gw = GatewayClient(base_url="http://localhost:8080").start()
+    gw.subscribe_to_bus()
     bus.subscribe(lambda topic, payload: None)   # 버스 동작 확인용 no-op 구독자
 
     print(BAR)
@@ -122,7 +125,7 @@ def main() -> int:
 
         print(f"\nAPI 서버 기동 → http://localhost:{settings.server.port}")
         uvicorn.run(api, host=settings.server.host, port=int(settings.server.port))
-
+    gw.stop(drain=True)
     return 0
 
 

@@ -1,6 +1,14 @@
 server:
   port: 8080
 
+gateway:
+  api-key: ${GATEWAY_API_KEY:omecca-dev-key-2026}
+
+app:
+  auth:
+    jwt-secret: ${JWT_SECRET:omecca-jwt-secret-change-this}
+    
+
 spring:
   application:
     name: omecca-backend

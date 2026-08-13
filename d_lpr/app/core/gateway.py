@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import json
+import os
 import logging
 import threading
 import urllib.error
@@ -132,10 +133,12 @@ class GatewayClient:
         timeout: float = 3.0,
         enabled: bool = True,
         queue_size: int = 500,
+        api_key: str = os.environ.get("GATEWAY_API_KEY", "omecca-dev-key-2026"),
     ) -> None:
         self.url = base_url.rstrip("/") + path
         self.timeout = timeout
         self.enabled = enabled
+        self.api_key = api_key
         self._q: Queue = Queue(maxsize=queue_size)
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
@@ -182,7 +185,10 @@ class GatewayClient:
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         req = urllib.request.Request(
             self.url, data=data, method="POST",
-            headers={"Content-Type": "application/json; charset=utf-8"},
+            headers={
+                "Content-Type": "application/json; charset=utf-8",
+                "X-API-Key": self.api_key,
+            },
         )
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as r:

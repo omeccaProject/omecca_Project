@@ -79,8 +79,6 @@ rm -rf ../b_gateway/src/main/resources/static/*
 cp -r dist/* ../b_gateway/src/main/resources/static/
 ```
 
-이후엔 `http://localhost:8080`으로 접속하면 됨 (기존 방식과 동일).
-
 ---
 
 ## 4. Target / ROI 등록 API 테스트 (선택)
@@ -140,7 +138,7 @@ Image.new('RGB', (640,480), (90,40,40)).save('samples_after.jpg')
 
 ```bash
 python -m src.main \
-  --event-id 2 \
+  --event-id 4 \
   --title "신호위반 증거 리포트" \
   --event-type SIGNAL_VIOLATION \
   --occurred-at "2026-08-06T13:22:27" \
