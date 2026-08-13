@@ -1,129 +1,79 @@
 import os
 import pickle
-import threading
-import cv2
 import numpy as np
 import face_recognition
-from ultralytics import YOLO
 
 class FaceDetector:
-    def __init__(self, db_path="face_embeddings.pkl", model="cnn"):
+    def __init__(self, db_path=None, tolerance=0.55):
+        if db_path is None:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            db_path = os.path.join(base_dir, "face_embeddings.pkl")
         self.db_path = db_path
-        self.model = model
-        self.lock = threading.RLock()
+        self.tolerance = tolerance
         self.known_ids = []
         self.known_names = []
-        self.known_face_encodings = []
-        self._last_mtime = None
+        self.known_embeddings = []
+        self.load_db()
 
-        self.person_model = YOLO("yolov8n.pt")
-
-        self.load_known_faces(self.db_path)
-        self._update_mtime()
-
-    def _update_mtime(self):
-        try:
-            self._last_mtime = os.path.getmtime(self.db_path)
-        except FileNotFoundError:
-            self._last_mtime = None
-
-    def reload_embeddings(self):
-        print("[INFO] 수배자 DB 메모리 재로드(Hot Reload) 요청...")
-        self.load_known_faces(self.db_path)
-        self._update_mtime()
-
-    def check_and_reload(self):
-        try:
-            mtime = os.path.getmtime(self.db_path)
-        except FileNotFoundError:
+    def load_db(self):
+        if not os.path.exists(self.db_path):
+            print(f"[WARN] 수배자 DB 파일 없음: {self.db_path}")
             return
+        try:
+            with open(self.db_path, "rb") as f:
+                data = pickle.load(f)
+            
+            self.known_ids = []
+            self.known_names = []
+            self.known_embeddings = []
 
-        if mtime != self._last_mtime:
-            self.reload_embeddings()
+            if isinstance(data, list):
+                for item in data:
+                    self.known_ids.append(item.get("id", "UNKNOWN"))
+                    self.known_names.append(item.get("name", "UNKNOWN"))
+                    self.known_embeddings.append(item["embedding"])
+            elif isinstance(data, dict):
+                for k, v in data.items():
+                    self.known_ids.append(k)
+                    if isinstance(v, dict):
+                        self.known_names.append(v.get("name", k))
+                        self.known_embeddings.append(v["embedding"])
+                    else:
+                        self.known_names.append(k)
+                        self.known_embeddings.append(v)
+            
+            print(f"[INFO] 수배자 DB 로드 완료: {len(self.known_ids)}명 ({self.known_names})")
+        except Exception as e:
+            print(f"[ERROR] DB 로드 실패: {e}")
 
-    def load_known_faces(self, db_path):
-        if not os.path.exists(db_path):
-            print(f"[WARN] {db_path} 없음. build_face_db.py 먼저 실행하세요.")
-            return
+    def detect_faces(self, frame, person_boxes=None):
+        rgb_frame = frame[:, :, ::-1]
+        
+        if person_boxes:
+            face_locations = []
+            for (px1, py1, px2, py2) in person_boxes:
+                h, w, _ = frame.shape
+                top, right, bottom, left = max(0, py1), min(w, px2), min(h, py2), max(0, px1)
+                face_locations.append((top, right, bottom, left))
+        else:
+            face_locations = face_recognition.face_locations(rgb_frame)
 
-        with open(db_path, "rb") as f:
-            db = pickle.load(f)
+        if not face_locations or len(self.known_embeddings) == 0:
+            return []
 
-        new_ids = []
-        new_names = []
-        new_encodings = []
-
-        if isinstance(db, list):
-            for person in db:
-                new_ids.append(person["id"])
-                new_names.append(person["name"])
-                new_encodings.append(person["embedding"])
-                print(f"[INFO] 수배자 DB 로드 완료: {person['id']} - {person['name']}")
-        elif isinstance(db, dict):
-            new_ids = db.get("ids", [])
-            new_names = db.get("names", [])
-            new_encodings = db.get("encodings", [])
-            print(f"[INFO] 수배자 DB 로드 완료: 총 {len(new_ids)}명")
-
-        with self.lock:
-            self.known_ids = new_ids
-            self.known_names = new_names
-            self.known_face_encodings = new_encodings
-
-    def detect_faces_with_person_crop(self, frame, person_conf=0.35):
-        """
-        2단계 Person Crop 파이프라인
-        - YOLO로 사람 영역 선출 후 원본 해상도(100%) Crop 내부에서 얼굴 인식
-        - 절대좌표 오프셋 변환 반환 (*2 배율 연산 불필요)
-        - personBbox: 이 얼굴이 속한 사람의 YOLO 전체 영역 (흉기 소지 판정용)
-        """
-        with self.lock:
-            known_ids_snap = list(self.known_ids)
-            known_names_snap = list(self.known_names)
-            known_encodings_snap = list(self.known_face_encodings)
-
-        person_results = self.person_model(frame, classes=[0], conf=person_conf, verbose=False)
+        face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
         results = []
 
-        for r in person_results:
-            for box in r.boxes:
-                px1, py1, px2, py2 = map(int, box.xyxy[0].tolist())
-                crop = frame[py1:py2, px1:px2]
-                if crop.size == 0:
-                    continue
-
-                rgb_crop = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
-                face_locations = face_recognition.face_locations(
-                    rgb_crop, number_of_times_to_upsample=1, model=self.model
-                )
-                face_encodings = face_recognition.face_encodings(rgb_crop, face_locations)
-
-                for face_encoding, (top, right, bottom, left) in zip(face_encodings, face_locations):
-                    matched_id = None
-                    name = "Unknown"
-                    confidence = 0.0
-
-                    if len(known_encodings_snap) > 0:
-                        matches = face_recognition.compare_faces(known_encodings_snap, face_encoding, tolerance=0.4)
-                        face_distances = face_recognition.face_distance(known_encodings_snap, face_encoding)
-                        best_match_index = face_distances.argmin()
-
-                        if matches[best_match_index]:
-                            matched_id = known_ids_snap[best_match_index]
-                            name = known_names_snap[best_match_index]
-                            confidence = round(float(1.0 - face_distances[best_match_index]), 2)
-
-                    global_top = py1 + top
-                    global_right = px1 + right
-                    global_bottom = py1 + bottom
-                    global_left = px1 + left
-
+        for (top, right, bottom, left), face_encoding in zip(face_locations, face_encodings):
+            distances = face_recognition.face_distance(self.known_embeddings, face_encoding)
+            if len(distances) > 0:
+                best_idx = np.argmin(distances)
+                if distances[best_idx] <= self.tolerance:
                     results.append({
-                        "matchedDbId": matched_id,
-                        "name": name,
-                        "faceMatchScore": confidence,
-                        "location": (global_top, global_right, global_bottom, global_left),
-                        "personBbox": (px1, py1, px2, py2)
+                        "targetId": self.known_ids[best_idx],
+                        "name": self.known_names[best_idx],
+                        "confidence": round(float(1 - distances[best_idx]), 2),
+                        "bbox": [left, top, right, bottom]
                     })
 
         return results
