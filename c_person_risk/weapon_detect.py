@@ -1,31 +1,41 @@
 import os
+import sys
+import torch
+import cv2
+import numpy as np
 from ultralytics import YOLO
 
 class WeaponDetector:
-    def __init__(self, model_path="models/best.pt"):
-        # 전달받은 model_path 사용 (파일이 없으면 기본 yolov8n.pt 로드)
-        target_path = model_path if os.path.exists(model_path) else "yolov8n.pt"
-        self.model = YOLO(target_path)
+    def __init__(self, model_path=None, conf_threshold=0.58):
+        if model_path is None:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            candidate = os.path.join(base_dir, 'best.pt')
+            model_path = candidate if os.path.exists(candidate) else 'yolov8n.pt'
+        
+        self.device = 0 if torch.cuda.is_available() else 'cpu'
+        self.model = YOLO(model_path)
+        self.conf_threshold = conf_threshold
 
-    def detect_weapons(self, frame, conf_threshold=0.4):
-        results = self.model(frame, conf=conf_threshold, verbose=False)[0]
-        detections = []
-
+    def detect_weapons(self, frame):
+        h, w = frame.shape[:2]
+        results = self.model(frame, device=self.device, conf=self.conf_threshold, verbose=False)[0]
+        weapons = []
+        
         for box in results.boxes:
             cls_id = int(box.cls[0])
-            label = self.model.names[cls_id]
             conf = float(box.conf[0])
+            label = self.model.names[cls_id]
             
-            # 'person' 클래스는 무기 감지 대상에서 제외
-            if label.lower() == 'person':
-                continue
-
-            xyxy = box.xyxy[0].cpu().numpy().tolist()
-
-            detections.append({
-                "label": label,
-                "confidence": round(conf, 2),
-                "bbox": [int(coord) for coord in xyxy]
+            # 바운더리 클리핑
+            xyxy = box.xyxy[0].cpu().numpy()
+            l = max(0, min(w, int(xyxy[0])))
+            t = max(0, min(h, int(xyxy[1])))
+            r = max(0, min(w, int(xyxy[2])))
+            b = max(0, min(h, int(xyxy[3])))
+            
+            weapons.append({
+                'label': label,
+                'confidence': conf,
+                'bbox': [l, t, r, b]
             })
-
-        return detections
+        return weapons
