@@ -1,141 +1,97 @@
+import os
+import sys
 import cv2
 import time
-import os
-from face_detect import FaceDetector
+
+base_dir = os.path.dirname(os.path.abspath(__file__))
+if base_dir not in sys.path:
+    sys.path.append(base_dir)
+
 from weapon_detect import WeaponDetector
-from event_publisher import send_event
+from face_detect import FaceDetector
 
-# 스크립트 파일 위치 기준 절대 경로 자동 계산 (경로 폴백 방지)
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MODEL_PATH = os.path.join(BASE_DIR, "models", "best.pt")
-VIDEO_PATH = os.path.join(BASE_DIR, "1sample.mp4")
+def main():
+    video_path = os.path.join(base_dir, "my_sample.mp4")
+    if not os.path.exists(video_path):
+        video_path = "c_person_risk/my_sample.mp4"
 
-# 9클래스 흉기 -> B파트 규격 2클래스(knife, blunt_weapon) 매핑
-CLASS_MAPPER = {
-    'knife': 'knife', 
-    'long knife': 'knife', 
-    'pocket-knife': 'knife', 
-    'ice pick': 'knife',
-    'baseball bat': 'blunt_weapon', 
-    'crow bar': 'blunt_weapon', 
-    'hammer': 'blunt_weapon', 
-    'sumpak': 'blunt_weapon'
-}
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        print(f"[ERROR] 영상을 열 수 없습니다: {video_path}")
+        return
 
-face_detector = FaceDetector()
-weapon_detector = WeaponDetector(MODEL_PATH)
+    weapon_detector = WeaponDetector()
+    face_detector = FaceDetector(tolerance=0.60)
 
-# 영상 파일 존재 확인 후 로드
-cap = cv2.VideoCapture(VIDEO_PATH if os.path.exists(VIDEO_PATH) else "1sample.mp4")
+    print("[INFO] Risk Pipeline Test 구동 시작 (종료: 'q' 키)")
 
-frame_count = 0
-skip_frames = 3
-current_faces = []
+    while True:
+        ret, frame = cap.read()
+        if not ret or frame is None:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            time.sleep(0.03)
+            continue
 
-# 이벤트 중복 발송 방지 타임스탬프 (인물별, 흉기종류별 독립 쿨다운)
-last_sent_time = {
-    "WANTED_PERSON": {},  # key: name, value: timestamp
-    "WEAPON": {}          # key: w_label, value: timestamp
-}
-COOLDOWN_SEC = 3.0
+        h, w = frame.shape[:2]
+        if h > 720:
+            scale = 720.0 / h
+            frame = cv2.resize(frame, (int(w * scale), 720))
 
-last_pkl_check = 0
-PKL_CHECK_INTERVAL = 1
+        try:
+            if hasattr(face_detector, "check_and_reload"):
+                face_detector.check_and_reload()
 
-def resize_to_fit(frame, max_width=720, max_height=1280):
-    h, w = frame.shape[:2]
-    scale = min(max_width / w, max_height / h, 1.0)
-    if scale < 1.0:
-        frame = cv2.resize(frame, (int(w * scale), int(h * scale)))
-    return frame
+            # 1. 수배자 탐지 (선명한 720p frame 직접 전달)
+            faces = []
+            if hasattr(face_detector, "detect_faces_with_person_crop"):
+                faces = face_detector.detect_faces_with_person_crop(frame)
+            elif hasattr(face_detector, "detect_faces"):
+                faces = face_detector.detect_faces(frame)
 
-while cap.isOpened():
-    ret, frame = cap.read()
-    if not ret:
-        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-        continue
+            for f in faces:
+                name = f.get("name", "Unknown")
+                target_id = f.get("targetId") or f.get("matchedDbId", "W000")
+                
+                print(f"[EVENT SENT 201] WANTED_PERSON: {{'targetId': '{target_id}', 'name': '{name}'}}")
 
-    frame = resize_to_fit(frame)
-    frame_count += 1
-    current_time = time.time()
+                # location 및 bbox 좌표 시각화 (1:1 직접 매핑)
+                if "location" in f:
+                    top, right, bottom, left = f["location"]
+                    cv2.rectangle(frame, (left, top), (right, bottom), (0, 0, 255), 2)
+                    cv2.putText(frame, f"WANTED: {name}", (left, max(20, top - 10)),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                elif "bbox" in f:
+                    bbox = f["bbox"]
+                    if isinstance(bbox, (list, tuple)) and len(bbox) == 4:
+                        l, t, r, b = [int(v) for v in bbox]
+                        cv2.rectangle(frame, (l, t), (r, b), (0, 0, 255), 2)
+                        cv2.putText(frame, f"WANTED: {name}", (l, max(20, t - 10)),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
 
-    # 0. Hot-Reload 폴링 감지 (1초 간격)
-    if current_time - last_pkl_check > PKL_CHECK_INTERVAL:
-        face_detector.check_and_reload()
-        last_pkl_check = current_time
+            # 2. 흉기 탐지
+            weapons = weapon_detector.detect_weapon(frame) if hasattr(weapon_detector, "detect_weapon") else []
+            for w_obj in weapons:
+                w_type = w_obj.get("weaponType", "knife") if isinstance(w_obj, dict) else "knife"
+                print(f"[EVENT SENT 201] WEAPON: {{'weaponType': '{w_type}'}}")
+                if isinstance(w_obj, dict) and "bbox" in w_obj:
+                    wb = w_obj["bbox"]
+                    if len(wb) == 4:
+                        l, t, r, b = [int(v) for v in wb]
+                        cv2.rectangle(frame, (l, t), (r, b), (0, 255, 255), 2)
+                        cv2.putText(frame, f"WEAPON: {w_type}", (l, max(20, t - 10)),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
 
-    # 1. 흉기 탐지 및 이벤트 발행 (매 프레임)
-    weapons = weapon_detector.detect_weapons(frame)
-    for w in weapons:
-        w_label = w["label"]
-        mapped_label = CLASS_MAPPER.get(w_label, w_label)
-        
-        last_w_time = last_sent_time["WEAPON"].get(w_label, 0)
-        if current_time - last_w_time > COOLDOWN_SEC:
-            send_event(
-                event_type="WEAPON",
-                confidence=w["confidence"],
-                bbox=w["bbox"],
-                meta={"weaponType": mapped_label}
-            )
-            last_sent_time["WEAPON"][w_label] = current_time
+            cv2.imshow("OmniGuard - Risk Pipeline Test", frame)
 
-        # 흉기 시각화 (빨간색)
-        x1, y1, x2, y2 = w["bbox"]
-        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
-        cv2.putText(frame, f"WEAPON: {mapped_label}", (x1, y1 - 10),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
 
-    # 2. Person-Crop 2단계 얼굴 인식 (3프레임 스킵)
-    if frame_count % skip_frames == 0:
-        current_faces = face_detector.detect_faces_with_person_crop(frame, person_conf=0.35)
+        except Exception as e:
+            print(f"[FRAME ERROR] {e}")
+            continue
 
-    # 3. 얼굴 시각화 및 수배자(+흉기 소지 여부) 이벤트 전송
-    for f in current_faces:
-        top, right, bottom, left = f["location"]
-        name = f["name"]
-        score = f["faceMatchScore"]
+    cap.release()
+    cv2.destroyAllWindows()
 
-        if name != "Unknown":
-            # personBbox 안전 참조 (없을 경우 얼굴 Bbox로 대체)
-            px1, py1, px2, py2 = f.get("personBbox", (left, top, right, bottom))
-            
-            armed_weapons = []
-            for w in weapons:
-                wx1, wy1, wx2, wy2 = w["bbox"]
-                wcx, wcy = (wx1 + wx2) / 2, (wy1 + wy2) / 2
-                if px1 <= wcx <= px2 and py1 <= wcy <= py2:
-                    armed_weapons.append(CLASS_MAPPER.get(w["label"], w["label"]))
-
-            # [always-defined 스키마]
-            meta = {
-                "matchedDbId": f["matchedDbId"],
-                "personName": name,
-                "isArmed": bool(armed_weapons),
-                "armedWith": armed_weapons[0] if armed_weapons else None
-            }
-
-            last_time = last_sent_time["WANTED_PERSON"].get(name, 0)
-            if current_time - last_time > COOLDOWN_SEC:
-                send_event(
-                    event_type="WANTED_PERSON",
-                    confidence=score,
-                    bbox=[left, top, right, bottom],
-                    meta=meta
-                )
-                last_sent_time["WANTED_PERSON"][name] = current_time
-
-            # 시각화: 무장 시 주황색, 미무장 시 녹색
-            label_text = f"WANTED: {name} (ARMED)" if armed_weapons else f"WANTED: {name} ({score})"
-            box_color = (0, 165, 255) if armed_weapons else (0, 255, 0)
-            
-            cv2.rectangle(frame, (left, top), (right, bottom), box_color, 2)
-            cv2.putText(frame, label_text, (left, top - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, box_color, 2)
-
-    cv2.imshow("OmniGuard - Risk Pipeline Test", frame)
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
-
-cap.release()
-cv2.destroyAllWindows()
+if __name__ == "__main__":
+    main()

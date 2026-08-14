@@ -1,6 +1,7 @@
 import os
 import pickle
 import numpy as np
+import cv2
 import face_recognition
 
 class FaceDetector:
@@ -56,14 +57,16 @@ class FaceDetector:
                 self.load_db()
 
     def detect_faces(self, frame, person_boxes=None):
-        rgb_frame = frame[:, :, ::-1]
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         
-        if person_boxes:
+        if person_boxes and isinstance(person_boxes, list) and len(person_boxes) > 0:
             face_locations = []
-            for (px1, py1, px2, py2) in person_boxes:
-                h, w, _ = frame.shape
-                top, right, bottom, left = max(0, py1), min(w, px2), min(h, py2), max(0, px1)
-                face_locations.append((top, right, bottom, left))
+            for box in person_boxes:
+                if isinstance(box, (list, tuple)) and len(box) >= 4:
+                    px1, py1, px2, py2 = int(box[0]), int(box[1]), int(box[2]), int(box[3])
+                    h, w, _ = frame.shape
+                    top, right, bottom, left = max(0, py1), min(w, px2), min(h, py2), max(0, px1)
+                    face_locations.append((top, right, bottom, left))
         else:
             face_locations = face_recognition.face_locations(rgb_frame)
 
@@ -77,12 +80,19 @@ class FaceDetector:
             distances = face_recognition.face_distance(self.known_embeddings, face_encoding)
             if len(distances) > 0:
                 best_idx = np.argmin(distances)
-                if distances[best_idx] <= self.tolerance:
+                dist_val = float(distances[best_idx])
+                
+                if dist_val <= self.tolerance:
                     results.append({
                         "targetId": self.known_ids[best_idx],
                         "name": self.known_names[best_idx],
-                        "confidence": round(float(1 - distances[best_idx]), 2),
+                        "confidence": round(float(1 - dist_val), 2),
+                        "distance": round(dist_val, 4),
+                        "location": (top, right, bottom, left),
                         "bbox": [left, top, right, bottom]
                     })
 
         return results
+
+    def detect_faces_with_person_crop(self, frame, person_boxes=None, *args, **kwargs):
+        return self.detect_faces(frame, person_boxes)
