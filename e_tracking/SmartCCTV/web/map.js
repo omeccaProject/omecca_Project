@@ -111,6 +111,9 @@ const CONFIG = {
     L010271: { demoId: "B", videoUrl: "http://localhost:4000/videos/forza_B.mp4", trackLogUrl: "data/forza-track-log-L010271.json" },
     L010128: { demoId: "C", videoUrl: "http://localhost:4000/videos/forza_C.mp4", trackLogUrl: "data/forza-track-log-L010128.json" },
     L010481: { demoId: "D", videoUrl: "http://localhost:4000/videos/forza_D.mp4", trackLogUrl: "data/forza-track-log-L010481.json" },
+    L010043: { demoId: "KICK", videoUrl: "http://localhost:4000/videos/kickboard_h264.mp4", trackLogUrl: "data/debris-track-log-L010043.json" },
+    L010146: { demoId: "BOX",  videoUrl: "http://localhost:4000/videos/box_h264.mp4",       trackLogUrl: "data/debris-track-log-L010146.json" },
+    L010140: { demoId: "CONE", videoUrl: "http://localhost:4000/videos/cone_h264.mp4",      trackLogUrl: "data/debris-track-log-L010140.json" },
   },
   // 이상운전 이벤트 수신 후 "활성 상태"(이상 차량 강조 + 통계 반영)를 유지할 시간(ms).
   // Python이 "해제" 신호를 보내지 않으므로, 일정 시간 뒤 GIS가 스스로 강조를 해제한다.

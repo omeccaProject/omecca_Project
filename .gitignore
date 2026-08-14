@@ -1,7 +1,7 @@
-venv
-docs
+/venv
+/docs
 /data/
-runs/
+/runs/
 *.pt
 
 #도로 낙하물 이미지 제외
