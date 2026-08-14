@@ -21,7 +21,7 @@ def main():
         return
 
     weapon_detector = WeaponDetector()
-    face_detector = FaceDetector(tolerance=0.60)
+    face_detector = FaceDetector(tolerance=0.55)
 
     print("[INFO] Risk Pipeline Test 구동 시작 (종료: 'q' 키)")
 
@@ -36,12 +36,13 @@ def main():
         if h > 720:
             scale = 720.0 / h
             frame = cv2.resize(frame, (int(w * scale), 720))
+            h, w = frame.shape[:2]
 
         try:
             if hasattr(face_detector, "check_and_reload"):
                 face_detector.check_and_reload()
 
-            # 1. 수배자 탐지 (선명한 720p frame 직접 전달)
+            # 1. 수배자 탐지
             faces = []
             if hasattr(face_detector, "detect_faces_with_person_crop"):
                 faces = face_detector.detect_faces_with_person_crop(frame)
@@ -54,16 +55,18 @@ def main():
                 
                 print(f"[EVENT SENT 201] WANTED_PERSON: {{'targetId': '{target_id}', 'name': '{name}'}}")
 
-                # location 및 bbox 좌표 시각화 (1:1 직접 매핑)
+                # location(dlib 튜플) 및 bbox(YOLO/일반) 엄격 키 분기 + 가장자리 클리핑
                 if "location" in f:
                     top, right, bottom, left = f["location"]
-                    cv2.rectangle(frame, (left, top), (right, bottom), (0, 0, 255), 2)
-                    cv2.putText(frame, f"WANTED: {name}", (left, max(20, top - 10)),
+                    t, r, b, l = max(0, int(top)), min(w, int(right)), min(h, int(bottom)), max(0, int(left))
+                    cv2.rectangle(frame, (l, t), (r, b), (0, 0, 255), 2)
+                    cv2.putText(frame, f"WANTED: {name}", (l, max(20, t - 10)),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
                 elif "bbox" in f:
                     bbox = f["bbox"]
                     if isinstance(bbox, (list, tuple)) and len(bbox) == 4:
-                        l, t, r, b = [int(v) for v in bbox]
+                        left, top, right, bottom = bbox
+                        t, r, b, l = max(0, int(top)), min(w, int(right)), min(h, int(bottom)), max(0, int(left))
                         cv2.rectangle(frame, (l, t), (r, b), (0, 0, 255), 2)
                         cv2.putText(frame, f"WANTED: {name}", (l, max(20, t - 10)),
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
@@ -76,7 +79,8 @@ def main():
                 if isinstance(w_obj, dict) and "bbox" in w_obj:
                     wb = w_obj["bbox"]
                     if len(wb) == 4:
-                        l, t, r, b = [int(v) for v in wb]
+                        left, top, right, bottom = wb
+                        t, r, b, l = max(0, int(top)), min(w, int(right)), min(h, int(bottom)), max(0, int(left))
                         cv2.rectangle(frame, (l, t), (r, b), (0, 255, 255), 2)
                         cv2.putText(frame, f"WEAPON: {w_type}", (l, max(20, t - 10)),
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)

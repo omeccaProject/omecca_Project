@@ -45,7 +45,7 @@ class FaceDetector:
                         self.known_names.append(k)
                         self.known_embeddings.append(v)
             
-            print(f"[INFO] 수배자 DB 로드 완료: {len(self.known_ids)}명 ({self.known_names})")
+            print(f"[INFO] 수배자 DB 로드 완료: {len(self.known_ids)}개 임베딩 등록됨")
         except Exception as e:
             print(f"[ERROR] DB 로드 실패: {e}")
 
@@ -58,17 +58,7 @@ class FaceDetector:
 
     def detect_faces(self, frame, person_boxes=None):
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        
-        if person_boxes and isinstance(person_boxes, list) and len(person_boxes) > 0:
-            face_locations = []
-            for box in person_boxes:
-                if isinstance(box, (list, tuple)) and len(box) >= 4:
-                    px1, py1, px2, py2 = int(box[0]), int(box[1]), int(box[2]), int(box[3])
-                    h, w, _ = frame.shape
-                    top, right, bottom, left = max(0, py1), min(w, px2), min(h, py2), max(0, px1)
-                    face_locations.append((top, right, bottom, left))
-        else:
-            face_locations = face_recognition.face_locations(rgb_frame)
+        face_locations = face_recognition.face_locations(rgb_frame)
 
         if not face_locations or len(self.known_embeddings) == 0:
             return []
