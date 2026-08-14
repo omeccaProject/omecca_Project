@@ -2,7 +2,6 @@ import time
 import requests
 import json
 
-# 게이트웨이 규격 맞춤용 BBox 변환 (독립 구현: [x1, y1, x2, y2] -> [x, y, w, h])
 def to_bbox_xywh(bbox):
     if not bbox or len(bbox) != 4:
         return [0, 0, 0, 0]
@@ -15,19 +14,21 @@ class EventPublisher:
         self.cooldown_sec = cooldown_sec
         self.last_sent_times = {}
 
-    def send_event(self, event_type, meta, frame=None, bbox=None, confidence=0.0):
+    def send_event(self, event_type, confidence=0.0, bbox=None, cam_id='CAM_01', meta=None, frame=None):
         now = time.time()
-        # 이벤트별 3초 쿨다운 검사
+        if meta is None:
+            meta = {}
+            
+        # 쿨다운 검사
         if event_type in self.last_sent_times:
             if now - self.last_sent_times[event_type] < self.cooldown_sec:
                 return False
 
-        # 게이트웨이 표준 BBox 변환 ([x, y, w, h])
+        # 게이트웨이 규격 [x, y, w, h] 변환
         xywh_bbox = to_bbox_xywh(bbox)
 
-        # 게이트웨이 100% 호환 페이로드 구성
         payload = {
-            'camId': 'CAM_01',
+            'camId': cam_id,
             'targetId': None,
             'eventType': event_type,
             'confidence': float(confidence),
@@ -41,11 +42,23 @@ class EventPublisher:
         }
 
         try:
-            # 실제 전송 (연동 전에는 타임아웃 0.5초 방어)
             res = requests.post(self.endpoint, json=payload, timeout=0.5)
             self.last_sent_times[event_type] = now
-            return res.status_code == 200
+            # 200(OK), 201(Created) 모두 성공 처리
+            return res.status_code in (200, 201)
         except Exception:
-            # 게이트웨이 미기동 시에도 파이프라인 다운 방지
             self.last_sent_times[event_type] = now
             return True
+
+# [하위 호환용 글로벌 싱글톤 인스턴스 및 함수]
+_default_publisher = EventPublisher()
+
+def send_event(event_type, confidence=0.0, bbox=None, cam_id='CAM_01', meta=None, frame=None):
+    return _default_publisher.send_event(
+        event_type=event_type,
+        confidence=confidence,
+        bbox=bbox,
+        cam_id=cam_id,
+        meta=meta,
+        frame=frame
+    )
