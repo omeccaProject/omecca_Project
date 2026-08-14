@@ -19,7 +19,6 @@ class FaceDetector:
 
     def load_db(self):
         if not os.path.exists(self.db_path):
-            print(f"[WARN] 수배자 DB 파일 없음: {self.db_path}")
             return
         try:
             self.last_mtime = os.path.getmtime(self.db_path)
@@ -44,8 +43,6 @@ class FaceDetector:
                     else:
                         self.known_names.append(k)
                         self.known_embeddings.append(v)
-            
-            print(f"[INFO] 수배자 DB 로드 완료: {len(self.known_ids)}개 임베딩 등록됨")
         except Exception as e:
             print(f"[ERROR] DB 로드 실패: {e}")
 
@@ -53,7 +50,6 @@ class FaceDetector:
         if os.path.exists(self.db_path):
             current_mtime = os.path.getmtime(self.db_path)
             if current_mtime > self.last_mtime:
-                print(f"[INFO] 수배자 DB 변동 감지 -> Hot Reload 실행")
                 self.load_db()
 
     def detect_faces(self, frame, person_boxes=None):
@@ -73,13 +69,18 @@ class FaceDetector:
                 dist_val = float(distances[best_idx])
                 
                 if dist_val <= self.tolerance:
+                    score = round(float(1.0 - dist_val), 2)
+                    target_id = self.known_ids[best_idx]
+                    target_name = self.known_names[best_idx]
                     results.append({
-                        "targetId": self.known_ids[best_idx],
-                        "name": self.known_names[best_idx],
-                        "confidence": round(float(1 - dist_val), 2),
-                        "distance": round(dist_val, 4),
-                        "location": (top, right, bottom, left),
-                        "bbox": [left, top, right, bottom]
+                        "matchedDbId": target_id,
+                        "targetId": target_id,
+                        "name": target_name,
+                        "faceMatchScore": score,
+                        "confidence": score,
+                        "location": (int(top), int(right), int(bottom), int(left)),
+                        "personBbox": (int(left), int(top), int(right), int(bottom)),
+                        "bbox": [int(left), int(top), int(right), int(bottom)]
                     })
 
         return results
