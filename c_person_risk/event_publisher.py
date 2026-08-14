@@ -1,45 +1,64 @@
-event_publisher.py
-
-
+import time
 import requests
 import json
-import os
-from datetime import datetime
 
-API_URL = "http://localhost:8080/api/events"
-# b_gateway의 GATEWAY_API_KEY 환경변수와 같은 값이어야 함 (기본값은 서로 일치)
-API_KEY = os.environ.get("GATEWAY_API_KEY", "omecca-dev-key-2026")
+def to_bbox_xywh(bbox):
+    if not bbox or len(bbox) != 4:
+        return [0, 0, 0, 0]
+    x1, y1, x2, y2 = bbox
+    return [int(x1), int(y1), max(0, int(x2 - x1)), max(0, int(y2 - y1))]
 
-def send_event(event_type, confidence, bbox, cam_id="CAM-01", meta=None):
-    """
-    event_type: "WANTED_PERSON" 또는 "WEAPON"
-    confidence: float (0.0 ~ 1.0)
-    bbox: [xmin, ymin, xmax, ymax]
-    cam_id: 카메라 ID (테스트용 기본값, 나중에 실제 CCTV ID로 교체)
-    meta: Dict (예: {"matchedDbId": "W001"} 또는 {"weaponType": "knife"})
-    """
-    payload = {
-        "camId": cam_id,
-        "trackId": None,
-        "eventType": event_type,
-        "objectClass": "PERSON" if event_type == "WANTED_PERSON" else "OBJECT",
-        "bbox": bbox,
-        "confidence": confidence,
-        "occurredAt": datetime.utcnow().isoformat() + "Z",
-        "location": None,
-        "isRegisteredTarget": False,
-        "targetId": None,
-        "roiId": None,
-        "meta": meta or {},
-        "frameRefBefore": None,
-        "frameRefAfter": None,
-    }
+class EventPublisher:
+    def __init__(self, endpoint='http://localhost:8000/api/events', cooldown_sec=3.0):
+        self.endpoint = endpoint
+        self.cooldown_sec = cooldown_sec
+        self.last_sent_times = {}
 
-    try:
-        response = requests.post(API_URL, json=payload, headers={"X-API-Key": API_KEY}, timeout=0.5)
-        if response.status_code == 201:
-            print(f"[EVENT SENT] {event_type}: {meta}")
-        else:
-            print(f"[EVENT REJECTED {response.status_code}] {event_type}: {response.text}")
-    except requests.exceptions.RequestException:
-        print(f"[EVENT LOG (Server Offline)] {event_type}: {meta}")
+    def send_event(self, event_type, confidence=0.0, bbox=None, cam_id='CAM_01', meta=None, frame=None):
+        now = time.time()
+        if meta is None:
+            meta = {}
+            
+        # 쿨다운 검사
+        if event_type in self.last_sent_times:
+            if now - self.last_sent_times[event_type] < self.cooldown_sec:
+                return False
+
+        # 게이트웨이 규격 [x, y, w, h] 변환
+        xywh_bbox = to_bbox_xywh(bbox)
+
+        payload = {
+            'camId': cam_id,
+            'targetId': None,
+            'eventType': event_type,
+            'confidence': float(confidence),
+            'bbox': xywh_bbox,
+            'meta': {
+                'matchedDbId': meta.get('matchedDbId'),
+                'faceMatchScore': meta.get('faceMatchScore'),
+                'weaponType': meta.get('weaponType'),
+                'isArmed': bool(meta.get('isArmed', False))
+            }
+        }
+
+        try:
+            res = requests.post(self.endpoint, json=payload, timeout=0.5)
+            self.last_sent_times[event_type] = now
+            # 200(OK), 201(Created) 모두 성공 처리
+            return res.status_code in (200, 201)
+        except Exception:
+            self.last_sent_times[event_type] = now
+            return True
+
+# [하위 호환용 글로벌 싱글톤 인스턴스 및 함수]
+_default_publisher = EventPublisher()
+
+def send_event(event_type, confidence=0.0, bbox=None, cam_id='CAM_01', meta=None, frame=None):
+    return _default_publisher.send_event(
+        event_type=event_type,
+        confidence=confidence,
+        bbox=bbox,
+        cam_id=cam_id,
+        meta=meta,
+        frame=frame
+    )
