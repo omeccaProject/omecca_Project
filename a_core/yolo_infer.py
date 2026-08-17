@@ -34,7 +34,10 @@ hazard_model = YOLO(str(HAZARD_MODEL_PATH))   # 낙하물 파인튜닝 모델
 
 ALL_MODELS = [general_model, hazard_model]
 
-DEFAULT_VIDEO = PROJECT_ROOT / "data" / "videos" / "test_cone.mp4"
+OUTPUT_DIR = BASE_DIR / "outputs"          # a_core/outputs/
+OUTPUT_DIR.mkdir(exist_ok=True)
+
+DEFAULT_VIDEO = PROJECT_ROOT / "data" / "videos" / "kickboard.mp4"
 CAM_ID = "CCTV-014"
 
 
@@ -91,35 +94,52 @@ def main():
                         help="방치물 판정 정지 지속시간(초)")
     parser.add_argument("--no-display", action="store_true",
                         help="화면 출력 없이 실행 (서버 연동용)")
+    parser.add_argument("--save", action="store_true",
+                    help="탐지 결과 영상을 a_core/outputs/ 에 저장")
     args = parser.parse_args()
 
     tracker = StationaryObjectTracker(threshold_sec=args.threshold)
+
+    writer = None
+    if args.save:
+        save_path = OUTPUT_DIR / f"{Path(args.video).stem}_detected.mp4"
 
     for frame, idx in frame_generator(args.video, target_fps=args.fps):
         detections = detect(frame)
         now = time.time()
 
-        # 1. 낙하물(방치물) 이벤트 — 낙하물 클래스만 정지 판별에 투입
+        # 1. 낙하물(방치물) 이벤트
         debris_candidates = [d for d in detections if d["class"] in DEBRIS_CLASSES]
         for event in tracker.update(debris_candidates, now):
             payload = build_event_payload(CAM_ID, event, roi_id="roi_sidewalk_01")
             print("[DEBRIS] 이벤트 전송 예정:")
-            print("[DEBRIS] 이벤트 전송 예정:")
             print(json.dumps(payload, ensure_ascii=False, indent=2))
 
-        # 2. 흉기 이벤트 — 탐지 즉시 발생
+        # 2. 흉기 이벤트
         for det in detections:
             if det["class"] in WEAPON_CLASSES:
                 payload = build_weapon_event_payload(CAM_ID, det)
                 print("[WEAPON] 이벤트 전송 예정:")
-                print("[WEAPON] 이벤트 전송 예정:")
                 print(json.dumps(payload, ensure_ascii=False, indent=2))
 
+        # 박스 그리기는 저장/화면표시 둘 다에 필요하므로 여기서 한 번만 수행
+        frame = draw_detections(frame, detections)
+
+        if args.save:
+            if writer is None:
+                h, w = frame.shape[:2]
+                fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+                writer = cv2.VideoWriter(str(save_path), fourcc, args.fps, (w, h))
+            writer.write(frame)
+
         if not args.no_display:
-            frame = draw_detections(frame, detections)
             cv2.imshow("OMECCA - Module A", resize_for_display(frame))
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
+
+    if writer is not None:
+        writer.release()
+        print(f"[SAVE] 저장 완료: {save_path}")
 
     cv2.destroyAllWindows()
 

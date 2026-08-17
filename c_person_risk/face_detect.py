@@ -1,6 +1,7 @@
 import os
 import pickle
 import numpy as np
+import cv2
 import face_recognition
 
 class FaceDetector:
@@ -18,7 +19,6 @@ class FaceDetector:
 
     def load_db(self):
         if not os.path.exists(self.db_path):
-            print(f"[WARN] 수배자 DB 파일 없음: {self.db_path}")
             return
         try:
             self.last_mtime = os.path.getmtime(self.db_path)
@@ -43,8 +43,6 @@ class FaceDetector:
                     else:
                         self.known_names.append(k)
                         self.known_embeddings.append(v)
-            
-            print(f"[INFO] 수배자 DB 로드 완료: {len(self.known_ids)}명 ({self.known_names})")
         except Exception as e:
             print(f"[ERROR] DB 로드 실패: {e}")
 
@@ -52,20 +50,11 @@ class FaceDetector:
         if os.path.exists(self.db_path):
             current_mtime = os.path.getmtime(self.db_path)
             if current_mtime > self.last_mtime:
-                print(f"[INFO] 수배자 DB 변동 감지 -> Hot Reload 실행")
                 self.load_db()
 
     def detect_faces(self, frame, person_boxes=None):
-        rgb_frame = frame[:, :, ::-1]
-        
-        if person_boxes:
-            face_locations = []
-            for (px1, py1, px2, py2) in person_boxes:
-                h, w, _ = frame.shape
-                top, right, bottom, left = max(0, py1), min(w, px2), min(h, py2), max(0, px1)
-                face_locations.append((top, right, bottom, left))
-        else:
-            face_locations = face_recognition.face_locations(rgb_frame)
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        face_locations = face_recognition.face_locations(rgb_frame)
 
         if not face_locations or len(self.known_embeddings) == 0:
             return []
@@ -77,12 +66,24 @@ class FaceDetector:
             distances = face_recognition.face_distance(self.known_embeddings, face_encoding)
             if len(distances) > 0:
                 best_idx = np.argmin(distances)
-                if distances[best_idx] <= self.tolerance:
+                dist_val = float(distances[best_idx])
+                
+                if dist_val <= self.tolerance:
+                    score = round(float(1.0 - dist_val), 2)
+                    target_id = self.known_ids[best_idx]
+                    target_name = self.known_names[best_idx]
                     results.append({
-                        "targetId": self.known_ids[best_idx],
-                        "name": self.known_names[best_idx],
-                        "confidence": round(float(1 - distances[best_idx]), 2),
-                        "bbox": [left, top, right, bottom]
+                        "matchedDbId": target_id,
+                        "targetId": target_id,
+                        "name": target_name,
+                        "faceMatchScore": score,
+                        "confidence": score,
+                        "location": (int(top), int(right), int(bottom), int(left)),
+                        "personBbox": (int(left), int(top), int(right), int(bottom)),
+                        "bbox": [int(left), int(top), int(right), int(bottom)]
                     })
 
         return results
+
+    def detect_faces_with_person_crop(self, frame, person_boxes=None, *args, **kwargs):
+        return self.detect_faces(frame, person_boxes)
