@@ -57,6 +57,18 @@ class CharBox:
         )
 
 
+# 세로 모음 판정 기준.
+#
+#   실사진 47장으로 0.34/0.08 까지 조여 보았다. 글자 수를 정확히 맞추는 비율은
+#   36%→77% 로 크게 올랐지만, **최종 인식 정확도는 78%→76% 로 오히려 떨어졌다.**
+#   분할이 잘 되는 사진은 원래도 잘 읽혔고, 새로 2패스에 들어온 어려운 사진들이
+#   2패스 정확도를 100%→85% 로 끌어내렸기 때문이다.
+#   중간 지표(분할 정확도)가 좋아진다고 최종 지표가 좋아지지는 않는다.
+#   그래서 실측이 더 나았던 원래 값으로 되돌렸다.
+VOWEL_RATIO = 0.50
+GAP_RATIO = 0.22
+
+
 def binarize_text(gray: Any) -> Any:
     """문자를 전경(255)으로 만드는 이진화.
 
@@ -69,7 +81,8 @@ def binarize_text(gray: Any) -> Any:
     return thr
 
 
-def segment(gray: Any) -> list[CharBox]:
+def segment(gray: Any, vowel_ratio: float = VOWEL_RATIO,
+            gap_ratio: float = GAP_RATIO) -> list[CharBox]:
     """번호판 이미지를 글자 영역 목록(좌→우)으로 나눈다."""
     if not HAS_CV or gray is None or getattr(gray, "size", 0) == 0:
         return []
@@ -97,14 +110,15 @@ def segment(gray: Any) -> list[CharBox]:
             continue
         boxes.append([x, y, x + cw, y + ch])
 
-    merged = merge_syllables(boxes)
+    merged = merge_syllables(boxes, vowel_ratio, gap_ratio)
     return [
         CharBox(*b) for b in merged
         if (b[3] - b[1]) >= h * 0.3 and (b[2] - b[0]) >= 2
     ]
 
 
-def merge_syllables(boxes: list[list[int]]) -> list[list[int]]:
+def merge_syllables(boxes: list[list[int]], vowel_ratio: float = VOWEL_RATIO,
+                    gap_ratio: float = GAP_RATIO) -> list[list[int]]:
     """한글 자모로 쪼개진 성분을 하나의 음절로 합친다.
 
       - 세로 모음(ㅏㅓㅣ 등): 좁고 길다 → 폭/높이 비가 작으면 앞 글자에 붙인다
@@ -123,7 +137,7 @@ def merge_syllables(boxes: list[list[int]]) -> list[list[int]]:
     # 한글 음절은 숫자보다 넓다. 1.15 로 두면 '사'(ㅅ+ㅏ, 폭 60 vs 한계 58.6)처럼
     # 아슬아슬하게 병합에 실패한다. 1.35 로 두어도 숫자 두 개(폭 74)는 걸러진다.
     max_w = char_h * 1.35
-    gap_thr = char_h * 0.22
+    gap_thr = char_h * gap_ratio
 
     merged = [boxes[0][:]]
     for b in boxes[1:]:
@@ -134,7 +148,7 @@ def merge_syllables(boxes: list[list[int]]) -> list[list[int]]:
         overlap = min(cur[2], b[2]) - max(cur[0], b[0])
         overlap_ratio = overlap / float(min(cur[2] - cur[0], bw) or 1)
 
-        vertical_vowel = bh > 0 and (bw / float(bh)) < 0.5 and gap < gap_thr
+        vertical_vowel = bh > 0 and (bw / float(bh)) < vowel_ratio and gap < gap_thr
         horizontal_vowel = overlap_ratio > 0.5
 
         # '도·보' 처럼 모음이 자음 아래에 놓이면 각 부품의 높이가 음절 높이보다

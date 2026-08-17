@@ -359,24 +359,41 @@ def _merge_text_boxes(
     if not items:
         return []
     items = sorted(items, key=lambda t: t[0].x1)
-    out: list[tuple[BBox, str, float]] = [items[0]]
 
-    for b, text, conf in items[1:]:
-        pb, ptext, pconf = out[-1]
-        v_overlap = min(pb.y2, b.y2) - max(pb.y1, b.y1)
-        min_h = min(pb.height, b.height)
-        gap = b.x1 - pb.x2
-        same_line = min_h > 0 and v_overlap / min_h > 0.5
-        close = gap < min_h * gap_ratio
-
-        if same_line and close:
-            out[-1] = (
-                BBox(min(pb.x1, b.x1), min(pb.y1, b.y1), max(pb.x2, b.x2), max(pb.y2, b.y2)),
-                ptext + text,
-                (pconf + conf) / 2,
-            )
+    # **바로 앞 조각하고만 비교하면 안 된다.**
+    #   x 순으로 늘어놓으면 다른 줄에 있는 글자(차 로고·차종 표기 등)가
+    #   번호판 조각 사이에 끼어든다. 그러면 앞 조각과의 연결이 끊겨,
+    #   같은 줄인데도 영영 못 합친다. 실측에서 이 때문에 번호판이
+    #   '100라' 와 '7873' 으로 갈렸다 (사이에 KIA 로고가 끼었다).
+    #
+    #   그래서 이미 만들어진 묶음 **전부**를 훑어 같은 줄이면서 가까운 것을
+    #   찾는다. 없으면 새 묶음을 만든다.
+    groups: list[list] = []          # [x1, y1, x2, y2, text조각들]
+    for b, text, conf in items:
+        target = None
+        for g in groups:
+            gb = BBox(g[0], g[1], g[2], g[3])
+            v_overlap = min(gb.y2, b.y2) - max(gb.y1, b.y1)
+            min_h = min(gb.height, b.height)
+            if min_h <= 0 or v_overlap / min_h <= 0.5:
+                continue                       # 다른 줄
+            gap = max(b.x1 - gb.x2, gb.x1 - b.x2)   # 겹치면 음수
+            if gap < min_h * gap_ratio:
+                target = g
+                break
+        if target is None:
+            groups.append([b.x1, b.y1, b.x2, b.y2, [(b.x1, text, conf)]])
         else:
-            out.append((b, text, conf))
+            target[0] = min(target[0], b.x1); target[1] = min(target[1], b.y1)
+            target[2] = max(target[2], b.x2); target[3] = max(target[3], b.y2)
+            target[4].append((b.x1, text, conf))
+
+    out: list[tuple[BBox, str, float]] = []
+    for x1, y1, x2, y2, parts in groups:
+        parts.sort(key=lambda t: t[0])         # 왼→오 순서로 이어 붙인다
+        text = "".join(t for _, t, _ in parts)
+        conf = sum(c for _, _, c in parts) / len(parts)
+        out.append((BBox(x1, y1, x2, y2), text, conf))
     return out
 
 

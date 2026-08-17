@@ -95,6 +95,13 @@ class VehicleRepository:
 
     # ------------------------------------------------------------------
     def _connect(self):
+        # MySQL 경로는 실제 서버에서 검증했다 (2026-08-15, MySQL 8.0.42).
+        #   접속 · 스키마 · 읽기/쓰기 · 한글(utf8mb4) · 조회까지 7단계 통과.
+        #   재현: python check_mysql.py --create --user root --password ...
+        #
+        # 여기서 실패하면 **조용히 SQLite 로 넘어간다.** 시연이 멈추지 않게
+        # 하려는 것인데, 그래서 "정말 MySQL 을 쓰는지"는 이 코드만 봐서는
+        # 알 수 없다. 확인하려면 check_mysql.py 를 쓴다.
         if self.driver == "mysql":  # pragma: no cover - 운영 환경 의존
             try:
                 import pymysql  # type: ignore

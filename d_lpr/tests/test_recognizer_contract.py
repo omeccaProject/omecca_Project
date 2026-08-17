@@ -20,7 +20,12 @@ from app.lpr.recognizer import (
 
 
 class FakeReader:
-    """easyocr.Reader 대역."""
+    """easyocr.Reader 대역.
+
+    운영 코드는 `recognize()`(검출 없이 이미지 전체를 한 줄로 읽기)를 주로
+    쓰고, 그게 안 되면 `readtext()`(내부 글자 검출 포함)로 물러난다.
+    대역도 둘 다 갖춰야 실제 호출 경로를 흉내 낼 수 있다.
+    """
 
     def __init__(self, results, raise_exc: bool = False):
         self.results = results
@@ -28,6 +33,12 @@ class FakeReader:
         self.calls: list[dict] = []
 
     def readtext(self, image, **kwargs):
+        self.calls.append(kwargs)
+        if self.raise_exc:
+            raise RuntimeError("OCR 엔진 오류")
+        return list(self.results)
+
+    def recognize(self, image, **kwargs):
         self.calls.append(kwargs)
         if self.raise_exc:
             raise RuntimeError("OCR 엔진 오류")
@@ -57,7 +68,10 @@ class TestReadtextParsing:
         assert r.plate_no == "12가3456"
         assert r.valid_format
         assert r.confidence == pytest.approx(0.93, abs=0.01)
-        assert r.engine == "easyocr"
+        # 2패스가 아닌 경로로 읽었음을 나타내면 된다. 구체적인 이름
+        # (whole-greedy / whole-beamsearch / detect)은 어느 방식이 채택됐는지에
+        # 따라 달라지므로 고정하지 않는다.
+        assert r.engine.startswith("easyocr") and "2pass" not in r.engine
 
     def test_fragments_joined_in_x_order(self, patch_reader):
         """조각이 뒤섞여 와도 x 좌표 순으로 이어붙여야 한다."""
@@ -83,7 +97,8 @@ class TestReadtextParsing:
         PlateRecognizer(mock=False).read(IMG)
         assert reader.calls[0]["allowlist"] == ALLOWLIST
         assert reader.calls[0]["detail"] == 1
-        assert reader.calls[0]["paragraph"] is False
+        # 문단 병합은 켜지 않는다. 번호판은 한 줄이라 켜면 엉뚱하게 묶인다.
+        assert reader.calls[0].get("paragraph", False) is False
 
     def test_allowlist_contains_plate_charset(self):
         for ch in "0123456789가나허바자서울경기":
@@ -170,13 +185,20 @@ class TestStructuredTwoPass:
             def __init__(self):
                 self.calls: list[str] = []
 
-            def readtext(self, image, allowlist=None, **kw):
+            def _answer(self, allowlist):
                 self.calls.append(allowlist or "")
                 if allowlist == DIGIT_ALLOWLIST:
                     return [(box(i * 10), ch, conf) for i, ch in enumerate(digits)]
                 if allowlist == HANGUL_ALLOWLIST:
                     return [(box(0), hangul, conf)]
                 return [(box(0), digits[:2] + hangul + digits[2:], conf)]
+
+            # 운영 코드는 recognize() 를 먼저 쓴다 (검출 없이 전체 읽기).
+            def recognize(self, image, allowlist=None, **kw):
+                return self._answer(allowlist)
+
+            def readtext(self, image, allowlist=None, **kw):
+                return self._answer(allowlist)
 
         return ByAllowlist()
 
@@ -220,7 +242,7 @@ class TestStructuredTwoPass:
         r = rec.read(plate_image)
         assert rec.stats["single_pass"] == 1
         assert rec.stats["structured_ok"] == 0
-        assert r.engine == "easyocr"
+        assert "2pass" not in r.engine
 
     def test_structured_skipped_without_image(self, patch_reader):
         reader = patch_reader(self._reader_by_allowlist("123456", "가"))

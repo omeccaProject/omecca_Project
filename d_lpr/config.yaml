@@ -29,10 +29,17 @@ lpr:
 
 violation:
   zones_path: config_zones.json
-  track_history: 120        # track별 궤적 보관 프레임 수
+  track_history: 300        # track별 궤적 보관 프레임 수 (30fps 기준 10초)
   uturn_angle_deg: 150.0    # 유턴 판정 진입/진출 각도차 임계값
   uturn_min_points: 8       # 유턴 판정 최소 궤적 포인트
   uturn_min_speed: 1.0      # 정지 차량 오탐 방지 최소 이동량(px/frame)
+  uturn_confirm_sec: 4.0    # 중앙선 통과 후 유턴 확정까지 지켜보는 시간(초)
+  uturn_heading_window: 8   # 진입/진출 방향 계산에 쓰는 포인트 수
+  uturn_lookback_px: 120.0    # 진입 방향 측정 지점 (통과 지점에서 되돌아갈 이동 거리)
+  uturn_lookback_cars: 1.5    # 화면상 차량 높이의 배수 (해상도·줌 자동 보정)
+  uturn_min_move_px: 2.0      # 정지 판정 기준 (신호 대기 구간은 방향 계산에서 제외)
+  uturn_min_path_px: 40.0   # 통과 후 유턴 인정 최소 이동 거리(px)
+  uturn_use_ped_signal: true  # 보행 신호 연계 가정 반영 여부
   redlight_grace_sec: 0.3   # 신호 전환 직후 유예(딜레마 존)
   cooldown_sec: 10.0        # 동일 track 동일 위반 재발행 방지
   min_cross_speed: 0.5
