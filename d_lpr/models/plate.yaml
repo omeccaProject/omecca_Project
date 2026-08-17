@@ -1,0 +1,8 @@
+network_params:
+  input_channel: 1
+  output_channel: 256
+  hidden_size: 256
+imgH: 64
+lang_list:
+  - 'ko'
+character_list: 0123456789가강거경고광구기나남너노누다대더도두라러로루마머모무바배버보부북사산서세소수아어오우울원인자저전제조종주천충하허호

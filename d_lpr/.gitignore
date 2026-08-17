@@ -13,10 +13,27 @@ data/
 *.sqlite3
 *.log
 
-# 모델 가중치 (용량 문제로 커밋 금지, 별도 공유)
+# 모델 가중치
+#
+#   기본은 커밋 금지다. 학습 중간 산출물(best.pt, last.pt, epoch*.pt)이 수십 개씩
+#   쏟아지는데 그게 다 올라가면 저장소가 못 쓰게 된다.
+#
+#   다만 `models/` 안의 **완성된 모델은 예외로 올린다.** 팀원이 clone 만으로
+#   나와 같은 성능을 내려면 이 파일들이 반드시 있어야 하고, 없으면 EasyOCR
+#   기본 모델로 조용히 폴백해서 "왜 인식률이 다르지?" 로 며칠을 태운다.
+#
+#       plate_det.pt   5.3MB   번호판 검출 YOLO
+#       plate.pth     14.4MB   번호판 전용 인식 모델 (AI Hub 5.5만 장 학습)
+#
+#   GitHub 제한은 파일당 100MB(경고 50MB)라 한참 여유가 있다. 팀 저장소에도
+#   이미 yolo11n.pt(5.4MB), best.pt(6.0MB)가 그냥 커밋돼 있다.
 weights/
 *.pt
 *.onnx
+!models/*.pt
+!models/*.pth
+!models/*.yaml
+!models/*.py
 
 # 샘플·결과물
 samples/

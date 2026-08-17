@@ -55,16 +55,20 @@ Write-Host ""
 # ------------------------------------------------------------ 복사 대상 추리기
 $srcLen = $SRC.Length + 1
 $files = Get-ChildItem -Path $SRC -Recurse -File -Force | Where-Object {
-    $rel = $_.FullName.Substring($srcLen)
+    $rel = $_.FullName.Substring([int]$srcLen)
     $parts = $rel.Split([IO.Path]::DirectorySeparatorChar)
     # 경로 어딘가에 제외 폴더가 있으면 버린다 (마지막 조각은 파일명이므로 뺀다)
     $inSkipDir = $false
     for ($i = 0; $i -lt $parts.Length - 1; $i++) {
         if ($SKIP_DIR -contains $parts[$i]) { $inSkipDir = $true; break }
     }
+    # models\ 안의 완성 모델은 확장자 규칙(.pt/.pth)을 면제한다.
+    # 팀원이 clone 만으로 같은 성능을 내려면 이 파일이 함께 가야 한다.
+    $inModels = ($parts[0] -eq "models")
+
     (-not $inSkipDir) -and
     ($SKIP_FILE -notcontains $_.Name.ToLower()) -and
-    ($SKIP_EXT  -notcontains $_.Extension.ToLower())
+    ($inModels -or ($SKIP_EXT -notcontains $_.Extension.ToLower()))
 }
 
 $new = @(); $chg = @(); $same = 0
@@ -132,8 +136,10 @@ try {
     # 경로 '끝'만 본다. `.env.example` 은 값이 빈 템플릿이라 올라가도 된다 —
     # `\.env` 로 느슨하게 잡으면 그것까지 걸려서 멀쩡한 커밋이 막힌다.
     $leak = $st | Where-Object {
+        # models\ 안은 일부러 올리는 것이라 검사에서 뺀다
+        ($_ -notmatch '[/\\]models[/\\]') -and (
         $_ -match '[/\\](\.env|\.env\.local|its_key\.txt)$' -or
-        $_ -match '\.(mp4|avi|mkv|pt|pth|onnx|zip|db|sqlite3)$' -or
+        $_ -match '\.(mp4|avi|mkv|pt|pth|onnx|zip|db|sqlite3)$' ) -or
         # 번호판 사진이 어떤 경로로든 스테이징되면 멈춘다. 위 SKIP_DIR 로 이미
         # 걸러지지만, 폴더 이름을 바꾸거나 다른 곳에 사진을 두면 새는 길이 생긴다.
         $_ -match '[/\\]plates[^/\\]*[/\\].*\.(png|jpg|jpeg)$'
