@@ -1,0 +1,18 @@
+{
+  "_comment": "영상 시작을 0초로 한 신호 변화 기록. 영상을 보면서 바뀌는 초를 적으면 된다.",
+  "_phases": "red | yellow | green | left_arrow | green_left",
+  "_ped": "red | green  (보행 신호. 실제 연계 전에는 영상 보고 직접 적는다)",
+
+  "SIG-1": [
+    {"at": 0,  "phase": "red"},
+    {"at": 12, "phase": "left_arrow"},
+    {"at": 20, "phase": "green"},
+    {"at": 48, "phase": "yellow"},
+    {"at": 51, "phase": "red"}
+  ],
+  "SIG-1-PED": [
+    {"at": 0,  "ped": "red"},
+    {"at": 12, "ped": "green"},
+    {"at": 20, "ped": "red"}
+  ]
+}

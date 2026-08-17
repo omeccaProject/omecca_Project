@@ -4,21 +4,52 @@
     {
       "cam_id": "CAM-001",
       "name": "시청 앞 사거리 (남향)",
-      "location": [37.5665, 126.978],
+      "location": [
+        37.5665,
+        126.978
+      ],
       "lines": [
         {
           "line_id": "stop_A",
           "name": "정지선(북→남)",
-          "p1": [300, 700],
-          "p2": [1600, 700],
+          "p1": [
+            300,
+            700
+          ],
+          "p2": [
+            1600,
+            700
+          ],
           "direction": "negative"
         },
         {
           "line_id": "exit_A",
           "name": "진출선(북→남)",
-          "p1": [300, 950],
-          "p2": [1600, 950],
+          "p1": [
+            300,
+            950
+          ],
+          "p2": [
+            1600,
+            950
+          ],
           "direction": "negative"
+        },
+        {
+          "line_id": "center_A",
+          "name": "중앙선(노란 실선) — 유턴 금지",
+          "p1": [
+            800,
+            550
+          ],
+          "p2": [
+            800,
+            1060
+          ],
+          "direction": "both",
+          "line_type": "center",
+          "uturn_allowed": false,
+          "signal_id": "SIG-A"
         }
       ],
       "zones": [
@@ -27,7 +58,24 @@
           "name": "유턴 금지 구간",
           "zone_type": "uturn",
           "uturn_allowed": false,
-          "polygon": [[250, 600], [1650, 600], [1650, 1020], [250, 1020]]
+          "polygon": [
+            [
+              250,
+              600
+            ],
+            [
+              1650,
+              600
+            ],
+            [
+              1650,
+              1020
+            ],
+            [
+              250,
+              1020
+            ]
+          ]
         }
       ],
       "intersections": [
@@ -42,14 +90,55 @@
     {
       "cam_id": "CAM-002",
       "name": "중앙로 유턴 구간",
-      "location": [37.5701, 126.9822],
+      "location": [
+        37.5701,
+        126.9822
+      ],
       "lines": [
         {
           "line_id": "stop_B",
           "name": "정지선(동→서)",
-          "p1": [900, 200],
-          "p2": [900, 900],
+          "p1": [
+            900,
+            200
+          ],
+          "p2": [
+            900,
+            900
+          ],
           "direction": "positive"
+        },
+        {
+          "line_id": "center_B",
+          "name": "중앙선 — 유턴 허용(표지판 있음)",
+          "p1": [
+            1300,
+            150
+          ],
+          "p2": [
+            1300,
+            950
+          ],
+          "direction": "both",
+          "line_type": "center",
+          "uturn_allowed": true,
+          "signal_id": "SIG-B"
+        },
+        {
+          "line_id": "center_B2",
+          "name": "중앙선(서측) — 유턴 금지",
+          "p1": [
+            400,
+            150
+          ],
+          "p2": [
+            400,
+            950
+          ],
+          "direction": "both",
+          "line_type": "center",
+          "uturn_allowed": false,
+          "signal_id": "SIG-B"
         }
       ],
       "zones": [
@@ -58,14 +147,48 @@
           "name": "유턴 허용 구간",
           "zone_type": "uturn",
           "uturn_allowed": true,
-          "polygon": [[900, 150], [1800, 150], [1800, 950], [900, 950]]
+          "polygon": [
+            [
+              900,
+              150
+            ],
+            [
+              1800,
+              150
+            ],
+            [
+              1800,
+              950
+            ],
+            [
+              900,
+              950
+            ]
+          ]
         },
         {
           "zone_id": "uturn_B2",
           "name": "유턴 금지 구간(서측)",
           "zone_type": "uturn",
           "uturn_allowed": false,
-          "polygon": [[100, 150], [880, 150], [880, 950], [100, 950]]
+          "polygon": [
+            [
+              100,
+              150
+            ],
+            [
+              880,
+              150
+            ],
+            [
+              880,
+              950
+            ],
+            [
+              100,
+              950
+            ]
+          ]
         }
       ],
       "intersections": [
@@ -74,6 +197,147 @@
           "stop_line": "stop_B",
           "exit_line": "",
           "signal_id": "SIG-B"
+        }
+      ]
+    },
+    {
+      "cam_id": "UTURN3",
+      "name": "불법유턴3 검증영상 (중앙 복선 구간)",
+      "lines": [
+        {
+          "line_id": "center_uturn3",
+          "name": "중앙선(노란 복선) — 유턴 금지",
+          "p1": [
+            949,
+            250
+          ],
+          "p2": [
+            941,
+            1080
+          ],
+          "direction": "both",
+          "line_type": "center",
+          "uturn_allowed": false,
+          "signal_id": ""
+        }
+      ],
+      "zones": [],
+      "intersections": []
+    },
+    {
+      "cam_id": "UTURN6",
+      "name": "UTURN6 게임 검증영상",
+      "lines": [
+        {
+          "line_id": "center_uturn6",
+          "name": "중앙선(노란선)",
+          "p1": [
+            484,
+            318
+          ],
+          "p2": [
+            1154,
+            662
+          ],
+          "direction": "both",
+          "line_type": "center",
+          "uturn_allowed": false,
+          "signal_id": ""
+        }
+      ],
+      "zones": [],
+      "intersections": []
+    },
+    {
+      "cam_id": "UTURN7",
+      "name": "UTURN7 게임 검증영상",
+      "lines": [
+        {
+          "line_id": "center_uturn7",
+          "name": "중앙선(노란선)",
+          "p1": [
+            494,
+            282
+          ],
+          "p2": [
+            1216,
+            723
+          ],
+          "direction": "both",
+          "line_type": "center",
+          "uturn_allowed": false,
+          "signal_id": ""
+        }
+      ],
+      "zones": [],
+      "intersections": []
+    },
+    {
+      "cam_id": "UTURN5",
+      "name": "UTURN5 게임 검증영상",
+      "lines": [
+        {
+          "line_id": "center_uturn5",
+          "name": "중앙선(노란선, 연장)",
+          "p1": [
+            0,
+            620
+          ],
+          "p2": [
+            700,
+            409
+          ],
+          "direction": "both",
+          "line_type": "center",
+          "uturn_allowed": false,
+          "signal_id": ""
+        }
+      ],
+      "zones": [],
+      "intersections": []
+    },
+    {
+      "cam_id": "SIGNAL2",
+      "name": "신호위반2 검증영상 (교차로 CCTV)",
+      "lines": [
+        {
+          "line_id": "stop_sig2",
+          "name": "정지선 (횡단보도 앞)",
+          "p1": [
+            240,
+            533
+          ],
+          "p2": [
+            1500,
+            668
+          ],
+          "direction": "both",
+          "line_type": "stop",
+          "signal_id": "SIG-SIG2"
+        },
+        {
+          "line_id": "exit_sig2",
+          "name": "진출선 (교차로 안쪽)",
+          "p1": [
+            300,
+            380
+          ],
+          "p2": [
+            1550,
+            470
+          ],
+          "direction": "both",
+          "line_type": "exit",
+          "signal_id": "SIG-SIG2"
+        }
+      ],
+      "zones": [],
+      "intersections": [
+        {
+          "intersection_id": "INT-SIG2",
+          "stop_line": "stop_sig2",
+          "exit_line": "exit_sig2",
+          "signal_id": "SIG-SIG2"
         }
       ]
     }

@@ -57,7 +57,7 @@ class VehicleMatcher:
 
     # ------------------------------------------------------------------
     def match(self, plate: PlateResult) -> VehicleMatch:
-        """번호판 1건을 DB와 대조한다."""
+        """번호판 1건을 DB와 대조한다 (인식 결과를 그대로 받는 입구)."""
         key = pf.canonical(plate.plate_no)
 
         if self.log_reads:
@@ -69,33 +69,75 @@ class VehicleMatcher:
             except Exception:
                 log.exception("plate_read_log 기록 실패")
 
+        return self.resolve(
+            key, valid_format=plate.valid_format, cam_id=plate.cam_id,
+            track_id=plate.track_id, timestamp=plate.timestamp,
+        )
+
+    # ------------------------------------------------------------------
+    def resolve(
+        self,
+        plate_no: str,
+        valid_format: Optional[bool] = None,
+        cam_id: str = "",
+        track_id: int = -1,
+        timestamp: Optional[float] = None,
+        count: bool = True,
+    ) -> VehicleMatch:
+        """번호 문자열 하나를 DB와 대조한다 — 정확 → 유사 → 미등록.
+
+        **대조 논리는 이 함수에만 둔다.**
+
+        전에는 경보 경로(`match`)와 위반 기록 경로(`status_of`)가 각자 DB를
+        뒤졌고, `status_of` 쪽에만 유사 매칭이 빠져 있었다. 그래서 OCR 이 한
+        글자를 틀리면 같은 차량이
+
+            경보      '15무4755' → 유사 매칭으로 DB '17무4755' 를 찾음 → 등록
+            위반 기록 '15무4755' → 정확 매칭만 하므로 못 찾음         → 미등록
+
+        으로 갈려 저장됐다. 관제 화면과 대시보드가 같은 차를 두고 서로 다른
+        말을 하게 된다. 두 경로가 이 함수를 함께 쓰게 해서 답을 하나로 묶는다.
+
+        valid_format 을 생략하면 문자열을 보고 스스로 판단한다.
+        count=False 면 통계를 올리지 않는다 — 이미 `match()` 로 센 건을
+        위반 기록 쪽에서 다시 조회할 때 두 번 세지 않기 위함이다.
+        """
+        key = pf.canonical(plate_no)
+        if valid_format is None:
+            valid_format = pf.is_valid(key)
+        common = dict(
+            plate_no=key, cam_id=cam_id, track_id=track_id,
+            timestamp=timestamp if timestamp is not None else time.time(),
+        )
+
         rec = self.repo.find(key)
         if rec is not None:
-            self.stats["matched"] += 1
+            if count:
+                self.stats["matched"] += 1
             return VehicleMatch(
-                plate_no=key, matched=True, record=rec, status=rec.status,
-                risk_level=rec.risk_level, matched_plate=rec.plate_no,
-                cam_id=plate.cam_id, track_id=plate.track_id, timestamp=plate.timestamp,
+                matched=True, record=rec, status=rec.status,
+                risk_level=rec.risk_level, matched_plate=rec.plate_no, **common,
             )
 
         # 유사 매칭은 포맷이 유효할 때만 시도한다 (엉뚱한 문자열의 오검거 방지)
-        if self.fuzzy and plate.valid_format:
+        if self.fuzzy and valid_format:
             hit = self.repo.find_similar(key, max_diff=1)
             if hit is not None:
                 rec, diff = hit
-                self.stats["fuzzy"] += 1
+                if count:
+                    self.stats["fuzzy"] += 1
                 log.info("유사 매칭: OCR=%s → DB=%s (오차 %d자)", key, rec.plate_no, diff)
                 return VehicleMatch(
-                    plate_no=key, matched=True, record=rec, status=rec.status,
-                    risk_level=rec.risk_level, fuzzy=True, matched_plate=rec.plate_no,
-                    cam_id=plate.cam_id, track_id=plate.track_id, timestamp=plate.timestamp,
+                    matched=True, record=rec, status=rec.status,
+                    risk_level=rec.risk_level, fuzzy=True,
+                    matched_plate=rec.plate_no, **common,
                 )
 
-        self.stats["unregistered"] += 1
+        if count:
+            self.stats["unregistered"] += 1
         return VehicleMatch(
-            plate_no=key, matched=False, record=None,
-            status=VehicleStatus.UNREGISTERED, risk_level=RiskLevel.HIGH,
-            cam_id=plate.cam_id, track_id=plate.track_id, timestamp=plate.timestamp,
+            matched=False, record=None,
+            status=VehicleStatus.UNREGISTERED, risk_level=RiskLevel.HIGH, **common,
         )
 
     # ------------------------------------------------------------------
@@ -159,11 +201,13 @@ class VehicleMatcher:
 
     # ------------------------------------------------------------------
     def status_of(self, plate_no: str) -> tuple[VehicleStatus, RiskLevel]:
-        """위반 감지 모듈이 위반 차량의 위험도를 함께 표기할 때 사용."""
-        rec = self.repo.find(plate_no)
-        if rec is None:
-            return VehicleStatus.UNREGISTERED, RiskLevel.HIGH
-        return rec.status, rec.risk_level
+        """상태·위험도만 알고 싶을 때 쓰는 간편 입구.
+
+        `resolve()` 를 그대로 태우므로 **유사 매칭이 함께 적용된다.**
+        예전에는 이 함수만 정확 매칭이라 경보 경로와 답이 갈렸다.
+        """
+        m = self.resolve(plate_no, count=False)
+        return m.status, m.risk_level
 
     def reset(self) -> None:
         self._last_alert.clear()

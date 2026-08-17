@@ -14,6 +14,80 @@ from typing import Any
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 CONFIG_PATH = Path(os.environ.get("OMECA_CONFIG", BASE_DIR / "config.yaml"))
+ENV_PATH = Path(os.environ.get("OMECA_ENV", BASE_DIR / ".env"))
+
+
+def load_dotenv(path: Path = ENV_PATH, override: bool = False) -> int:
+    """`.env` 파일을 환경변수로 올린다.
+
+    인증키 같은 비밀값은 코드에도 config.yaml 에도 넣지 않는다. `.env` 는
+    `.gitignore` 에 있으므로 깃허브에 올라가지 않는다.
+
+    python-dotenv 의존성을 쓰지 않는다. 팀원이 `pip install` 을 하나라도 덜
+    하게 하려는 것이고, 형식이 단순해서 직접 읽는 편이 낫다.
+
+    지원 형식
+        KEY=value
+        KEY="값 안에 # 이나 공백이 있으면 따옴표"
+        export KEY=value          (앞의 export 는 무시)
+        # 주석 줄
+    """
+    if not path.exists():
+        return 0
+    loaded = 0
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].lstrip()
+        key, sep, val = line.partition("=")
+        if not sep:
+            continue
+        key = key.strip()
+        val = val.strip()
+        if len(val) >= 2 and val[0] == val[-1] and val[0] in "\"'":
+            val = val[1:-1]                      # 따옴표 안은 그대로 (주석 제거 안 함)
+        else:
+            val = val.split(" #")[0].rstrip()    # 값 뒤 주석 제거
+        if not key:
+            continue
+        if override or key not in os.environ:
+            os.environ[key] = val
+            loaded += 1
+    return loaded
+
+
+# 설정을 읽기 전에 .env 를 먼저 올린다 (환경변수 오버라이드가 동작하도록)
+load_dotenv()
+
+
+def secret(name: str, *fallback_files: str | Path) -> str:
+    """비밀값 조회. 환경변수(.env 포함) → 지정한 파일 순으로 찾는다.
+
+    반환값을 로그로 찍지 말 것. 필요하면 `mask()` 를 쓴다.
+    """
+    val = os.environ.get(name, "").strip()
+    if val:
+        return val
+    for f in fallback_files:
+        p = Path(f)
+        if not p.is_absolute():
+            p = BASE_DIR / p
+        if p.exists():
+            v = p.read_text(encoding="utf-8").strip()
+            if v:
+                return v
+    return ""
+
+
+def mask(value: str, keep: int = 4) -> str:
+    """인증키를 로그·화면에 보여줄 때 쓰는 마스킹. 'CFwn…kU2A' 형태."""
+    if not value:
+        return "(없음)"
+    if len(value) <= keep * 2:
+        return "*" * len(value)
+    return f"{value[:keep]}…{value[-keep:]} (길이 {len(value)})"
 
 
 def _load_file(path: Path) -> dict[str, Any]:
@@ -118,10 +192,21 @@ class LPRConfig:
 @dataclass
 class ViolationConfig:
     zones_path: str = str(BASE_DIR / "config_zones.json")
-    track_history: int = 120              # track별 궤적 보관 프레임 수
+    # track별 궤적 보관 프레임 수. 30fps 기준 120이면 4초뿐이라
+    # 유턴 확정 창(4초)과 겹쳐 진입 구간이 밀려난다. 10초분으로 잡는다.
+    track_history: int = 300
     uturn_angle_deg: float = 150.0        # 유턴 판정 진입/진출 방향 최소 각도차
     uturn_min_points: int = 8             # 유턴 판정 최소 궤적 포인트
     uturn_min_speed: float = 1.0          # 정지 차량 오탐 방지용 최소 이동량(px/frame)
+    uturn_confirm_sec: float = 4.0        # 중앙선 통과 후 유턴 확정까지 지켜보는 시간(초)
+    uturn_heading_window: int = 8         # 진입/진출 방향을 잴 때 쓰는 포인트 수
+    # 진입 방향을 잴 위치. 통과 지점에서 '이만큼 이동한 거리' 만큼 되돌아간다.
+    # 시간이 아니라 이동 거리 기준이라, 신호 대기로 멈춰 있던 시간은 무시된다.
+    uturn_lookback_px: float = 120.0      # 최소 되돌아갈 거리(px)
+    uturn_lookback_cars: float = 1.5      # 화면상 차량 높이의 몇 배까지 되돌아갈지
+    uturn_min_move_px: float = 2.0        # 이보다 덜 움직인 점은 정지로 보고 방향 계산에서 제외
+    uturn_min_path_px: float = 40.0       # 통과 후 유턴으로 인정할 최소 이동 거리
+    uturn_use_ped_signal: bool = True     # 보행 신호(연계 가정)를 판정에 반영할지
     redlight_grace_sec: float = 0.3       # 신호 전환 직후 유예 시간
     cooldown_sec: float = 10.0            # 동일 track 동일 위반 재발행 방지
     min_cross_speed: float = 0.5          # 라인 통과 인정 최소 이동량

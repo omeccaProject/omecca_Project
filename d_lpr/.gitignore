@@ -28,3 +28,14 @@ output/
 .DS_Store
 .idea/
 .vscode/
+
+# 인증키·비밀값 (커밋 금지). .env.example 만 커밋한다.
+.env
+.env.local
+its_key.txt
+captures/
+
+# 번호판 사진 (개인정보 - 커밋 금지)
+plates/
+plates_test/
+plates_final/

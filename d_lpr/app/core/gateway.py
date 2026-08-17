@@ -43,6 +43,30 @@ EVENT_TYPE = {
 
 OBJECT_CLASS_VEHICLE = "VEHICLE"      # 규격서 3.3 — 우리는 항상 차량
 
+# --------------------------------------------------------------------------
+# 대시보드 그룹핑 힌트 (meta.riskCategory)
+#
+# 관제 화면에서 "이상운전" 한 묶음으로 보여 주기 위한 **표시용 분류**다.
+# eventType 은 규격 7종 그대로 두고 meta 에만 힌트를 얹는다. 이유:
+#
+#   · 불법 유턴을 DUI_PATTERN(음주운전 의심)으로 보내면 "이 차 음주 의심"이라는
+#     틀린 근거가 관제 요원에게 전달된다. 유턴은 음주와 무관하다.
+#   · 같은 사건이 두 eventType 으로 두 번 나가면 b_report 통계가 부풀려진다.
+#   · ⑥ 음주운전 패턴은 다른 담당 영역이라 그쪽 정확도 지표가 오염된다.
+#
+# 규격서 4장은 "임의로 새 **최상위** 필드를 추가하지 말 것"이므로 meta 는 자유다.
+# b_dashboard 는 meta.riskCategory 로 묶기만 하면 된다.
+# --------------------------------------------------------------------------
+RISK_CATEGORY = {
+    ViolationType.RED_LIGHT: "abnormal_driving",       # 이상운전
+    ViolationType.ILLEGAL_UTURN: "abnormal_driving",   # 이상운전
+    ViolationType.HIGH_RISK_VEHICLE: "vehicle_alert",  # 차량 조회 경보
+}
+RISK_CATEGORY_KO = {
+    "abnormal_driving": "이상운전",
+    "vehicle_alert": "차량 경보",
+}
+
 
 def to_gateway_payload(
     ev: ViolationEvent,
@@ -98,6 +122,11 @@ def to_gateway_payload(
             "vehicleStatus": ev.vehicle_status.value,
             "plateConfidence": round(float(ev.plate_confidence), 4),
             "roiName": ev.zone_id or None,
+            # 대시보드에서 "이상운전"으로 묶기 위한 표시용 분류
+            "riskCategory": RISK_CATEGORY.get(ev.violation_type),
+            "riskCategoryLabel": RISK_CATEGORY_KO.get(
+                RISK_CATEGORY.get(ev.violation_type, ""), None),
+            "violationSubtype": ev.subtype or None,
             "detail": ev.detail or None,
             "evidenceFrames": ev.evidence_frames or None,
             "trajectory": ([[round(x, 1), round(y, 1)] for x, y in ev.trajectory]
@@ -107,6 +136,14 @@ def to_gateway_payload(
         "frameRefAfter": frame_after or None,
     }
     return payload
+
+
+def _risk_category(type_value: str) -> Optional[str]:
+    """버스 payload 의 문자열 type("illegal_uturn" 등) → 위험 카테고리."""
+    try:
+        return RISK_CATEGORY.get(ViolationType(type_value))
+    except ValueError:
+        return None
 
 
 def _as_long(zone_id: str) -> Optional[int]:
@@ -263,6 +300,10 @@ def _payload_from_bus(p: dict[str, Any]) -> dict[str, Any]:
             "vehicleStatus": p.get("vehicle_status"),
             "plateConfidence": p.get("plate_confidence"),
             "roiName": p.get("zone_id") or None,
+            "riskCategory": _risk_category(p.get("type", "")),
+            "riskCategoryLabel": RISK_CATEGORY_KO.get(
+                _risk_category(p.get("type", "")) or "", None),
+            "violationSubtype": p.get("subtype") or None,
             "detail": p.get("detail") or None,
             "evidenceFrames": p.get("evidence_frames") or None,
             "trajectory": p.get("trajectory") or None,

@@ -143,7 +143,34 @@ def correct(raw: str) -> NormalizedPlate:
     hit = _match(s)
     if hit:
         return NormalizedPlate(s, True, hit[0], s != original, hit[1])
+
+    # 3차: 앞뒤에 붙은 군더더기를 떼어 본다.
+    #   실측(사진 50장)에서 오답 19건 중 6건이 '멀쩡한 번호 + 여분 글자' 였다.
+    #       131서8395'7'   '저'14저8673   '4'263조3448   17가9287'9'
+    #   번호판 테두리 볼트나 옆 차 번호 조각이 함께 읽힌 것이다. 안쪽에서
+    #   형식이 맞는 가장 긴 조각을 꺼내면 4건이 정답으로 돌아온다.
+    #   **형식이 이미 맞는 결과에는 손대지 않는다** — 위에서 이미 반환했다.
+    inner = _longest_valid(s)
+    if inner:
+        hit = _match(inner)
+        if hit:
+            return NormalizedPlate(inner, True, hit[0], True, hit[1])
     return NormalizedPlate(s, False, "invalid", s != original)
+
+
+def _longest_valid(s: str) -> str:
+    """형식이 맞는 가장 긴 부분 문자열. 없으면 빈 문자열.
+
+    길이 8을 7보다 먼저 보므로 '123가4567' 형태를 우선한다. 같은 길이면
+    왼쪽 것을 택한다 (앞이 정상이고 뒤에 군더더기가 붙는 경우가 더 흔하다).
+    """
+    n = len(s)
+    for length in range(min(n, 9), 6, -1):        # 번호판은 7~9글자(지역명 포함)
+        for i in range(0, n - length + 1):
+            sub = s[i:i + length]
+            if _match(sub):
+                return sub
+    return ""
 
 
 def _match(s: str) -> Optional[tuple[str, str]]:

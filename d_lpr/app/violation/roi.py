@@ -35,6 +35,16 @@ class VirtualLine:
     p2: tuple[float, float]
     name: str = ""
     direction: str = "both"
+    # 라인 종류
+    #   stop     : 정지선        (신호위반 판정용)
+    #   exit     : 진출선        (신호위반 확정용)
+    #   center   : 중앙선(노란 실선) — 유턴 판정의 1차 트리거
+    line_type: str = "stop"
+    # 이 중앙선을 넘는 유턴이 표지판으로 허용되는 구간인지.
+    # False 면 신호와 무관하게 유턴 자체가 불법이다.
+    uturn_allowed: bool = False
+    # 유턴 허용 구간일 때 참조할 신호등 ID (좌회전 화살표 확인용)
+    signal_id: str = ""
 
     def side(self, point: Point) -> int:
         return side_of(self.p1, self.p2, point)
@@ -107,6 +117,10 @@ class CameraZones:
     def uturn_zones(self) -> list[Zone]:
         return [z for z in self.zones.values() if z.zone_type == "uturn"]
 
+    def center_lines(self) -> list[VirtualLine]:
+        """중앙선(노란 실선) 목록. 유턴 판정의 1차 트리거로 쓴다."""
+        return [l for l in self.lines.values() if l.line_type == "center"]
+
 
 class ZoneRegistry:
     """카메라별 ROI 설정 저장소."""
@@ -141,6 +155,9 @@ class ZoneRegistry:
                     line_id=ln["line_id"],
                     p1=tuple(ln["p1"]), p2=tuple(ln["p2"]),
                     name=ln.get("name", ""), direction=ln.get("direction", "both"),
+                    line_type=ln.get("line_type", "stop"),
+                    uturn_allowed=bool(ln.get("uturn_allowed", False)),
+                    signal_id=ln.get("signal_id", ""),
                 )
             for z in cam.get("zones", []):
                 cz.zones[z["zone_id"]] = Zone(
