@@ -37,13 +37,40 @@ ALL_MODELS = [general_model, hazard_model]
 OUTPUT_DIR = BASE_DIR / "outputs"          # a_core/outputs/
 OUTPUT_DIR.mkdir(exist_ok=True)
 
-DEFAULT_VIDEO = PROJECT_ROOT / "data" / "videos" / "kickboard.mp4"
+DEFAULT_VIDEO = PROJECT_ROOT / "data" / "videos" / "cone.mp4"
 CAM_ID = "CCTV-014"
 
+VEHICLE_CLASSES = {"car", "truck", "bus", "motorcycle"}
 
-def detect(frame, conf_threshold=0.4):
-    """프레임 1장에 대해 전체 모델 추론 후 탐지 리스트 반환."""
-    detections = []
+def compute_iou(box_a, box_b):
+    """두 bbox([x1,y1,x2,y2])의 IoU 계산."""
+    ax1, ay1, ax2, ay2 = box_a
+    bx1, by1, bx2, by2 = box_b
+
+    inter_x1 = max(ax1, bx1)
+    inter_y1 = max(ay1, by1)
+    inter_x2 = min(ax2, bx2)
+    inter_y2 = min(ay2, by2)
+
+    inter_w = max(0, inter_x2 - inter_x1)
+    inter_h = max(0, inter_y2 - inter_y1)
+    inter_area = inter_w * inter_h
+
+    if inter_area == 0:
+        return 0.0
+
+    area_a = (ax2 - ax1) * (ay2 - ay1)
+    area_b = (bx2 - bx1) * (by2 - by1)
+    return inter_area / float(area_a + area_b - inter_area)
+
+def detect(frame, conf_threshold=0.4, vehicle_overlap_threshold=0.15):
+    """프레임 1장에 대해 전체 모델 추론 후 탐지 리스트 반환.
+    낙하물 후보가 차량 bbox와 vehicle_overlap_threshold 이상 겹치면
+    (= 차량에 붙어있는 타이어 등으로 판단) 결과에서 제외한다.
+    """
+    vehicle_boxes = []
+    hazard_candidates = []
+
     for model in ALL_MODELS:
         results = model(frame, verbose=False)[0]
         for box in results.boxes:
@@ -52,12 +79,28 @@ def detect(frame, conf_threshold=0.4):
                 continue
             cls_name = model.names[int(box.cls[0])]
             x1, y1, x2, y2 = box.xyxy[0].tolist()
-            detections.append({
-                "class": cls_name,
-                "bbox": [round(x1), round(y1), round(x2), round(y2)],
-                # ERD 규격: confidence DECIMAL(4,3), 0~1 범위
-                "confidence": round(conf, 3),
-            })
+            bbox = [round(x1), round(y1), round(x2), round(y2)]
+
+            if model is general_model and cls_name in VEHICLE_CLASSES:
+                vehicle_boxes.append(bbox)
+            else:
+                hazard_candidates.append({
+                    "class": cls_name,
+                    "bbox": bbox,
+                    "confidence": round(conf, 3),
+                })
+
+    detections = []
+    for det in hazard_candidates:
+        if det["class"] in DEBRIS_CLASSES:
+            overlaps_vehicle = any(
+                compute_iou(det["bbox"], vbox) >= vehicle_overlap_threshold
+                for vbox in vehicle_boxes
+            )
+            if overlaps_vehicle:
+                continue  # 차량에 붙은 타이어로 판단 → 버림
+        detections.append(det)
+
     return detections
 
 
