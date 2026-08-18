@@ -1,0 +1,52 @@
+{
+  "_설명": "실시간 신호 API 응답을 우리 규격으로 옮기는 방법. signal_probe.py 로 실제 응답을 찍어 보고 채운다.",
+  "_주의": "인증키는 여기 넣지 말 것. .env 의 SIGNAL_API_KEY 를 쓴다.",
+
+  "_url": "승인 화면의 '상세기능 > 호출 URL'. .env 의 SIGNAL_API_URL 로 넣어도 된다.",
+  "url": "",
+
+  "_key_param": "서비스키 파라미터 이름. 보통 serviceKey.",
+  "key_param": "serviceKey",
+
+  "_params": "매 호출에 붙일 고정 파라미터. 기관마다 다르다.",
+  "params": {
+    "numOfRows": "100",
+    "pageNo": "1",
+    "type": "json"
+  },
+
+  "_items_path": "응답에서 교차로 목록 경로. 비워 두면 자동으로 찾는다. 예) response.body.items.item",
+  "items_path": "",
+
+  "_id_fields": "교차로 식별자 필드 후보. 먼저 발견되는 것을 쓴다.",
+  "id_fields": ["itstId", "crossId", "crossroadId", "nodeId", "intersectionId"],
+
+  "_phase_fields": "차량 신호 상태 필드 후보.",
+  "phase_fields": ["signalState", "sgnlSttus", "phase", "phaseNo", "signalPhase"],
+
+  "_remain_fields": "잔여시간(초) 필드 후보. 있으면 전환 시각을 정밀하게 역산한다.",
+  "remain_fields": ["remainTime", "remndSec", "remainSec", "rmnTime"],
+
+  "_ped_fields": "보행 신호 필드 후보. 없으면 UNKNOWN 이 되고 판정에서 제외된다.",
+  "ped_fields": ["pedSignalState", "pedPhase", "wlkgSgnlSttus"],
+
+  "_phase_map": "응답 값 → 우리 상태. 소문자로 비교한다. red/yellow/green/left_arrow/green_left",
+  "phase_map": {
+    "1": "green",
+    "2": "yellow",
+    "3": "red",
+    "적색": "red",
+    "황색": "yellow",
+    "녹색": "green",
+    "좌회전": "left_arrow",
+    "직진및좌회전": "green_left"
+  },
+
+  "_ped_map": "보행 신호 값 → red/green",
+  "ped_map": {
+    "1": "green",
+    "2": "red",
+    "보행녹색": "green",
+    "보행적색": "red"
+  }
+}

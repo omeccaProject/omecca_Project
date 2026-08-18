@@ -220,6 +220,8 @@ class ViolationEvent:
     vehicle_status: VehicleStatus = VehicleStatus.REGISTERED
     zone_id: str = ""
     detail: str = ""
+    # 위반 세부 유형. 유턴은 no_sign / red_light / wrong_signal 로 나뉜다.
+    subtype: str = ""
     evidence_frames: list[int] = field(default_factory=list)
     trajectory: list[tuple[float, float]] = field(default_factory=list)
     location: Optional[tuple[float, float]] = None   # (lat, lon)
@@ -245,6 +247,7 @@ class ViolationEvent:
             "risk_level": self.risk_level.value,
             "vehicle_status": self.vehicle_status.value,
             "zone_id": self.zone_id,
+            "subtype": self.subtype,
             "detail": self.detail,
             "evidence_frames": self.evidence_frames,
             "trajectory": [[round(x, 1), round(y, 1)] for x, y in self.trajectory],

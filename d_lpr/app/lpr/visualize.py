@@ -46,13 +46,24 @@ def imread_unicode(path) -> Any:
     return cv2.imdecode(np.frombuffer(data, dtype=np.uint8), cv2.IMREAD_COLOR)
 
 
-def imwrite_unicode(path, img) -> bool:
-    """한글 경로에서도 안전하게 이미지를 저장한다."""
+def imwrite_unicode(path, img, jpeg_quality: int = 0) -> bool:
+    """한글 경로에서도 안전하게 이미지를 저장한다.
+
+    `cv2.imwrite` 는 경로에 한글이 있으면 **아무것도 쓰지 않고 False 만**
+    돌려준다 (예외도 안 난다). 그래서 인코딩만 OpenCV 로 하고 파일 쓰기는
+    파이썬으로 한다.
+
+    jpeg_quality 를 주면 .jpg 저장 시 품질을 지정한다 (1~100).
+    """
     if not HAS_DRAW or img is None:
         return False
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
-    ok, buf = cv2.imencode(p.suffix or ".jpg", img)
+    ext = p.suffix or ".jpg"
+    params = []
+    if jpeg_quality and ext.lower() in (".jpg", ".jpeg"):
+        params = [cv2.IMWRITE_JPEG_QUALITY, int(jpeg_quality)]
+    ok, buf = cv2.imencode(ext, img, params)
     if not ok:
         return False
     p.write_bytes(buf.tobytes())

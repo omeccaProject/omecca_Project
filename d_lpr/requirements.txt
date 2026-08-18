@@ -6,14 +6,16 @@ PyYAML>=6.0
 websockets>=12.0       # WebSocket 실시간 푸시 (순수 파이썬, 컴파일 불필요)
 
 # --- 실 영상/모델 연동 시 ---------------------------------------------------
-# opencv-python>=4.9          # 전처리(기울기 보정, CLAHE, 이진화)
-# numpy>=1.26
 # easyocr>=1.7                # 번호판 문자 인식
-# ultralytics>=8.3            # YOLOv11 번호판 검출
 # torch>=2.2                  # easyocr / ultralytics 백엔드
 
+# 불법 유턴 감지(run_uturn.py)의 임시 차량 검출기에 필요.
+# 정식 detector/tracking 모듈이 붙으면 없어도 된다.
+# python run_uturn.py --fake 는 이것 없이도 돈다.
+# ultralytics>=8.3
+
 # --- MySQL 연동 시 (미설치 시 SQLite로 자동 폴백) ---------------------------
-# pymysql>=1.1
+pymysql>=1.1                  # MySQL 운영. 없으면 SQLite 로 폴백
 
 # --- 개발/테스트 -------------------------------------------------------------
 pytest>=8.0

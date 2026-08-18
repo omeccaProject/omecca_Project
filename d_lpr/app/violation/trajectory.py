@@ -21,6 +21,9 @@ class TrackPoint:
     y: float
     ts: float
     frame_no: int = 0
+    # 그 시점 차량 박스의 높이(px). 화면상 차량 크기를 길이의 기준자로 쓴다.
+    # 4K든 720p든, 멀든 가깝든 "차 1대 길이" 로 환산할 수 있다.
+    car_h: float = 0.0
 
     def as_xy(self) -> tuple[float, float]:
         return (self.x, self.y)
@@ -74,6 +77,11 @@ class Track:
         pts = self.xy_list()[lo:hi]
         return mean_heading(smooth(pts, 3))
 
+    def car_size(self, n: int = 10) -> float:
+        """최근 n포인트의 차량 박스 높이 중앙값. 0이면 정보 없음."""
+        vals = sorted(p.car_h for p in list(self.points)[-n:] if p.car_h > 0)
+        return vals[len(vals) // 2] if vals else 0.0
+
     def frames(self) -> list[int]:
         return [p.frame_no for p in self.points]
 
@@ -95,7 +103,7 @@ class TrackStore:
             t = Track(det.cam_id, det.track_id, deque(maxlen=self.history))
             self._tracks[key] = t
         x, y = det.bbox.bottom_center
-        t.add(TrackPoint(x, y, det.timestamp, det.frame_no))
+        t.add(TrackPoint(x, y, det.timestamp, det.frame_no, det.bbox.height))
         return t
 
     def get(self, cam_id: str, track_id: int) -> Optional[Track]:

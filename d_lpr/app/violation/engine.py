@@ -50,7 +50,8 @@ class ViolationEngine:
         self.cooldown_sec = cfg.cooldown_sec if cooldown_sec is None else cooldown_sec
 
         self.red_light = RedLightDetector(self.signal)
-        self.uturn = UTurnDetector()
+        # 유턴 판정도 신호를 본다 (유턴 허용 구간에서 좌회전 화살표 확인용)
+        self.uturn = UTurnDetector(self.signal)
         self.stats = {"detections": 0, "violations": 0, "red_light": 0, "illegal_uturn": 0}
 
     # ------------------------------------------------------------------
@@ -115,7 +116,21 @@ class ViolationEngine:
         plate_no = track.plate_no or self.lpr.confirmed_plate(track.cam_id, track.track_id) or ""
         conf = track.plate_confidence or self.lpr.confidence_of(track.cam_id, track.track_id)
 
-        status, risk = self.matcher.status_of(plate_no) if plate_no else (None, RiskLevel.NORMAL)
+        # 경보 경로(`VehicleMatcher.check_and_alert`)와 **같은 함수**로 대조한다.
+        # 예전에는 여기만 `status_of()` 였고 그 안에 유사 매칭이 빠져 있어서,
+        # OCR 이 한 글자를 틀리면 같은 차량이 경보에서는 '등록', 위반 기록에는
+        # '미등록' 으로 갈려 저장됐다. count=False 는 경보 쪽에서 이미 센 건을
+        # 두 번 세지 않기 위함이다.
+        vm = self.matcher.resolve(plate_no, count=False) if plate_no else None
+        status = vm.status if vm is not None else None
+        risk = vm.risk_level if vm is not None else RiskLevel.NORMAL
+
+        detail = verdict.detail
+        if vm is not None and vm.fuzzy:
+            # 어떤 번호를 읽어 어떤 번호로 붙였는지 남긴다. 나중에 이의가
+            # 제기됐을 때 이 기록이 없으면 오검거인지 확인할 방법이 없다.
+            detail = f"{detail} | 유사매칭(OCR:{vm.plate_no}→DB:{vm.matched_plate})"
+            plate_no = vm.matched_plate or plate_no
 
         ev = ViolationEvent(
             violation_type=vtype,
@@ -127,7 +142,8 @@ class ViolationEngine:
             risk_level=risk,
             vehicle_status=status if status is not None else None,  # type: ignore[arg-type]
             zone_id=verdict.zone_id,
-            detail=verdict.detail,
+            subtype=verdict.subtype,
+            detail=detail,
             evidence_frames=verdict.frames,
             trajectory=track.recent_xy(30),
             location=cz.location,
