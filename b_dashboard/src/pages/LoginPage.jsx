@@ -33,7 +33,7 @@ export default function LoginPage({ navigate }) {
     <div className="auth-page">
       <button type="button" className="auth-back-btn" onClick={() => navigate('/landing')}>← 메인으로</button>
       <form className="auth-card" onSubmit={handleSubmit}>
-        <div className="auth-brand"><span className="auth-dot">3</span>OMECCA-3</div>
+        <div className="auth-brand"><span className="auth-dot"></span>Vigilog</div>
         <h2>로그인</h2>
 
         <label className="auth-field">

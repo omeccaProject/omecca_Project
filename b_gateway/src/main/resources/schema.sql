@@ -12,6 +12,29 @@ DROP TABLE IF EXISTS report;
 DROP TABLE IF EXISTS event;
 DROP TABLE IF EXISTS roi;
 DROP TABLE IF EXISTS target;
+DROP TABLE IF EXISTS camera;
+
+-- 카메라 마스터 데이터 (실제 설치된 카메라 목록/이름/실시간 영상 연결 여부).
+-- event.cam_id / roi.cam_id는 지금도 자유 텍스트라 이 테이블을 참조하는 외래키는 걸지 않았음
+-- (팀원 모듈이 여기 등록 안 된 cam_id를 보내면 이벤트 저장 자체가 막히기 때문 — 아래 참고).
+CREATE TABLE camera (
+    id              BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    cam_id          VARCHAR(50)   NOT NULL,
+    name            VARCHAR(100)  NOT NULL COMMENT '화면에 보여줄 이름/위치 (예: 이수역)',
+    status          ENUM('ACTIVE', 'INACTIVE') NOT NULL DEFAULT 'ACTIVE',
+    stream_url      VARCHAR(500)  NULL COMMENT '실시간 영상 URL. 없으면 NULL(=아직 실시간 연결 없음)',
+    stream_format   VARCHAR(20)   NULL COMMENT 'HLS / MP4 등',
+    created_at      DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    UNIQUE KEY uk_camera_cam_id (cam_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 실시간 영상이 이미 확인된 4곳 시드 (e_tracking/SmartCCTV/web/data/utic-video-sources.json +
+-- utic-cameras-seoul.json 기준. b_dashboard/src/realCameras.js에 프론트 하드코딩돼 있던 것과 동일한 값).
+INSERT INTO camera (cam_id, name, status, stream_url, stream_format) VALUES
+    ('L010263', '이수역',     'ACTIVE', 'https://strm1.spatic.go.kr/live/76.stream/chunklist_w1824089310.m3u8', 'HLS'),
+    ('L010117', '사당역',     'ACTIVE', 'https://strm1.spatic.go.kr/live/75.stream/chunklist_w902267922.m3u8',  'HLS'),
+    ('L010018', '경남아파트', 'ACTIVE', 'https://strm2.spatic.go.kr/live/243.stream/chunklist_w575481354.m3u8', 'HLS'),
+    ('L010055', '까치고개',   'ACTIVE', 'https://strm1.spatic.go.kr/live/73.stream/chunklist_w2053157549.m3u8', 'HLS');
 
 -- 관심 대상 (기능 ③ 관제요원이 등록하는 감시 대상)
 CREATE TABLE target (

@@ -46,6 +46,7 @@ LNG_RANGE = (126.90, 127.10)
 
 def build_payload() -> dict:
     event_type = random.choice(EVENT_TYPES)
+    sample_idx = random.randint(1, 3)
     return {
         "camId": random.choice(CAM_IDS),
         "trackId": f"trk-{random.randint(1000, 9999)}",
@@ -70,8 +71,15 @@ def build_payload() -> dict:
             "source": "mock",
             "detailType": random.choice(DETAIL_TYPES),
         },
-        "frameRefBefore": f"mock/before_{random.randint(1, 9999)}.jpg",
-        "frameRefAfter": f"mock/after_{random.randint(1, 9999)}.jpg",
+        # 예전엔 존재하지도 않는 임의 파일명(mock/before_{random}.jpg)을 만들어 보냈는데,
+        # b_dashboard/public/mock/ 안에는 sample_before_1~3.jpg / sample_after_1~3.jpg
+        # 3쌍만 실제로 존재한다. 실존하지 않는 경로를 보내면 대시보드에서 증거 이미지가
+        # 깨져 보이는 건 물론이고, b_gateway의 리포트 자동생성(ReportTriggerService)도
+        # "파일이 없다"며 조용히 스킵해버려서 데모/테스트가 안 된다. 그래서 실제 존재하는
+        # 3쌍 중 하나를 순환해서 쓰도록 고쳤다 - 이러면 mock 데이터만으로도 b_report
+        # 자동생성 파이프라인 전체를 끝까지 테스트할 수 있다.
+        "frameRefBefore": f"mock/sample_before_{sample_idx}.jpg",
+        "frameRefAfter": f"mock/sample_after_{sample_idx}.jpg",
     }
 
 

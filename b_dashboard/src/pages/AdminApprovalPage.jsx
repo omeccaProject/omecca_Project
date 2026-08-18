@@ -90,9 +90,9 @@ export default function AdminApprovalPage({ navigate }) {
   return (
     <div className="admin-page">
       <div className="admin-topbar">
-        <div className="auth-brand" onClick={() => navigate('/')}>SMART CCTV 관제시스템</div>
+        <div className="auth-brand" onClick={() => navigate('/')}>Vigilog</div>
         <div className="admin-topbar-right">
-          <span>{me?.name} 관리자님</span>
+          <span>관리자: {me?.name}님</span>
           <button type="button" onClick={() => navigate('/')}>관제 화면으로</button>
           <button type="button" onClick={() => { clearSession(); navigate('/login') }}>로그아웃</button>
         </div>

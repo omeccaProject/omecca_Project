@@ -23,7 +23,7 @@ const GIS_PINS = [
 const STREAM_ROWS = [
   { t: '14:49:07', chip: 'critical', label: 'CRITICAL', desc: '이상운전 감지 — 흉기 소지 의심', loc: 'CAM-01 · 보라매' },
   { t: '14:47:22', chip: 'warn', label: 'WARN', desc: '5분 이상 배회 — 야간 시간', loc: 'CAM-14 · 강남' },
-  { t: '14:44:58', chip: 'warn', label: 'WARN', desc: '인원 밀집 임계값 초과 — 4.2/㎡', loc: 'CAM-08 · 홍대' },
+  { t: '14:44:58', chip: 'warn', label: 'WARN', desc: '도로 위 낙하물 감지', loc: 'CAM-08 · 홍대' },
   { t: '14:41:03', chip: 'info', label: 'INFO', desc: '지정 차량 매칭 — 신뢰도 96%', loc: 'CAM-22 · 잠실' },
   { t: '14:38:41', chip: 'info', label: 'INFO', desc: '번호판 인식 · 12가3456', loc: 'CAM-07 · 상수' },
 ]
@@ -31,13 +31,13 @@ const STREAM_ROWS = [
 const CATEGORY_BARS = [
   { label: '이상행동', pct: 38, color: 'var(--lp-red)' },
   { label: '차량 인식', pct: 27, color: 'var(--lp-cyan)' },
-  { label: '군집 감지', pct: 19, color: 'var(--lp-green)' },
+  { label: '낙하물 감지', pct: 19, color: 'var(--lp-green)' },
   { label: '기타', pct: 16, color: 'var(--lp-muted2)' },
 ]
 
 const PDF_ROWS = [
   { tag: 'summary', label: 'SUMMARY', section: 'Section 1', desc: '일일 관제 요약 — 이벤트 1,284건 · 대응 완료 97.4%', ref: '전체' },
-  { tag: 'trend', label: 'TREND', section: 'Section 2', desc: '주간 이상행동 트렌드 · 유흥가 야간 시간대 집중', ref: 'CAM-08,14' },
+  { tag: 'trend', label: 'TREND', section: 'Section 2', desc: '낙하물 감지 - 도로 위 낙하물 24건', ref: 'CAM-08,14' },
   { tag: 'incident', label: 'INCIDENT', section: 'Section 3', desc: '중대 사건 6건 상세 · 대응 타임라인 포함', ref: 'CAM-01,03' },
 ]
 
@@ -267,7 +267,7 @@ export default function LandingPage({ navigate }) {
   return (
     <div className="lp-root">
       <nav className="lp-nav">
-        <div className="lp-brand"><span className="lp-dot">3</span> OMECCA-3</div>
+        <div className="lp-brand"><span className="lp-dot">V</span> Vigilog</div>
         <div className="lp-navlinks">
           <a href="#lp-features">기능</a>
           <a href="#lp-platform">플랫폼</a>
@@ -290,7 +290,7 @@ export default function LandingPage({ navigate }) {
         <span className="lp-badge-pill"><span className="lp-dot-sm" />2026년 실시간 관제 인프라 · Beta</span>
         <h1 className="lp-hero-title">모든 카메라를<br /><span className="lp-dim">하나의 눈</span>으로.</h1>
         <p className="lp-hero-sub">
-          OMECCA-3는 흩어진 CCTV·IoT 센서·차량 신호를 하나의 관제화면에 통합합니다.
+          Vigilog는 흩어진 CCTV·IoT 센서·차량 신호를 하나의 관제화면에 통합합니다.
           AI가 24시간 이상 징후를 감지하고, 요원에게 필요한 순간에만 알립니다.
         </p>
         <div className="lp-hero-ctas">
@@ -302,7 +302,7 @@ export default function LandingPage({ navigate }) {
         <div className="lp-console">
           <div className="lp-console-bar">
             <div className="lp-dots"><span /><span /><span /></div>
-            <span className="lp-console-meta"><b>● LIVE</b> / 통합 관제 대시보드 · 2026-08-16 14:49:07 KST</span>
+            <span className="lp-console-meta"><b>● LIVE</b> / Vigilog · 2026-08-16 14:49:07 KST</span>
           </div>
           <div className="lp-console-body">
             <div>
@@ -525,8 +525,8 @@ export default function LandingPage({ navigate }) {
                 <div className="lp-blob" style={{ width: 60, height: 60, top: 30, left: 180, background: 'var(--lp-cyan)' }} />
               </div>
               <div className="lp-pcard-body">
-                <h4>이상 밀집·경로 분석</h4>
-                <p>시간대별 인원 밀집도와 이동 경로를 히트맵으로 시각화 — 축제·집회·야간 유흥가에서 임계값 초과를 사전 경보.</p>
+                <h4>도로 위 낙하물 감지</h4>
+                <p>도로 위에 떨어진 물체를 실시간으로 감지하고 알림을 제공합니다.</p>
                 <div className="lp-tags"><span>Crowd Density</span><span>Trajectory</span><span>Time-series</span></div>
               </div>
             </div>
@@ -537,7 +537,7 @@ export default function LandingPage({ navigate }) {
                 </svg>
               </div>
               <div className="lp-pcard-body">
-                <h4>차량·번호판 추적</h4>
+                <h4>이상 차량·번호판 추적</h4>
                 <p>지정한 차량이 관할 구역 어느 카메라에 잡히든 자동 알림 — 이동 경로가 지도 위에 실시간으로 이어집니다.</p>
                 <div className="lp-tags"><span>ANPR</span><span>Re-ID</span><span>Multi-cam Track</span></div>
               </div>
@@ -564,7 +564,7 @@ export default function LandingPage({ navigate }) {
         <div className="lp-wrap">
           <div className="lp-foot-grid">
             <div className="lp-foot-brand">
-              <div className="lp-brand"><span className="lp-dot">3</span> OMECCA-3</div>
+              <div className="lp-brand"><span className="lp-dot">V</span> Vigilog</div>
               <p>통합 관제의 새로운 기준. 서울시 강남구 테헤란로 421, 20층.</p>
             </div>
             <div className="lp-foot-col">
@@ -585,7 +585,7 @@ export default function LandingPage({ navigate }) {
             </div>
           </div>
           <div className="lp-foot-bottom">
-            <span>© 2026 OMECCA Systems · 대한민국 서울</span>
+            <span>© 2026 Vigilog · 대한민국 서울</span>
             <span>v0.9.4 - build 2026.08.16 · <span className="lp-status">● all systems operational</span></span>
           </div>
         </div>

@@ -8,6 +8,7 @@ function fmtClock(date) {
 export default function Header({
   connected,
   onRefresh,
+  refreshing,
   darkMode, onToggleDarkMode,
   user, onLogout, onGoAdmin,
   onSplitScreen,
@@ -25,6 +26,7 @@ export default function Header({
         <span className="top-bar-dots">
           <span /><span /><span />
         </span>
+        <span className="top-bar-brand">Vigilog</span>
         <span className={`top-bar-live ${connected ? 'on' : 'off'}`}>
           <span className="top-bar-live-dot" />
           {connected ? 'LIVE' : 'OFFLINE'}
@@ -46,7 +48,13 @@ export default function Header({
             ▦
           </button>
         )}
-        <button type="button" className="top-bar-icon-btn" title="새로고침" onClick={onRefresh}>
+        <button
+          type="button"
+          className={`top-bar-icon-btn ${refreshing ? 'spinning' : ''}`}
+          title="새로고침"
+          onClick={onRefresh}
+          disabled={refreshing}
+        >
           ⟳
         </button>
         <button

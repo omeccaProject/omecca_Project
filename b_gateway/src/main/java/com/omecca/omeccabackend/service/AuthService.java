@@ -32,11 +32,25 @@ public class AuthService {
         if (userRepository.existsByUsername(request.getUsername())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 사용 중인 아이디입니다");
         }
+        // 가입 폼에서 선택한 권한(관리자/일반 사용자)을 반영한다. 값이 비어있으면(구버전
+        // 클라이언트 호환) 기존과 동일하게 USER로 처리. SignupRequest의 @Pattern이 이미
+        // "USER"/"ADMIN"/빈 문자열만 통과시키므로 valueOf()는 안전하지만, 방어적으로 한 번 더 감싼다.
+        UserRole role = UserRole.USER;
+        if (request.getRole() != null && !request.getRole().isBlank()) {
+            try {
+                role = UserRole.valueOf(request.getRole());
+            } catch (IllegalArgumentException e) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "권한은 USER 또는 ADMIN이어야 합니다");
+            }
+        }
+        // 주의: 관리자를 선택해도 status는 그대로 PENDING이다. 즉 이 가입 요청은
+        // 여전히 기존 관리자가 "관리자 승인" 화면(AdminApprovalPage)에서 승인해야만
+        // 실제로 로그인할 수 있다 - 아무나 스스로 관리자 권한을 즉시 얻을 수는 없다.
         User user = User.builder()
                 .username(request.getUsername())
                 .password(passwordEncoder.encode(request.getPassword()))
                 .name(request.getName())
-                .role(UserRole.USER)
+                .role(role)
                 .status(UserStatus.PENDING)
                 .build();
         userRepository.save(user);

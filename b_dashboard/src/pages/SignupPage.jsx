@@ -9,6 +9,10 @@ export default function SignupPage({ navigate }) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [passwordConfirm, setPasswordConfirm] = useState('')
+  // 가입 시 원하는 권한을 직접 선택. 관리자를 선택해도 즉시 관리자가 되는 게 아니라
+  // status는 그대로 PENDING으로 생성되고, 기존 관리자가 승인해야만 로그인할 수 있다
+  // (AuthService.signup 참고) - 그래서 관리자를 선택해도 안전하다.
+  const [role, setRole] = useState('USER')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [done, setDone] = useState(false)
@@ -26,7 +30,7 @@ export default function SignupPage({ navigate }) {
     }
     setLoading(true)
     try {
-      await signup({ username: username.trim(), password, name: name.trim() })
+      await signup({ username: username.trim(), password, name: name.trim(), role })
       setDone(true)
     } catch (err) {
       setError(err.message || '회원가입에 실패했습니다.')
@@ -40,7 +44,7 @@ export default function SignupPage({ navigate }) {
       <div className="auth-page">
         <button type="button" className="auth-back-btn" onClick={() => navigate('/landing')}>← 메인으로</button>
         <div className="auth-card">
-          <div className="auth-brand"><span className="auth-dot">3</span>OMECCA-3</div>
+          <div className="auth-brand"><span className="auth-dot">V</span>Vigilog</div>
           <h2>가입 신청 완료</h2>
           <p className="auth-done-text">
             가입 신청이 접수되었습니다.<br />관리자 승인 후 로그인할 수 있습니다.
@@ -55,7 +59,7 @@ export default function SignupPage({ navigate }) {
     <div className="auth-page">
       <button type="button" className="auth-back-btn" onClick={() => navigate('/landing')}>← 메인으로</button>
       <form className="auth-card" onSubmit={handleSubmit}>
-        <div className="auth-brand"><span className="auth-dot">3</span>OMECCA-3</div>
+        <div className="auth-brand"><span className="auth-dot">V</span>Vigilog</div>
         <h2>회원가입</h2>
 
         <label className="auth-field">
@@ -74,6 +78,29 @@ export default function SignupPage({ navigate }) {
           <span>비밀번호 확인</span>
           <input type="password" value={passwordConfirm} onChange={(e) => setPasswordConfirm(e.target.value)} autoComplete="new-password" />
         </label>
+
+        <div className="auth-field">
+          <span>가입 유형</span>
+          <div className="auth-role-toggle">
+            <button
+              type="button"
+              className={role === 'USER' ? 'active' : ''}
+              onClick={() => setRole('USER')}
+            >
+              일반 사용자
+            </button>
+            <button
+              type="button"
+              className={role === 'ADMIN' ? 'active' : ''}
+              onClick={() => setRole('ADMIN')}
+            >
+              관리자
+            </button>
+          </div>
+          <div className="auth-role-hint">
+            관리자를 선택해도 즉시 권한이 부여되지 않으며, 기존 관리자의 승인 후 로그인할 수 있습니다.
+          </div>
+        </div>
 
         {error && <div className="auth-error">{error}</div>}
 

@@ -1,7 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { EVENT_LABEL } from '../constants'
+import { REAL_CAMERAS as FALLBACK_REAL_CAMERAS } from '../realCameras'
+import { fetchCameras } from '../api'
 import Badge from './Badge'
 import FrameImage from './FrameImage'
+import LiveHlsVideo from './LiveHlsVideo'
+import CameraManagerModal from './CameraManagerModal'
 
 // 아직 이벤트가 안 들어온 카메라도 그리드에 자리를 채워두기 위한 기본 목록.
 // 실제 카메라 목록 API가 생기면 이 상수 대신 그걸 쓰면 됨. 3분할 모드(모니터
@@ -36,6 +40,33 @@ export default function CctvGrid({ events, focusedEvent, onSelectCam, camOffset 
   // 클릭해서 확대한 카메라 ID. null이면 확대 화면 없음.
   const [zoomedCamId, setZoomedCamId] = useState(null)
 
+  // 카메라 마스터 데이터 관리 모달. 3분할 모드(fixedCount)에서는 안 띄운다(운영 화면이라).
+  const [showCameraManager, setShowCameraManager] = useState(false)
+
+  // 실시간 영상이 연결된 카메라 목록. 이제 하드코딩된 realCameras.js가 아니라
+  // "카메라 관리"에서 등록한 DB(camera 테이블) 데이터를 직접 불러온다 — 등록 즉시
+  // 그리드뷰어에 반영되게 하기 위함. /api/cameras가 아직 없거나(마이그레이션 전) 응답이
+  // 비어있으면 realCameras.js를 폴백으로 써서 화면이 깨지지 않게 한다.
+  const [liveCameras, setLiveCameras] = useState(FALLBACK_REAL_CAMERAS)
+
+  const loadLiveCameras = useCallback(() => {
+    fetchCameras()
+      .then((list) => {
+        const withStream = (Array.isArray(list) ? list : [])
+          .filter((c) => c.status === 'ACTIVE' && c.streamUrl)
+          .map((c) => ({ camId: c.camId, name: c.name, videoUrl: c.streamUrl }))
+        setLiveCameras(withStream.length > 0 ? withStream : FALLBACK_REAL_CAMERAS)
+      })
+      .catch(() => {
+        // API 자체가 아직 없거나(구버전 서버) 실패하면 기존 하드코딩 목록을 그대로 유지.
+        setLiveCameras(FALLBACK_REAL_CAMERAS)
+      })
+  }, [])
+
+  useEffect(() => {
+    loadLiveCameras()
+  }, [loadLiveCameras])
+
   useEffect(() => {
     if (fixedCount) return // 3분할 모드는 항상 9개 고정이므로 저장/동기화할 필요가 없다
     localStorage.setItem(CAM_COUNT_STORAGE_KEY, String(camCount))
@@ -64,7 +95,11 @@ export default function CctvGrid({ events, focusedEvent, onSelectCam, camOffset 
 
   const effectiveCount = fixedCount || camCount
   const seenCams = [...new Set(events.map((ev) => ev.camId).filter(Boolean))]
-  const camIds = [...new Set([...seenCams, ...FALLBACK_CAMS])].slice(camOffset, camOffset + effectiveCount)
+  // 실제로 실시간 영상이 연결된 카메라(liveCameras, DB "카메라 관리"에서 등록된 것)는
+  // 항상 그리드 맨 앞에 고정 노출한다.
+  const realCamIds = liveCameras.map((c) => c.camId)
+  const realCameraById = Object.fromEntries(liveCameras.map((c) => [c.camId, c]))
+  const camIds = [...new Set([...realCamIds, ...seenCams, ...FALLBACK_CAMS])].slice(camOffset, camOffset + effectiveCount)
 
   const latestByCam = {}
   events.forEach((ev) => {
@@ -87,16 +122,21 @@ export default function CctvGrid({ events, focusedEvent, onSelectCam, camOffset 
       <div className="cctv-panel-head">
         <h2>CCTV 그리드 뷰어{fixedCount ? ` (${camOffset + 1}~${camOffset + effectiveCount})` : ''}</h2>
         {!fixedCount && (
-          <div className="cam-count-toggle">
-            {CAM_COUNT_OPTIONS.map((n) => (
-              <button
-                key={n}
-                className={camCount === n ? 'active' : ''}
-                onClick={() => setCamCount(n)}
-              >
-                {n}개
-              </button>
-            ))}
+          <div className="cctv-panel-head-right">
+            <button type="button" className="cam-manage-btn" onClick={() => setShowCameraManager(true)}>
+              카메라 관리
+            </button>
+            <div className="cam-count-toggle">
+              {CAM_COUNT_OPTIONS.map((n) => (
+                <button
+                  key={n}
+                  className={camCount === n ? 'active' : ''}
+                  onClick={() => setCamCount(n)}
+                >
+                  {n}개
+                </button>
+              ))}
+            </div>
           </div>
         )}
       </div>
@@ -105,11 +145,12 @@ export default function CctvGrid({ events, focusedEvent, onSelectCam, camOffset 
         {camIds.map((camId) => {
           const latest = latestByCam[camId]
           const isFocused = focusedEvent?.camId === camId
+          const realCam = realCameraById[camId]
 
           return (
             <div
               key={camId}
-              className={`cctv-cell ${isFocused ? 'active' : ''} ${latest ? '' : 'idle'}`}
+              className={`cctv-cell ${isFocused ? 'active' : ''} ${latest ? '' : 'idle'} ${realCam ? 'cctv-cell-live' : ''}`}
               onClick={() => handleCellClick(camId)}
             >
               {isFocused && focusedEvent ? (
@@ -121,6 +162,14 @@ export default function CctvGrid({ events, focusedEvent, onSelectCam, camOffset 
                   <div className="cctv-cell-foot">
                     <Badge eventType={focusedEvent.eventType} />
                     <span className="cctv-cell-cam">{camId}</span>
+                  </div>
+                </div>
+              ) : realCam ? (
+                <div className="cctv-cell-live-wrap">
+                  <LiveHlsVideo videoUrl={realCam.videoUrl} className="cctv-cell-live-video" />
+                  <div className="cctv-cell-foot cctv-cell-foot-live">
+                    <span className="cctv-cell-live-dot" />
+                    <span className="cctv-cell-cam">{realCam.name}</span>
                   </div>
                 </div>
               ) : (
@@ -140,11 +189,13 @@ export default function CctvGrid({ events, focusedEvent, onSelectCam, camOffset 
         })}
       </div>
 
-      {zoomedCamId && (
+      {zoomedCamId && (() => {
+        const zoomedRealCam = realCameraById[zoomedCamId]
+        return (
         <div className="cctv-zoom-overlay" onClick={() => setZoomedCamId(null)}>
           <div className="cctv-zoom-box" onClick={(e) => e.stopPropagation()}>
             <div className="cctv-zoom-head">
-              <span className="cctv-zoom-cam">{zoomedCamId}</span>
+              <span className="cctv-zoom-cam">{zoomedRealCam ? zoomedRealCam.name : zoomedCamId}</span>
               {zoomedLatest && <Badge eventType={zoomedLatest.eventType} />}
               <button className="cctv-zoom-close" onClick={() => setZoomedCamId(null)}>닫기 ✕</button>
             </div>
@@ -159,11 +210,21 @@ export default function CctvGrid({ events, focusedEvent, onSelectCam, camOffset 
                   {EVENT_LABEL[zoomedLatest.eventType] || zoomedLatest.eventType} · {fmtTime(zoomedLatest.occurredAt)}
                 </div>
               </>
+            ) : zoomedRealCam ? (
+              <LiveHlsVideo videoUrl={zoomedRealCam.videoUrl} className="cctv-zoom-live-video" />
             ) : (
               <div className="cctv-zoom-empty">신호 대기 중 — 아직 감지된 이벤트가 없습니다</div>
             )}
           </div>
         </div>
+        )
+      })()}
+
+      {showCameraManager && (
+        <CameraManagerModal
+          onClose={() => setShowCameraManager(false)}
+          onChanged={loadLiveCameras}
+        />
       )}
     </section>
   )

@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import jsPDF from 'jspdf'
-import html2canvas from 'html2canvas'
 import { EVENT_RISK, EVENT_LABEL, VEHICLE_TRACK_EVENT_TYPES } from '../constants'
+import { generateEventReport } from '../api'
 import CctvGrid from './CctvGrid'
 import EventList from './EventList'
 import TargetsPanel from './TargetsPanel'
+import EventDetailModal from './EventDetailModal'
 
 function fmtTime(iso) {
   if (!iso) return '-'
@@ -14,16 +14,6 @@ function fmtTime(iso) {
 function fmtLocation(ev) {
   if (ev.location?.lat == null || ev.location?.lng == null) return '-'
   return `${ev.location.lat.toFixed(5)}, ${ev.location.lng.toFixed(5)}`
-}
-
-function fmtIsoRaw(iso) {
-  if (!iso) return '-'
-  return iso.split('.')[0]
-}
-
-function fmtGeneratedAt(date) {
-  const p = (n) => String(n).padStart(2, '0')
-  return `${date.getFullYear()}-${p(date.getMonth() + 1)}-${p(date.getDate())} ${p(date.getHours())}:${p(date.getMinutes())}:${p(date.getSeconds())}`
 }
 
 function fmtRefId(ev) {
@@ -78,15 +68,6 @@ function IconGrid() {
     </svg>
   )
 }
-function IconMap() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="9" />
-      <circle cx="12" cy="12" r="2.4" />
-      <path d="M12 3v3M12 18v3M3 12h3M18 12h3" />
-    </svg>
-  )
-}
 function IconCamera() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
@@ -116,6 +97,24 @@ function IconSquare() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
       <rect x="4" y="4" width="16" height="16" rx="2" />
+    </svg>
+  )
+}
+
+// 좌/우 사이드바 접기·펼치기 버튼 아이콘. 기본은 왼쪽(‹)을 가리키고,
+// flipped=true면 오른쪽(›)을 가리키게 180도 회전한다.
+function IconChevron({ flipped }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{ transform: flipped ? 'rotate(180deg)' : 'none' }}
+    >
+      <path d="M15 6l-6 6 6 6" />
     </svg>
   )
 }
@@ -184,9 +183,28 @@ export default function MainDashboard({
   vehicleAlert,
   onDismissVehicleAlert,
 }) {
-  const [exporting, setExporting] = useState(false)
-  const [pdfTarget, setPdfTarget] = useState(null)
-  const reportRef = useRef(null)
+  // 대시보드 상세화면에서 "📄 PDF 리포트 생성" 버튼을 누른 이벤트의 id. b_report를 그 자리에서
+  // 실행해 실제 PDF를 만드는 동안(수 초) 버튼을 잠그고 로딩 표시를 보여주기 위한 상태 -
+  // 예전처럼 화면을 캡쳐(html2canvas)해서 클라이언트에서 PDF를 만드는 방식이 아니라
+  // 백엔드가 만든 진짜 PDF를 그대로 다운로드시키는 방식이라 오프스크린 렌더링이 필요 없다.
+  const [generatingReportId, setGeneratingReportId] = useState(null)
+  // 이벤트 카드를 클릭하면 상세화면(사건 전/후 캡처 이미지 · 위치 · PDF 리포트 버튼)이
+  // 뜨는데, 그 대상 이벤트를 담아둔다. null이면 상세화면이 닫힌 상태.
+  const [detailEvent, setDetailEvent] = useState(null)
+  // 왼쪽(메뉴)/오른쪽(AI 관제 이벤트) 사이드바 접기 상태. 새로고침해도 마지막 상태가
+  // 유지되도록 localStorage에 저장한다(다른 토글들과 동일한 패턴 - CctvGrid의 camCount 참고).
+  const [leftCollapsed, setLeftCollapsed] = useState(
+    () => localStorage.getItem('omecca_left_sidebar_collapsed') === '1',
+  )
+  const [rightCollapsed, setRightCollapsed] = useState(
+    () => localStorage.getItem('omecca_right_sidebar_collapsed') === '1',
+  )
+  useEffect(() => {
+    localStorage.setItem('omecca_left_sidebar_collapsed', leftCollapsed ? '1' : '0')
+  }, [leftCollapsed])
+  useEffect(() => {
+    localStorage.setItem('omecca_right_sidebar_collapsed', rightCollapsed ? '1' : '0')
+  }, [rightCollapsed])
   const mapIframeRef = useRef(null)
   const mapReadyRef = useRef(false)
   // onMessage 핸들러는 darkMode가 바뀔 때만 재구독되므로, activeView를 직접 클로저로
@@ -264,61 +282,30 @@ export default function MainDashboard({
   const seenCams = [...new Set(events.map((ev) => ev.camId).filter(Boolean))]
   const camIds = seenCams.length > 0 ? seenCams : []
 
-  useEffect(() => {
-    if (!pdfTarget) return
-    let cancelled = false
-
-    const run = async () => {
-      if (!reportRef.current) return
-      setExporting(true)
-      try {
-        const canvas = await html2canvas(reportRef.current, { scale: 2, backgroundColor: '#ffffff' })
-        const imgData = canvas.toDataURL('image/png')
-        const pdf = new jsPDF({ orientation: 'p', unit: 'pt', format: 'a4' })
-        const pageWidth = pdf.internal.pageSize.getWidth()
-        const pageHeight = pdf.internal.pageSize.getHeight()
-        const imgWidth = pageWidth
-        const imgHeight = (canvas.height * imgWidth) / canvas.width
-
-        let heightLeft = imgHeight
-        let position = 0
-        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
-        heightLeft -= pageHeight
-
-        while (heightLeft > 0) {
-          position = heightLeft - imgHeight
-          pdf.addPage()
-          pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
-          heightLeft -= pageHeight
-        }
-
-        pdf.save(`report_${pdfTarget.id}_${Date.now()}.pdf`)
-      } catch (err) {
-        console.error(err)
-        alert('PDF 생성 중 오류가 발생했습니다.')
-      } finally {
-        if (!cancelled) {
-          setExporting(false)
-          setPdfTarget(null)
-        }
-      }
+  // "📄 PDF 리포트 생성" 버튼 클릭: b_report(파이썬/ReportLab)를 그 자리에서 호출해 실제
+  // PDF를 만들고, 완성된 바이너리를 받아 즉시 다운로드시킨다. 관제요원이 버튼을 누른
+  // 순간에만 생성되고(기획서 방향과 일치), 이미 만들어진 적 있는 이벤트면 백엔드가 기존
+  // PDF를 그대로 재사용해서 돌려준다.
+  const handleGenerateReport = async (ev) => {
+    if (generatingReportId) return
+    setGeneratingReportId(ev.id)
+    try {
+      const blob = await generateEventReport(ev.id)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `report_${fmtRefId(ev)}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      console.error(err)
+      alert(err.message || 'PDF 리포트 생성에 실패했습니다.')
+    } finally {
+      setGeneratingReportId(null)
     }
-
-    const id = requestAnimationFrame(() => requestAnimationFrame(run))
-    return () => {
-      cancelled = true
-      cancelAnimationFrame(id)
-    }
-  }, [pdfTarget])
-
-  const bboxStyle = pdfTarget?.bbox
-    ? {
-        left: `${pdfTarget.bbox[0] * 100}%`,
-        top: `${pdfTarget.bbox[1] * 100}%`,
-        width: `${pdfTarget.bbox[2] * 100}%`,
-        height: `${pdfTarget.bbox[3] * 100}%`,
-      }
-    : null
+  }
 
   const handleFullscreenMap = () => {
     const el = mapIframeRef.current
@@ -351,57 +338,60 @@ export default function MainDashboard({
 
   return (
     <div className="control-screen">
-      <aside className="control-sidebar">
-        <div className="control-sidebar-section">
-          <div className="control-sidebar-label">OVERVIEW</div>
-          <SidebarRow
-            icon={<IconGrid />}
-            label="대시보드"
-            count={1}
-            active={activeView === 'dashboard'}
-            onClick={() => onChangeView('dashboard')}
-          />
-          <SidebarRow
-            icon={<IconMap />}
-            label="지도"
-            count={camIds.length}
-            active={activeView === 'map'}
-            onClick={() => onChangeView('map')}
-          />
-          <SidebarRow
-            icon={<IconCamera />}
-            label="CCTV"
-            count={camIds.length}
-            active={activeView === 'cctv'}
-            onClick={() => onChangeView('cctv')}
-          />
-          <SidebarRow
-            icon={<IconClock />}
-            label="남은 이벤트"
-            count={total}
-            active={activeView === 'events'}
-            onClick={() => onChangeView('events')}
-          />
-        </div>
-        <div className="control-sidebar-section">
-          <div className="control-sidebar-label">ALERTS</div>
-          <SidebarRow
-            icon={<IconAlertCircle />}
-            label="추적 차량"
-            count={vehicleTargetCount}
-            tone="amber"
-            active={activeView === 'tracking'}
-            onClick={() => onChangeView('tracking')}
-          />
-          <SidebarRow
-            icon={<IconSquare />}
-            label="관심 대상"
-            count={personTargetCount}
-            active={activeView === 'targets'}
-            onClick={() => onChangeView('targets')}
-          />
-        </div>
-      </aside>
+      <div className="control-sidebar-wrap">
+        <aside className={`control-sidebar ${leftCollapsed ? 'collapsed' : ''}`}>
+          <div className="control-sidebar-section">
+            <div className="control-sidebar-label">OVERVIEW</div>
+            <SidebarRow
+              icon={<IconGrid />}
+              label="대시보드"
+              count={1}
+              active={activeView === 'dashboard'}
+              onClick={() => onChangeView('dashboard')}
+            />
+            <SidebarRow
+              icon={<IconCamera />}
+              label="CCTV"
+              count={camIds.length}
+              active={activeView === 'cctv'}
+              onClick={() => onChangeView('cctv')}
+            />
+            <SidebarRow
+              icon={<IconClock />}
+              label="남은 이벤트"
+              count={total}
+              active={activeView === 'events'}
+              onClick={() => onChangeView('events')}
+            />
+          </div>
+          <div className="control-sidebar-section">
+            <div className="control-sidebar-label">ALERTS</div>
+            <SidebarRow
+              icon={<IconAlertCircle />}
+              label="추적 차량"
+              count={vehicleTargetCount}
+              tone="amber"
+              active={activeView === 'tracking'}
+              onClick={() => onChangeView('tracking')}
+            />
+            <SidebarRow
+              icon={<IconSquare />}
+              label="관심 대상"
+              count={personTargetCount}
+              active={activeView === 'targets'}
+              onClick={() => onChangeView('targets')}
+            />
+          </div>
+        </aside>
+        <button
+          type="button"
+          className="sidebar-collapse-btn sidebar-collapse-btn-left"
+          onClick={() => setLeftCollapsed((v) => !v)}
+          title={leftCollapsed ? '메뉴 펼치기' : '메뉴 접기'}
+        >
+          <IconChevron flipped={leftCollapsed} />
+        </button>
+      </div>
 
       <div className="control-content">
         {/* 이 지도 iframe은 activeView가 뭐든 항상 DOM에 남아있어야 한다(조건부 렌더링 금지).
@@ -430,7 +420,16 @@ export default function MainDashboard({
         </div>
 
         {activeView === 'dashboard' && (
-          <aside className="control-events-col">
+          <div className="control-events-wrap">
+            <button
+              type="button"
+              className="sidebar-collapse-btn sidebar-collapse-btn-right"
+              onClick={() => setRightCollapsed((v) => !v)}
+              title={rightCollapsed ? 'AI 관제 이벤트 펼치기' : 'AI 관제 이벤트 접기'}
+            >
+              <IconChevron flipped={!rightCollapsed} />
+            </button>
+            <aside className={`control-events-col ${rightCollapsed ? 'collapsed' : ''}`}>
             <div className="control-events-head">AI 관제 이벤트</div>
 
             <div className="control-events-list">
@@ -446,9 +445,15 @@ export default function MainDashboard({
                     role="button"
                     tabIndex={0}
                     className={`control-event-card tier-${risk} ${isFocused ? 'focused' : ''}`}
-                    onClick={() => handleEventCardClick(ev)}
+                    onClick={() => {
+                      handleEventCardClick(ev)
+                      setDetailEvent(ev)
+                    }}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') handleEventCardClick(ev)
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        handleEventCardClick(ev)
+                        setDetailEvent(ev)
+                      }
                     }}
                   >
                     <div className="control-event-top">
@@ -457,13 +462,13 @@ export default function MainDashboard({
                         type="button"
                         className="control-event-pdf-btn"
                         title="PDF 리포트 생성"
-                        disabled={exporting}
+                        disabled={generatingReportId === ev.id}
                         onClick={(e) => {
                           e.stopPropagation()
-                          setPdfTarget(ev)
+                          handleGenerateReport(ev)
                         }}
                       >
-                        📄
+                        {generatingReportId === ev.id ? '⏳' : '📄'}
                       </button>
                     </div>
                     <div className="control-event-title-row">
@@ -476,7 +481,8 @@ export default function MainDashboard({
                 )
               })}
             </div>
-          </aside>
+            </aside>
+          </div>
         )}
 
         {activeView === 'cctv' && (
@@ -498,71 +504,8 @@ export default function MainDashboard({
         )}
       </div>
 
-      {pdfTarget && (
-        <div className="pdf-report-offscreen">
-          <div ref={reportRef} className="evidence-report-sheet">
-            <div className="evidence-report-topline">
-              <span>OMECCA-3 EVIDENCE REPORT</span>
-              <span>REF. {fmtRefId(pdfTarget)}</span>
-            </div>
-            <hr />
-            <h1>{EVENT_LABEL[pdfTarget.eventType] || pdfTarget.eventType} 증거 리포트</h1>
-
-            <section>
-              <h2>1. 사건 개요</h2>
-              <table className="evidence-kv">
-                <tbody>
-                  <tr><th>이벤트 유형</th><td>{pdfTarget.eventType}</td></tr>
-                  <tr><th>발생 시각</th><td>{fmtIsoRaw(pdfTarget.occurredAt)}</td></tr>
-                  <tr><th>카메라 / 위치</th><td>{pdfTarget.camId || '-'} / {fmtLocationLabel(pdfTarget)}</td></tr>
-                  <tr><th>추적 ID</th><td>{pdfTarget.trackId || '-'}</td></tr>
-                  <tr><th>차량 번호판</th><td>{fmtPlate(pdfTarget)}</td></tr>
-                  <tr><th>탐지 신뢰도</th><td>{pdfTarget.confidence != null ? `${(pdfTarget.confidence * 100).toFixed(1)}%` : '-'}</td></tr>
-                </tbody>
-              </table>
-            </section>
-
-            <section>
-              <h2>2. 증거 이미지 (탐지 영역 표시)</h2>
-              <div className="evidence-images">
-                <div className="evidence-image-box">
-                  <div className="evidence-image-label">사건 발생 전</div>
-                  <div className="evidence-image-frame">
-                    {pdfTarget.frameRefBefore ? <img src={pdfTarget.frameRefBefore} alt="사건 발생 전" /> : <div className="evidence-image-empty" />}
-                    {bboxStyle && <div className="evidence-bbox" style={bboxStyle} />}
-                  </div>
-                </div>
-                <div className="evidence-image-box">
-                  <div className="evidence-image-label">사건 발생 후</div>
-                  <div className="evidence-image-frame">
-                    {pdfTarget.frameRefAfter ? <img src={pdfTarget.frameRefAfter} alt="사건 발생 후" /> : <div className="evidence-image-empty" />}
-                    {bboxStyle && <div className="evidence-bbox" style={bboxStyle} />}
-                  </div>
-                </div>
-              </div>
-              <div className="evidence-image-note">* 붉은 사각형은 탐지 모듈이 보고한 bounding box(bbox) 좌표를 표시한 영역입니다.</div>
-            </section>
-
-            <section>
-              <h2>3. 처리 정보</h2>
-              <div className="evidence-process-boxes">
-                <div className="evidence-process-box">
-                  <div className="evidence-process-label">확인 관제요원</div>
-                </div>
-                <div className="evidence-process-box">
-                  <div className="evidence-process-label">처리 상태 / 인계 기관</div>
-                </div>
-              </div>
-            </section>
-
-            <div className="evidence-report-footer">
-              생성일시: {fmtGeneratedAt(new Date())} / 오메카3 관제시스템 자동 생성 / 본 문서는 수사/행정 목적으로만 사용됩니다.
-            </div>
-          </div>
-        </div>
-      )}
-
       <VehicleAlertPopup event={vehicleAlert} onFocus={handleVehicleAlertFocus} onDismiss={onDismissVehicleAlert} />
+      <EventDetailModal event={detailEvent} onClose={() => setDetailEvent(null)} />
     </div>
   )
 }

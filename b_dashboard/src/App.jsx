@@ -72,31 +72,56 @@ export default function App() {
 
   const connected = useEventSocket((ev) => upsertEvent(ev, true))
 
+  // 새로고침 버튼(Header "⟳") 클릭 시 스피너를 돌려서 "눌러도 아무 반응이 없어 보이는"
+  // 문제를 없앤다. 원래도 loadInitial/loadTargets 자체는 정상 동작했지만(재조회는 됨),
+  // 성공/실패와 무관하게 화면에 아무 시각적 피드백이 없어서 고장난 것처럼 보였던 것 —
+  // 특히 웹소켓이 이미 실시간으로 최신 이벤트를 계속 밀어주고 있어서, 수동 새로고침을
+  // 눌러도 화면에 "새로 추가되는 게" 거의 없어 더더욱 눌러도 티가 안 났다.
+  const [refreshing, setRefreshing] = useState(false)
+
   const loadInitial = useCallback(() => {
-    fetchInitialEvents(30)
+    return fetchInitialEvents(30)
       .then((list) => {
         const sorted = [...list].sort(compareByRiskThenTime)
         setEvents(sorted)
         if (sorted.length > 0) setFocusedId((current) => current ?? sorted[0].id)
       })
-      .catch(() => {})
+      .catch((err) => {
+        // 예전엔 실패해도 조용히 무시해서, 만약 인증 만료 등으로 조회 자체가 실패해도
+        // 화면엔 아무 신호가 없었다 - 최소한 콘솔에는 남겨서 디버깅 가능하게 함.
+        console.error('이벤트 목록 새로고침 실패:', err)
+        throw err
+      })
   }, [])
 
   const loadTargets = useCallback(() => {
-    fetchActiveTargets()
+    return fetchActiveTargets()
       .then((list) => setTargets(Array.isArray(list) ? list : []))
-      .catch(() => {})
+      .catch((err) => {
+        console.error('관심 대상 목록 새로고침 실패:', err)
+        throw err
+      })
   }, [])
 
   useEffect(() => {
-    loadInitial()
-    loadTargets()
+    loadInitial().catch(() => {})
+    loadTargets().catch(() => {})
   }, [loadInitial, loadTargets])
 
   const handleRefresh = useCallback(() => {
-    loadInitial()
-    loadTargets()
-  }, [loadInitial, loadTargets])
+    if (refreshing) return
+    setRefreshing(true)
+    // 새로고침이 순식간에 끝나도(로컬 네트워크라 보통 100ms 이내) 스피너가 최소
+    // 400ms는 돌게 해서 "눌렀다"는 게 눈에 보이게 한다.
+    const minSpin = new Promise((resolve) => setTimeout(resolve, 400))
+    Promise.allSettled([loadInitial(), loadTargets(), minSpin]).then((results) => {
+      setRefreshing(false)
+      const failed = results.slice(0, 2).some((r) => r.status === 'rejected')
+      if (failed) {
+        alert('새로고침 중 일부 데이터를 불러오지 못했습니다. 게이트웨이 서버 연결 상태를 확인해주세요.')
+      }
+    })
+  }, [refreshing, loadInitial, loadTargets])
 
   // "▦" 버튼(Header) - 지금 이 창은 그대로 두고(=1번 모니터), 새 창 2개(?view=monitor2/3)만
   // 열어 나머지 모니터 2대에 배치한다. 실제 모니터 좌표에 자동으로 배치하지 못한 경우
@@ -210,6 +235,7 @@ export default function App() {
       <Header
         connected={connected}
         onRefresh={handleRefresh}
+        refreshing={refreshing}
         darkMode={darkMode}
         onToggleDarkMode={() => setDarkMode((d) => !d)}
         user={user}

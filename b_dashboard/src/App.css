@@ -5,6 +5,11 @@
 html, body, #root {
   height: 100%;
   margin: 0;
+  /* overflow:hidden이 없으면 안쪽(control-events-list 등)이 flex:1 + min-height:0으로
+     제대로 잡혀있어도, 넘치는 내용이 그냥 body 밖으로 삐져나가면서 body/뷰포트 자체가
+     스크롤돼버린다 - 지도가 스크롤에 밀려 화면 밖으로 사라져 보이던 버그의 진짜 원인이었다.
+     여기서 막아야 안쪽 컨테이너들의 overflow-y:auto가 실제로 동작(그 안에서만 스크롤)한다. */
+  overflow: hidden;
 }
 
 body {
@@ -13,7 +18,14 @@ body {
 
 .app-shell {
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  min-height: 100vh;
+  /* 예전엔 min-height: 100vh였는데, 이러면 오른쪽 이벤트 리스트가 길어질 때 이 컨테이너
+     자체가 100vh를 넘게 늘어나면서 body 전체가 스크롤됐다(지도가 스크롤에 밀려 화면 밖으로
+     나가 보이던 버그의 원인). #root(height:100%, flex column)의 자식으로서 정확히 화면
+     높이만큼만 차지하고, 넘치는 내용은 안쪽(control-events-list 등)에서만 스크롤되게
+     flex: 1 + min-height: 0으로 바꿨다. */
+  flex: 1;
+  min-height: 0;
+  height: 100%;
   display: flex;
   flex-direction: column;
 }
@@ -97,6 +109,15 @@ body {
   opacity: .55;
 }
 
+.top-bar-brand {
+  font-size: 13.5px;
+  font-weight: 800;
+  letter-spacing: .01em;
+  color: var(--c-accent);
+  white-space: nowrap;
+  margin-right: 2px;
+}
+
 .top-bar-live {
   display: flex;
   align-items: center;
@@ -168,6 +189,18 @@ body {
 .top-bar-icon-btn:hover {
   border-color: var(--c-accent);
 }
+.top-bar-icon-btn:disabled {
+  cursor: default;
+  opacity: .7;
+}
+/* 새로고침 버튼(⟳) 클릭 시 도는 스피너 - 눌러도 반응이 없어 보이던 문제 보완용 */
+.top-bar-icon-btn.spinning {
+  animation: top-bar-icon-spin .6s linear infinite;
+}
+@keyframes top-bar-icon-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
 
 .control-main {
   flex: 1;
@@ -178,9 +211,65 @@ body {
 .control-screen {
   flex: 1;
   min-height: 0;
-  display: grid;
-  grid-template-columns: 280px 1fr;
+  display: flex;
   background: var(--c-bg);
+}
+
+/* 좌측 메뉴 사이드바를 감싸는 래퍼. 접기/펼치기 버튼(sidebar-collapse-btn)이 이 래퍼의
+   오른쪽 가장자리에 절대위치로 붙어있어서, 안쪽 .control-sidebar의 너비가 0으로
+   줄어들어도(overflow:hidden) 버튼 자체는 잘리지 않고 항상 화면에 남아있는다. */
+.control-sidebar-wrap {
+  position: relative;
+  flex-shrink: 0;
+  /* flex 아이템의 min-height 기본값은 auto(내용 크기)라서, 명시하지 않으면 안쪽 내용이
+     길어질 때 이 래퍼 자체가 그만큼 늘어나버려 부모(.control-screen)의 높이 제한을
+     깨고, 결국 안쪽 overflow-y:auto가 있는 요소까지 스크롤이 안 걸리게 된다. */
+  min-height: 0;
+}
+
+/* 오른쪽 "AI 관제 이벤트" 패널을 감싸는 래퍼. 왼쪽과 동일한 구조. */
+.control-events-wrap {
+  position: relative;
+  flex-shrink: 0;
+  /* 이벤트 리스트가 길어져도 이 래퍼가 부모 높이를 넘어서 늘어나지 않도록(그래야 안쪽
+     .control-events-list의 overflow-y:auto가 실제로 스크롤을 담당하게 된다) */
+  min-height: 0;
+  display: flex;
+}
+
+.sidebar-collapse-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--c-border);
+  background: var(--c-bg2);
+  color: var(--c-muted);
+  cursor: pointer;
+  z-index: 5;
+  padding: 0;
+}
+.sidebar-collapse-btn:hover {
+  color: var(--c-text);
+  background: var(--c-bg3);
+}
+.sidebar-collapse-btn svg {
+  width: 13px;
+  height: 13px;
+}
+.sidebar-collapse-btn-left {
+  right: -20px;
+  border-left: none;
+  border-radius: 0 8px 8px 0;
+}
+.sidebar-collapse-btn-right {
+  left: -20px;
+  border-right: none;
+  border-radius: 8px 0 0 8px;
 }
 
 /* 대시보드/지도/CCTV/이벤트 4개 뷰가 번갈아 렌더링되는 사이드바 우측 영역.
@@ -188,6 +277,7 @@ body {
    지도/CCTV/이벤트 전체화면 뷰일 때는 하나의 패널이 이 영역을 꽉 채운다. */
 .control-content {
   display: flex;
+  flex: 1;
   min-width: 0;
   min-height: 0;
 }
@@ -196,9 +286,21 @@ body {
   border-right: 1px solid var(--c-border);
   padding: 22px 16px;
   overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
   gap: 26px;
+  width: 280px;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  transition: width .2s ease, padding .2s ease, opacity .15s ease;
+}
+.control-sidebar.collapsed {
+  width: 0;
+  padding-left: 0;
+  padding-right: 0;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .control-sidebar-section {
@@ -346,6 +448,15 @@ body {
   padding: 18px 16px;
   gap: 14px;
   overflow: hidden;
+  box-sizing: border-box;
+  transition: width .2s ease, padding .2s ease, opacity .15s ease;
+}
+.control-events-col.collapsed {
+  width: 0;
+  padding-left: 0;
+  padding-right: 0;
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* CCTV 그리드뷰어 / 전체 이벤트 목록 전체화면 뷰 공용 래퍼 */
@@ -660,6 +771,11 @@ body {
   flex-direction: column;
   gap: 14px;
   min-height: 0;
+  /* "남은 이벤트"(EventList) 화면처럼 안에 flex:1 + overflow-y:auto로 자체 스크롤하는
+     리스트(.tier-list)를 담는 패널은, 이 flex:1이 없으면 패널 자체가 내용 크기만큼
+     늘어나버려서 안쪽 리스트가 스크롤될 기준 높이를 못 잡는다(부모인 .control-fullview
+     전체가 대신 늘어나며 스크롤이 안 걸리는 것처럼 보이던 원인). */
+  flex: 1;
 }
 .panel h2 {
   margin: 0;
@@ -679,6 +795,25 @@ body {
   justify-content: space-between;
   gap: 12px;
 }
+.cctv-panel-head-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.cam-manage-btn {
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--c-border);
+  background: var(--c-bg3);
+  color: var(--c-muted);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.cam-manage-btn:hover {
+  border-color: var(--c-accent);
+  color: var(--c-text);
+}
+
 .cam-count-toggle {
   display: flex;
   gap: 6px;
@@ -786,6 +921,60 @@ body {
   padding: 6px 10px;
   background: var(--c-bg3);
   flex-shrink: 0;
+}
+
+/* 실시간 HLS 영상이 연결된 카메라(REAL_CAMERAS) 전용 셀 */
+.cctv-cell-live {
+  opacity: 1;
+}
+.cctv-cell-live-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.live-hls-video {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background: #000;
+}
+.live-hls-video video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.live-hls-status {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--c-muted2);
+  background: color-mix(in srgb, #000 55%, transparent);
+}
+.live-hls-status-error {
+  color: var(--c-red);
+}
+.cctv-cell-foot-live {
+  gap: 6px;
+  justify-content: flex-start;
+}
+.cctv-cell-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--c-red);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-red) 25%, transparent);
+  flex-shrink: 0;
+}
+.cctv-zoom-live-video {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 10px;
+  overflow: hidden;
 }
 
 .cctv-zoom-overlay {
@@ -906,6 +1095,14 @@ body {
   border-radius: 12px;
   overflow: hidden;
   background: var(--c-bg2);
+  /* .tier-list의 flex 아이템인 .tier에 overflow:hidden이 걸려있으면, flexbox 스펙상
+     "자동 min-height"가 콘텐츠 크기가 아니라 0으로 계산된다(overflow가 visible이 아닌
+     flex 아이템의 특수 규칙). 그러면 열려있는 티어(예: 고위험, 카드 12개)가 여유 공간이
+     부족할 때 자기 콘텐츠 크기 이하로 짓눌려 찌그러지면서 내용이 조용히 잘려나가고,
+     정작 .tier-list 자체는 넘치는 걸로 계산이 안 돼서 스크롤바도 안 생긴다 - 스크롤이
+     전혀 안 되던 진짜 원인. flex-shrink:0으로 각 티어가 원래 콘텐츠 크기를 그대로
+     유지하게 하면, .tier-list가 실제로 넘치게 되고 그때 overflow-y:auto가 정상 동작한다. */
+  flex-shrink: 0;
 }
 .tier-3 { border-color: color-mix(in srgb, var(--c-red) 45%, var(--c-border)); }
 .tier-2 { border-color: color-mix(in srgb, var(--c-amber) 35%, var(--c-border)); }
@@ -941,6 +1138,13 @@ body {
   flex-direction: column;
   gap: 8px;
   padding: 0 12px 12px;
+  /* 예전엔 열려있는 티어(예: 고위험 카드 12개)가 끝없이 늘어나고, 세 티어를 통틀어
+     .tier-list 하나가 통째로 스크롤됐다 - 그러면 "고위험" 리스트를 보다가 스크롤을
+     계속 내려야 "주의"/"저위험" 헤더가 나오는 구조였다. 이제는 열려있는 티어 하나의
+     카드 목록 자체가 이 높이(최대 420px, 화면이 작으면 화면의 55%) 안에서 자체
+     스크롤되고, 다른 티어 헤더들은 항상 그 아래 고정된 위치에 그대로 보인다. */
+  max-height: min(420px, 55vh);
+  overflow-y: auto;
 }
 .tier-empty {
   padding: 14px 4px;
@@ -971,6 +1175,12 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+}
+.event-row-top-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 .event-row .time {
   font-family: var(--font-mono);
@@ -1251,4 +1461,323 @@ body {
 }
 .vehicle-alert-focus-btn:hover {
   filter: brightness(1.08);
+}
+
+/* --- EventDetailModal (이벤트 상세화면: 사건 전/후 이미지 · 위치 · PDF 리포트) --- */
+.event-detail-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 85;
+  padding: 24px;
+}
+.event-detail-box {
+  position: relative;
+  width: min(560px, 100%);
+  max-height: 90vh;
+  overflow-y: auto;
+  background: var(--c-bg2);
+  border: 1px solid var(--c-border2);
+  border-radius: 16px;
+  padding: 22px 22px 20px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .35);
+  animation: vehicle-alert-pop-in .18s ease-out;
+}
+.event-detail-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  border: 1px solid var(--c-border);
+  background: var(--c-bg3);
+  color: var(--c-muted);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+}
+.event-detail-close:hover {
+  border-color: var(--c-accent);
+  color: var(--c-text);
+}
+.event-detail-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: .08em;
+  color: var(--c-muted2);
+  margin-bottom: 4px;
+}
+.event-detail-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--c-text);
+  margin: 0 0 14px;
+}
+.event-detail-kv {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 18px;
+}
+.event-detail-kv th {
+  text-align: left;
+  font-weight: 400;
+  font-size: 12.5px;
+  color: var(--c-muted);
+  padding: 5px 0;
+  width: 100px;
+  vertical-align: top;
+}
+.event-detail-kv td {
+  text-align: left;
+  font-size: 13px;
+  color: var(--c-text);
+  padding: 5px 0;
+}
+.event-detail-images {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.event-detail-image-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.event-detail-image-label {
+  font-size: 11.5px;
+  color: var(--c-muted2);
+  text-align: center;
+}
+.event-detail-image-frame {
+  aspect-ratio: 4 / 3;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--c-border);
+  background: var(--c-bg3);
+}
+.event-detail-image-frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.event-detail-image-empty {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: var(--c-muted2);
+}
+.event-detail-pdf-btn {
+  width: 100%;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--c-accent);
+  background: var(--c-accent);
+  color: #fff;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.event-detail-pdf-btn:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+.event-detail-pdf-btn:disabled {
+  opacity: .6;
+  cursor: default;
+}
+
+/* --- CameraManagerModal (카메라 마스터 데이터 관리) --- */
+.cam-mgr-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 90;
+  padding: 24px;
+}
+.cam-mgr-box {
+  width: min(720px, 100%);
+  max-height: min(720px, 90vh);
+  background: var(--c-bg2);
+  border: 1px solid var(--c-border2);
+  border-radius: 16px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.cam-mgr-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.cam-mgr-head h2 {
+  font-size: 15px;
+}
+.cam-mgr-close {
+  border: 1px solid var(--c-border);
+  background: var(--c-bg3);
+  color: var(--c-text);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.cam-mgr-close:hover {
+  border-color: var(--c-accent);
+}
+.cam-mgr-form {
+  border: 1px solid var(--c-border);
+  border-radius: 10px;
+  background: var(--c-bg3);
+  padding: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+}
+.cam-mgr-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--c-muted);
+}
+.cam-mgr-form label.grow {
+  flex: 1;
+  min-width: 140px;
+}
+.cam-mgr-form input,
+.cam-mgr-form select {
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--c-border);
+  background: var(--c-bg2);
+  color: var(--c-text);
+  font-size: 13px;
+  font-family: inherit;
+}
+.cam-mgr-form input:focus,
+.cam-mgr-form select:focus {
+  outline: none;
+  border-color: var(--c-accent);
+}
+.cam-mgr-submit-btn {
+  padding: 9px 18px;
+  border-radius: 8px;
+  border: 1px solid var(--c-accent);
+  background: var(--c-accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cam-mgr-submit-btn:disabled {
+  opacity: .6;
+  cursor: default;
+}
+.cam-mgr-form-error {
+  font-size: 12px;
+  color: var(--c-red);
+}
+.cam-mgr-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cam-mgr-empty {
+  padding: 24px 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--c-muted2);
+}
+.cam-mgr-error {
+  color: var(--c-red);
+}
+.cam-mgr-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--c-border);
+  border-radius: 10px;
+  background: var(--c-bg3);
+}
+.cam-mgr-row.inactive {
+  opacity: .55;
+}
+.cam-mgr-live-badge {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  background: var(--c-bg2);
+  color: var(--c-muted2);
+}
+.cam-mgr-live-badge.on {
+  background: color-mix(in srgb, var(--c-red) 16%, transparent);
+  color: var(--c-red);
+}
+.cam-mgr-row-main {
+  flex: 1;
+  min-width: 0;
+}
+.cam-mgr-row-title {
+  font-size: 13.5px;
+  color: var(--c-text);
+  font-weight: 600;
+}
+.cam-mgr-row-camid {
+  margin-left: 6px;
+  font-size: 11.5px;
+  color: var(--c-muted2);
+  font-family: var(--font-mono);
+  font-weight: 400;
+}
+.cam-mgr-row-sub {
+  font-size: 11.5px;
+  color: var(--c-muted2);
+}
+.cam-mgr-toggle-btn,
+.cam-mgr-delete-btn {
+  flex-shrink: 0;
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--c-border);
+  background: transparent;
+  color: var(--c-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.cam-mgr-toggle-btn:hover {
+  border-color: var(--c-accent);
+  color: var(--c-text);
+}
+.cam-mgr-delete-btn {
+  border-color: var(--c-red);
+  color: var(--c-red);
+}
+.cam-mgr-delete-btn:hover {
+  background: rgba(220, 38, 38, .1);
+}
+.cam-mgr-toggle-btn:disabled,
+.cam-mgr-delete-btn:disabled {
+  opacity: .6;
+  cursor: default;
 }
