@@ -1,6 +1,8 @@
 import time
 import requests
 import json
+from datetime import datetime, timezone
+
 
 def to_bbox_xywh(bbox):
     if not bbox or len(bbox) != 4:
@@ -9,7 +11,7 @@ def to_bbox_xywh(bbox):
     return [int(x1), int(y1), max(0, int(x2 - x1)), max(0, int(y2 - y1))]
 
 class EventPublisher:
-    def __init__(self, endpoint='http://localhost:8000/api/events', cooldown_sec=3.0):
+    def __init__(self, endpoint='http://localhost:8080/api/events', cooldown_sec=3.0):
         self.endpoint = endpoint
         self.cooldown_sec = cooldown_sec
         self.last_sent_times = {}
@@ -31,8 +33,10 @@ class EventPublisher:
             'camId': cam_id,
             'targetId': None,
             'eventType': event_type,
+            'objectClass': 'PERSON' if event_type == 'WANTED_PERSON' else 'OBJECT',
             'confidence': float(confidence),
             'bbox': xywh_bbox,
+            'occurredAt': datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z'),
             'meta': {
                 'matchedDbId': meta.get('matchedDbId'),
                 'faceMatchScore': meta.get('faceMatchScore'),
@@ -48,7 +52,7 @@ class EventPublisher:
             return res.status_code in (200, 201)
         except Exception:
             self.last_sent_times[event_type] = now
-            return True
+            return False
 
 # [하위 호환용 글로벌 싱글톤 인스턴스 및 함수]
 _default_publisher = EventPublisher()
