@@ -3,6 +3,8 @@
 /data/
 /runs/
 *.pt
+!a_detector/models/*.pt
+!c_person_risk/models/*.pt
 
 #도로 낙하물 이미지 제외
 a_detector/*_raw/

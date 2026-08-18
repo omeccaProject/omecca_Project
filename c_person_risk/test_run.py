@@ -15,6 +15,14 @@ from event_publisher import send_event
 
 COOLDOWN_SEC = 3.0
 
+def resize_for_display(frame, max_width=960):
+    """화면 표시용으로만 축소. 탐지/좌표 계산은 이미 끝난 뒤라 정확도에 영향 없음"""
+    h, w = frame.shape[:2]
+    if w <= max_width:
+        return frame
+    scale = max_width / w
+    return cv2.resize(frame, (max_width, int(h * scale)))
+
 def clip_bbox_xyxy(bbox, w, h):
     """좌표 클리핑 (화면 밖 좌표 이탈 방어)"""
     if not bbox or len(bbox) != 4:
@@ -157,8 +165,13 @@ def run_pipeline(video_source=0, conf_threshold=0.50, skip_frames=15):
             cv2.rectangle(frame, (bx[0], bx[1]), (bx[2], bx[3]), (0, 0, 255), 2)
             cv2.putText(frame, f"{w_item['label']} {w_item['confidence']:.2f}", (bx[0], max(15, bx[1] - 10)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+        display_frame = resize_for_display(frame, max_width=960)   # ← 추가
+        cv2.imshow("C-Part Test", display_frame)                   # ← frame → display_frame
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
 
     cap.release()
+    cv2.destroyAllWindows()
     print('[*] 파이프라인 정상 종료')
 
 if __name__ == '__main__':

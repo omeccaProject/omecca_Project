@@ -3,12 +3,16 @@ import pickle
 import os
 import face_recognition
 from PIL import Image
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Request
+from fastapi import FastAPI, APIRouter, UploadFile, File, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from c_person_risk.embedding_utils import save_embeddings_atomically
 
 router = APIRouter(prefix="/api", tags=["Wanted Person"])
 PKL_PATH = "c_person_risk/face_embeddings.pkl"
+
+# uvicorn이 실행할 진입점(entrypoint)
+app = FastAPI(title="C-Part API Server")
+app.include_router(router)
 
 @router.post("/wanted-person")
 async def register_wanted_person(
