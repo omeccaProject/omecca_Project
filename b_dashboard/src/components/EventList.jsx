@@ -7,9 +7,11 @@ function fmtTime(iso) {
   return iso.replace('T', ' ').split('.')[0]
 }
 
-export default function EventList({ events, focusedId, onSelect }) {
+// title/defaultOpenTier: 사이드바 "고위험" 전용 화면(activeView='critical')처럼 특정 등급만
+// 강조해서 보여줘야 하는 화면에서도 이 컴포넌트를 그대로 재사용할 수 있게 옵션으로 뺐다.
+export default function EventList({ events, focusedId, onSelect, title = '실시간 이벤트 리스트', defaultOpenTier = 3 }) {
   // 기본으로 고위험 섹션만 펼쳐둠. 섹션 헤더 클릭으로 펼치기/접기.
-  const [openTier, setOpenTier] = useState(3)
+  const [openTier, setOpenTier] = useState(defaultOpenTier)
 
   const grouped = RISK_TIERS.map((level) => ({
     level,
@@ -19,7 +21,7 @@ export default function EventList({ events, focusedId, onSelect }) {
 
   return (
     <section className="panel">
-      <h2>실시간 이벤트 리스트</h2>
+      <h2>{title}</h2>
       <div className="tier-list">
         {grouped.map((tier) => {
           const isOpen = openTier === tier.level

@@ -1,0 +1,378 @@
+/* ===================================================================
+   랜딩페이지 전용 스타일 (2026-08-16 영상 레퍼런스 + 디자인 브리프 반영, v3).
+   로그인/회원가입/관리자 화면(AuthPages.css)이나 대시보드(App.css)와
+   완전히 다른 톤이라, 클래스를 전부 lp-* 로 따로 두고 이 파일은
+   LandingPage.jsx에서만 import한다 - 다른 화면에는 영향 없음.
+
+   v3에서 바뀐 점 (디자인 브리프 반영):
+   - 형광 그린 위주 배색 → 뉴트럴 그레이 베이스 + 그린/레드/앰버/시안을
+     "상태 의미"에만 쓰는 세만틱 컬러로 분리 (버튼/카드 등 구조색은 흑백만 사용)
+   - Geist 계열 산세리프(Inter로 대체) + 데이터/라벨은 전부 모노스페이스(JetBrains Mono)
+   - 상단 내비게이션을 유리질감(backdrop-blur) 알약형 플로팅 바로 변경
+   - 히어로 하단에 도시 스카이라인 실루엣 + 별 도트로 야간 관제 톤 연출
+   - 대시보드 프리뷰 카드에 원근감(perspective) 틸트 + 플로팅 그림자 적용
+   - 영상에서 실측한 컬러 값(그린 #4ade80 / 레드 #ef4444 / 시안 #22d3ee / 앰버 #f5a623)
+     그대로 사용
+   =================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+.lp-root {
+  /* 뉴트럴 그레이 스케일 - 배경/보더/텍스트는 전부 이 스케일에서만 가져온다 */
+  --lp-bg: #08090b; --lp-bg2: #0d0f13; --lp-bg3: #14171d;
+  --lp-border: rgba(255,255,255,.09); --lp-border2: rgba(255,255,255,.16);
+  --lp-text: #f5f6f8; --lp-muted: #90959f; --lp-muted2: #55595f;
+
+  /* 세만틱 컬러 - 상태를 나타낼 때만 쓴다 (LIVE/정상=그린, 위험/경고=레드, 주의=앰버, 정보=시안) */
+  --lp-green: #4ade80; --lp-red: #ef4444; --lp-amber: #f5a623; --lp-cyan: #22d3ee;
+
+  --lp-font-sans: 'Inter', -apple-system, "Malgun Gothic", Pretendard, Arial, sans-serif;
+  --lp-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  min-height: 100vh; width: 100%; overflow-x: hidden; position: relative;
+  color: var(--lp-text);
+  font-family: var(--lp-font-sans);
+  /* 페이지 전체를 관통하는 은은한 앰비언트 그라디언트: 맨 위(내비/히어로 근처)는
+     옅은 화이트 글로우, 맨 아래(플랫폼/프라이싱/풋터 근처)는 옅은 에메랄드 글로우로
+     서서히 번지듯 이어진다. .lp-root 하나에만 걸어두고 각 섹션은 배경을 따로
+     지정하지 않아야 이 그라디언트가 그대로 비쳐 보인다(카드류 컴포넌트만 예외). */
+  background:
+    radial-gradient(ellipse 1100px 620px at 50% 0%, rgba(255,255,255,.09), transparent 62%),
+    radial-gradient(ellipse 1300px 760px at 50% 100%, rgba(16,185,129,.14), transparent 60%),
+    var(--lp-bg);
+}
+.lp-root * { box-sizing: border-box; }
+.lp-wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+.lp-section { padding: 96px 0; }
+.lp-bordered { border-top: 1px solid var(--lp-border); }
+.lp-eyebrow {
+  display: inline-flex; align-items: center; gap: 7px; font-size: 11px; color: var(--lp-muted); font-weight: 600;
+  margin-bottom: 20px; text-transform: uppercase; letter-spacing: .12em; font-family: var(--lp-font-mono);
+  border: 1px solid var(--lp-border2); border-radius: 999px; padding: 6px 14px;
+  background: rgba(255,255,255,.03);
+}
+.lp-eyebrow:before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--lp-green); flex-shrink: 0; }
+/* .lp-eyebrow는 항상 inline-flex(콘텐츠만큼만 너비)라서, 가운데 정렬은 부모의
+   text-align:center에 맡긴다 (.lp-pricing-hero 참고) - 별도 처리 불필요. */
+.lp-title { font-size: 34px; font-weight: 700; line-height: 1.35; margin: 0; letter-spacing: -.02em; }
+.lp-title.center { text-align: center; }
+.lp-lead { font-size: 14px; color: var(--lp-muted); line-height: 1.8; max-width: 420px; margin: 0; }
+.lp-lead.center { max-width: 560px; margin: 20px auto 0; text-align: center; }
+.lp-head-split { display: grid; grid-template-columns: 1.3fr 1fr; gap: 40px; align-items: end; margin-bottom: 44px; }
+@media (max-width: 780px) { .lp-head-split { grid-template-columns: 1fr; } }
+
+/* ---------- 플로팅 알약형 내비게이션 (유리질감) ---------- */
+.lp-nav {
+  position: fixed; top: 18px; left: 50%; transform: translateX(-50%); z-index: 40;
+  width: min(880px, calc(100% - 32px));
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 10px 10px 22px; border-radius: 999px;
+  background: rgba(13,15,19,.62); backdrop-filter: blur(16px) saturate(160%); -webkit-backdrop-filter: blur(16px) saturate(160%);
+  border: 1px solid var(--lp-border2);
+  box-shadow: 0 10px 34px rgba(0,0,0,.35);
+}
+.lp-brand { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 14px; color: var(--lp-text); }
+.lp-dot { width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--lp-border2); display: flex; align-items: center; justify-content: center; font-size: 10px; flex-shrink: 0; font-family: var(--lp-font-mono); }
+.lp-navlinks { display: flex; gap: 26px; font-size: 13px; }
+.lp-navlinks a { color: var(--lp-muted); text-decoration: none; }
+.lp-navlinks a:hover { color: var(--lp-text); }
+.lp-navright { display: flex; align-items: center; gap: 14px; }
+.lp-btn-ghost { background: none; border: none; font-size: 13px; color: var(--lp-muted); cursor: pointer; font-family: var(--lp-font-sans); }
+.lp-btn-ghost:hover { color: var(--lp-text); }
+.lp-btn-white {
+  background: #fff; color: #08090b; border: none; border-radius: 999px; padding: 9px 18px;
+  font-weight: 700; font-size: 13px; cursor: pointer; white-space: nowrap; font-family: var(--lp-font-sans);
+}
+.lp-btn-white:hover { background: #e6e7ea; }
+.lp-btn-dark {
+  background: var(--lp-bg3); color: #fff; border: 1px solid var(--lp-border2); border-radius: 999px; padding: 9px 18px;
+  font-weight: 700; font-size: 13px; cursor: pointer; white-space: nowrap; text-decoration: none; display: inline-flex; align-items: center;
+  font-family: var(--lp-font-sans);
+}
+.lp-btn-dark:hover { background: #1b1f27; }
+
+/* ---------- 히어로 : 야간 스카이 그라디언트 + 도시 스카이라인 실루엣 ----------
+   배경색 자체는 .lp-root의 전역 화이트→에메랄드 그라디언트가 그대로 비쳐 보이게
+   두고(여기서 불투명하게 덮어쓰지 않음), 히어로에는 국지적으로만 살짝 더 밝은
+   화이트 글로우를 얹어 뱃지/헤드라인 뒤에 은은한 스포트라이트 효과를 준다. */
+.lp-hero {
+  position: relative; text-align: center; padding: 168px 24px 0; overflow: hidden;
+  background: radial-gradient(ellipse 900px 460px at 50% -10%, rgba(255,255,255,.06), transparent 70%);
+}
+.lp-hero-bg { position: absolute; left: 0; right: 0; bottom: 0; height: 200px; pointer-events: none; z-index: 0; }
+.lp-stars { position: absolute; inset: 0; width: 100%; height: 100%; opacity: .5; }
+.lp-stars circle { fill: #fff; }
+.lp-skyline { position: absolute; left: 0; right: 0; bottom: 0; width: 100%; height: 160px; }
+.lp-skyline-b { fill: #0c0e13; stroke: rgba(255,255,255,.05); stroke-width: 1; }
+.lp-skyline-w { fill: rgba(245,166,35,.55); }
+.lp-hero > *:not(.lp-hero-bg) { position: relative; z-index: 1; }
+
+.lp-badge-pill {
+  display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--lp-border2); color: var(--lp-muted);
+  font-size: 12px; font-weight: 600; padding: 7px 15px; border-radius: 999px; margin-bottom: 26px;
+  background: rgba(255,255,255,.04); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  font-family: var(--lp-font-mono); letter-spacing: .02em;
+}
+.lp-dot-sm { width: 6px; height: 6px; border-radius: 50%; background: var(--lp-green); box-shadow: 0 0 8px rgba(74,222,128,.7); }
+.lp-hero-title { font-size: 50px; font-weight: 700; line-height: 1.28; margin: 0 0 22px; letter-spacing: -.03em; }
+.lp-dim { color: var(--lp-muted2); }
+.lp-hero-sub { font-size: 15px; color: var(--lp-muted); line-height: 1.8; max-width: 560px; margin: 0 auto 34px; }
+.lp-hero-ctas { display: flex; justify-content: center; gap: 10px; margin-bottom: 64px; }
+.lp-hero-ctas.center { margin-bottom: 0; }
+
+/* ---------- 대시보드 프리뷰 : 살짝 기울어져 떠 있는 느낌의 원근감 틸트 ---------- */
+.lp-console-tilt { perspective: 2000px; padding: 0 16px; }
+.lp-console {
+  text-align: left; background: var(--lp-bg2); border: 1px solid var(--lp-border2); border-radius: 16px 16px 0 0;
+  overflow: hidden; max-width: 1120px; margin: 0 auto;
+  transform: rotateX(7deg) scale(.985); transform-origin: top center;
+  box-shadow: 0 70px 120px -40px rgba(0,0,0,.65), 0 24px 50px -20px rgba(0,0,0,.5);
+}
+.lp-console-bar { display: flex; align-items: center; gap: 10px; padding: 13px 18px; border-bottom: 1px solid var(--lp-border); }
+.lp-dots span { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margin-right: 6px; background: #23262e; }
+.lp-console-meta { font-size: 12px; color: var(--lp-muted); margin-left: 6px; font-family: var(--lp-font-mono); }
+.lp-console-meta b { color: var(--lp-green); font-weight: 700; }
+.lp-console-body { display: grid; grid-template-columns: 210px 1fr 300px; }
+@media (max-width: 900px) { .lp-console-body { grid-template-columns: 1fr; } }
+.lp-console-body > div { padding: 18px; border-right: 1px solid var(--lp-border); }
+.lp-console-body > div:last-child { border-right: none; }
+.lp-side-label { font-size: 10px; letter-spacing: .1em; color: var(--lp-muted2); margin: 4px 0 10px; text-transform: uppercase; font-family: var(--lp-font-mono); }
+.lp-side-row { display: flex; justify-content: space-between; align-items: center; font-size: 13px; padding: 7px 8px; border-radius: 6px; color: var(--lp-muted); }
+.lp-side-row.active { background: rgba(255,255,255,.06); color: #fff; font-weight: 600; }
+.lp-side-row b { color: var(--lp-muted2); font-weight: 600; font-size: 12px; font-family: var(--lp-font-mono); }
+.lp-side-row.lp-alert b { color: var(--lp-red); }
+.lp-map-area {
+  position: relative; background: #0a0c11; border-radius: 8px; height: 300px; overflow: hidden;
+  background-image: linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+.lp-pin {
+  position: absolute; width: 30px; height: 30px; border-radius: 50%; border: 1px solid rgba(74,222,128,.45);
+  background: rgba(74,222,128,.12); color: var(--lp-green); font-size: 12px; font-weight: 700; font-family: var(--lp-font-mono);
+  display: flex; align-items: center; justify-content: center;
+}
+.lp-pin.lp-hot { border-color: rgba(239,68,68,.6); background: rgba(239,68,68,.15); color: var(--lp-red); box-shadow: 0 0 0 6px rgba(239,68,68,.12); }
+.lp-evt-title { font-size: 10px; letter-spacing: .08em; color: var(--lp-muted2); margin-bottom: 12px; text-transform: uppercase; font-family: var(--lp-font-mono); }
+.lp-evt { padding: 10px 0; border-bottom: 1px solid var(--lp-border); font-size: 12px; }
+.lp-evt-first {
+  background: rgba(239,68,68,.07); border-left: 2px solid var(--lp-red); padding-left: 10px;
+  margin: -10px -18px 8px; padding-top: 12px; padding-bottom: 12px; padding-right: 18px;
+}
+.lp-evt-top { display: flex; justify-content: space-between; color: var(--lp-muted2); font-size: 11px; margin-bottom: 4px; font-family: var(--lp-font-mono); }
+.lp-evt-title-row { display: flex; align-items: center; gap: 6px; color: #fff; font-weight: 600; margin-bottom: 3px; }
+.lp-chip { font-size: 9px; font-weight: 700; padding: 1px 6px; border-radius: 4px; background: rgba(239,68,68,.18); color: #ff9b9e; font-family: var(--lp-font-mono); }
+.lp-evt-sub { color: var(--lp-muted); }
+
+.lp-partners {
+  display: flex; align-items: center; gap: 34px; flex-wrap: wrap; justify-content: center;
+  padding: 56px 24px; font-size: 13px; color: var(--lp-muted2); border-top: 1px solid var(--lp-border);
+}
+
+/* ---------- Core Features 탭 ---------- */
+.lp-tabbar { display: flex; border-top: 1px solid var(--lp-border); border-bottom: 1px solid var(--lp-border); flex-wrap: wrap; }
+.lp-tab {
+  flex: 1; min-width: 140px; text-align: left; background: none; border: none; color: var(--lp-muted2);
+  font-size: 13px; font-weight: 600; padding: 16px 4px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px;
+  font-family: var(--lp-font-sans);
+}
+.lp-tab-n { font-size: 11px; margin-right: 6px; font-family: var(--lp-font-mono); color: inherit; }
+.lp-tab.on { color: #fff; border-bottom-color: #fff; }
+.lp-tabpanel { padding: 40px 0 20px; }
+.lp-cam-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+@media (max-width: 780px) { .lp-cam-grid { grid-template-columns: repeat(2, 1fr); } }
+.lp-cam { background: var(--lp-bg2); border: 1px solid var(--lp-border); border-radius: 10px; overflow: hidden; }
+.lp-cam-shot { height: 100px; position: relative; background: linear-gradient(135deg,#17141c,#211a24 40%,#140f13); }
+.lp-cam-shot.alert { background: linear-gradient(135deg,#241012,#170a0b); }
+.lp-cam-box { position: absolute; border: 1.5px solid var(--lp-green); border-radius: 2px; top: 30px; left: 20px; width: 24px; height: 55px; }
+.lp-cam-box.alert { border-color: var(--lp-red); top: 25px; left: 30px; width: 30px; height: 60px; }
+.lp-cam-lbl { position: absolute; top: -18px; left: -1px; font-size: 9px; font-weight: 700; padding: 1px 5px; background: var(--lp-green); color: #062112; white-space: nowrap; font-family: var(--lp-font-mono); }
+.lp-cam-lbl.alert { background: var(--lp-red); color: #2a0505; }
+.lp-cam-foot { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; font-size: 11px; }
+.lp-cam-id { font-weight: 700; font-family: var(--lp-font-mono); }
+.lp-cam-live { color: var(--lp-green); font-weight: 700; font-family: var(--lp-font-mono); }
+.lp-cam-live.alert { color: var(--lp-red); }
+.lp-cam-loc { padding: 0 10px 8px; font-size: 10px; color: var(--lp-muted2); display: flex; justify-content: space-between; }
+.lp-tab-caption { font-size: 12px; color: var(--lp-muted2); margin-top: 20px; }
+
+.lp-gis-panel { background: var(--lp-bg2); border: 1px solid var(--lp-border); border-radius: 10px; padding: 20px; }
+.lp-gis-map {
+  position: relative; height: 340px; border-radius: 6px; overflow: hidden;
+  background-image: linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px);
+  background-size: 44px 44px;
+}
+.lp-gis-pin { width: 34px; height: 34px; }
+.lp-gis-pin.lp-hot { box-shadow: 0 0 0 8px rgba(239,68,68,.12); }
+
+.lp-metric-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+.lp-metric-card { background: var(--lp-bg2); border: 1px solid var(--lp-border); border-radius: 10px; padding: 20px; }
+.lp-metric-l { font-size: 12px; color: var(--lp-muted); margin-bottom: 10px; }
+.lp-metric-v { font-size: 32px; font-weight: 700; margin-bottom: 6px; font-family: var(--lp-font-mono); letter-spacing: -.02em; }
+.lp-metric-d.up { color: var(--lp-green); font-size: 11px; font-family: var(--lp-font-mono); }
+.lp-metric-d.down { color: var(--lp-cyan); font-size: 11px; font-family: var(--lp-font-mono); }
+.lp-stream-panel { background: var(--lp-bg2); border: 1px solid var(--lp-border); border-radius: 10px; padding: 18px; }
+.lp-stream-head { display: flex; justify-content: space-between; font-size: 12px; color: var(--lp-muted); margin-bottom: 14px; }
+.lp-live { color: var(--lp-green); font-weight: 700; font-family: var(--lp-font-mono); }
+.lp-stream-row { display: flex; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--lp-border); font-size: 12px; flex-wrap: wrap; }
+.lp-stream-t { color: var(--lp-muted2); font-family: var(--lp-font-mono); width: 56px; flex-shrink: 0; }
+.lp-chip2 { font-size: 9px; font-weight: 800; padding: 2px 7px; border-radius: 4px; flex-shrink: 0; width: 60px; text-align: center; font-family: var(--lp-font-mono); }
+.lp-chip2.critical { background: rgba(239,68,68,.18); color: #ff9b9e; }
+.lp-chip2.warn { background: rgba(245,166,35,.18); color: #ffcf7a; }
+.lp-chip2.info { background: rgba(34,211,238,.18); color: #8fecfb; }
+.lp-stream-desc { flex: 1; color: #fff; }
+.lp-stream-loc { color: var(--lp-muted2); flex-shrink: 0; font-family: var(--lp-font-mono); font-size: 11px; }
+
+.lp-rep-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+@media (max-width: 780px) { .lp-rep-row { grid-template-columns: 1fr; } }
+.lp-rep-panel { background: var(--lp-bg2); border: 1px solid var(--lp-border); border-radius: 10px; padding: 18px; }
+.lp-rep-h { font-size: 12px; color: var(--lp-muted); margin-bottom: 14px; }
+.lp-heatmap { height: 150px; border-radius: 6px; position: relative; overflow: hidden; background: #0a0c11; }
+.lp-blob { position: absolute; border-radius: 50%; filter: blur(22px); opacity: .75; }
+.lp-bar-row { margin-bottom: 12px; }
+.lp-bar-lab { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 5px; }
+.lp-bar-lab span:last-child { color: var(--lp-muted); font-family: var(--lp-font-mono); }
+.lp-bar-track { height: 5px; background: rgba(255,255,255,.06); border-radius: 3px; overflow: hidden; }
+.lp-bar-fill { height: 100%; border-radius: 3px; }
+.lp-pdf-table { background: var(--lp-bg2); border: 1px solid var(--lp-border); border-radius: 10px; padding: 18px; }
+.lp-pdf-head { display: flex; justify-content: space-between; font-size: 12px; color: var(--lp-muted); margin-bottom: 12px; font-family: var(--lp-font-mono); }
+.lp-pdf-row { display: grid; grid-template-columns: 90px 60px 1fr 90px; gap: 12px; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--lp-border); font-size: 12px; }
+@media (max-width: 780px) { .lp-pdf-row { grid-template-columns: 80px 1fr; } .lp-pdf-row span:nth-child(2), .lp-pdf-row .lp-pdf-ref { display: none; } }
+.lp-tag2 { font-size: 9px; font-weight: 800; padding: 2px 7px; border-radius: 4px; text-align: center; font-family: var(--lp-font-mono); }
+.lp-tag2.summary { background: rgba(34,211,238,.18); color: #8fecfb; }
+.lp-tag2.trend { background: rgba(245,166,35,.18); color: #ffcf7a; }
+.lp-tag2.incident { background: rgba(239,68,68,.18); color: #ff9b9e; }
+.lp-pdf-desc { color: var(--lp-muted); }
+.lp-pdf-ref { color: var(--lp-muted2); text-align: right; font-family: var(--lp-font-mono); }
+
+.lp-statbar { display: flex; border-top: 1px solid var(--lp-border); padding-top: 36px; margin-top: 36px; flex-wrap: wrap; }
+.lp-statbar div { flex: 1; min-width: 130px; border-left: 1px solid var(--lp-border); padding: 0 24px; }
+.lp-statbar div:first-child { border-left: none; padding-left: 0; }
+.lp-statbar b { display: block; font-size: 26px; font-weight: 700; font-family: var(--lp-font-mono); letter-spacing: -.02em; }
+.lp-statbar span { font-size: 12px; color: var(--lp-muted); }
+
+/* ---------- Platform 3카드 ---------- */
+.lp-cards3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 40px; }
+@media (max-width: 900px) { .lp-cards3 { grid-template-columns: 1fr; } }
+.lp-pcard { background: var(--lp-bg2); border: 1px solid var(--lp-border); border-radius: 12px; overflow: hidden; }
+.lp-pcard-thumb { height: 110px; position: relative; background: #0a0c11; }
+.lp-pcard-box { position: absolute; border: 1.5px solid var(--lp-green); border-radius: 2px; }
+.lp-pcard-box.r { border-color: var(--lp-red); }
+.lp-pcard-lbl { position: absolute; font-size: 9px; font-weight: 700; padding: 1px 5px; font-family: var(--lp-font-mono); }
+.lp-pcard-thumb svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.lp-pcard-body { padding: 20px; }
+.lp-pcard-body h4 { font-size: 15px; margin: 0 0 8px; font-weight: 700; }
+.lp-pcard-body p { font-size: 12px; color: var(--lp-muted); line-height: 1.7; margin: 0 0 14px; }
+.lp-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+.lp-tags span { font-size: 10px; color: var(--lp-muted2); border: 1px solid var(--lp-border); border-radius: 5px; padding: 3px 8px; font-family: var(--lp-font-mono); }
+
+.lp-pricing-hero { text-align: center; padding: 108px 24px; }
+
+/* ---------- 풋터 ---------- */
+.lp-footer { border-top: 1px solid var(--lp-border); padding: 56px 24px 26px; }
+.lp-foot-grid { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 1fr; gap: 24px; }
+@media (max-width: 900px) { .lp-foot-grid { grid-template-columns: 1fr 1fr; } }
+.lp-foot-brand .lp-brand { margin-bottom: 10px; }
+.lp-foot-brand p { font-size: 12px; color: var(--lp-muted); line-height: 1.8; max-width: 240px; }
+.lp-foot-col-title { font-size: 10px; letter-spacing: .1em; color: var(--lp-muted2); margin-bottom: 14px; text-transform: uppercase; font-family: var(--lp-font-mono); }
+.lp-foot-col a { display: block; font-size: 12px; color: var(--lp-muted); text-decoration: none; margin-bottom: 10px; }
+.lp-foot-col a:hover { color: #fff; }
+.lp-foot-bottom {
+  display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;
+  border-top: 1px solid var(--lp-border); margin-top: 40px; padding-top: 18px; font-size: 11px;
+  color: var(--lp-muted2); font-family: var(--lp-font-mono);
+}
+.lp-status { color: var(--lp-green); }
+
+/* ==================================================================
+   "파일럿 신청서 작성" 모달 (pi-*) - 랜딩페이지 자체의 다크(lp-*) 팔레트가 아니라
+   로그인/회원가입(AuthPages.css) 쪽 라이트+블루 팔레트를 그대로 반영한다.
+   (auth-* 클래스를 직접 재사용하지 않는 이유는 LandingPage.css가 AuthPages.css를
+   import하지 않게 분리되어 있어서 - 같은 색상 값만 여기 새로 정의해서 쓴다.)
+   ================================================================== */
+.pi-overlay {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(8, 9, 11, .72);
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+  font-family: var(--lp-font-sans);
+}
+.pi-modal {
+  position: relative;
+  width: 100%; max-width: 960px; max-height: 90vh; overflow-y: auto;
+  background: #fff; border-radius: 18px; box-shadow: 0 24px 64px rgba(10, 16, 40, .35);
+  display: grid; grid-template-columns: 0.85fr 1.15fr;
+}
+@media (max-width: 760px) {
+  .pi-modal { grid-template-columns: 1fr; max-height: 92vh; }
+}
+/* 닫기 버튼은 항상 오른쪽(흰 배경 pi-right) 위에 겹치므로 어두운 아이콘 톤으로 고정 */
+.pi-close {
+  position: absolute; top: 16px; right: 16px; z-index: 1;
+  width: 32px; height: 32px; border-radius: 50%; border: none; cursor: pointer;
+  background: rgba(30, 42, 74, .08); color: #6b7690; font-size: 14px;
+  display: flex; align-items: center; justify-content: center;
+}
+.pi-close:hover { background: rgba(59, 91, 219, .12); color: #3b5bdb; }
+
+.pi-left {
+  background: #0f1428; color: #eef1fb; padding: 44px 36px;
+  display: flex; flex-direction: column; gap: 18px;
+}
+.pi-eyebrow { font-size: 11px; color: #93a0c9; letter-spacing: .04em; }
+.pi-heading { font-size: 24px; line-height: 1.4; margin: 0; color: #fff; font-weight: 700; }
+.pi-accent { color: #6f8dff; }
+.pi-desc { font-size: 13px; line-height: 1.8; color: #93a0c9; margin: 0; }
+.pi-contact { display: flex; flex-direction: column; gap: 16px; margin-top: 10px; }
+.pi-contact-row { display: flex; align-items: flex-start; gap: 12px; }
+.pi-contact-icon {
+  width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0;
+  background: rgba(111, 141, 255, .16); color: #6f8dff;
+  display: flex; align-items: center; justify-content: center; font-size: 14px;
+}
+.pi-contact-label { font-size: 10px; letter-spacing: .08em; color: #6b7ab0; margin-bottom: 2px; }
+.pi-contact-value { font-size: 13px; color: #eef1fb; font-weight: 600; }
+
+.pi-right { padding: 40px 36px; background: #fff; }
+.pi-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 480px) { .pi-grid2 { grid-template-columns: 1fr; } }
+
+.pi-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; font-size: 13px; color: #6b7690; }
+.pi-field em { color: #c0292e; font-style: normal; }
+.pi-field input, .pi-field select, .pi-field textarea {
+  padding: 10px 12px; border-radius: 8px; border: 1px solid #e2e6f0; font-size: 14px; color: #1e2a4a;
+  background: #f5f7fc; font-family: var(--lp-font-sans); width: 100%;
+}
+.pi-field textarea { resize: vertical; min-height: 88px; }
+.pi-field input:focus, .pi-field select:focus, .pi-field textarea:focus {
+  outline: none; border-color: #3b5bdb; background: #fff;
+}
+
+.pi-scale-group { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+@media (max-width: 480px) { .pi-scale-group { grid-template-columns: repeat(2, 1fr); } }
+.pi-scale-btn {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 10px 6px; border-radius: 8px; border: 1px solid #e2e6f0; background: #f5f7fc;
+  color: #6b7690; font-size: 13px; font-weight: 600; cursor: pointer; font-family: var(--lp-font-sans);
+}
+.pi-scale-btn .pi-scale-dot { width: 8px; height: 8px; border-radius: 50%; border: 1px solid #c7cee0; flex-shrink: 0; }
+.pi-scale-btn.on { background: #eef1ff; border-color: #3b5bdb; color: #3b5bdb; }
+.pi-scale-btn.on .pi-scale-dot { background: #3b5bdb; border-color: #3b5bdb; }
+
+.pi-error { background: #fdecec; color: #c0292e; font-size: 12px; padding: 8px 10px; border-radius: 8px; margin-bottom: 14px; }
+
+.pi-agree { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; color: #6b7690; margin-bottom: 18px; cursor: pointer; line-height: 1.6; }
+.pi-agree input { margin-top: 2px; }
+
+.pi-submit {
+  width: 100%; padding: 13px; border-radius: 8px; border: none; background: #3b5bdb; color: #fff;
+  font-size: 14px; font-weight: 700; cursor: pointer; font-family: var(--lp-font-sans);
+}
+.pi-submit:hover { background: #2f4dc0; }
+
+.pi-done { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; padding: 40px 0; }
+.pi-done-icon {
+  width: 48px; height: 48px; border-radius: 50%; background: #e6f9f2; color: #0f9d67;
+  display: flex; align-items: center; justify-content: center; font-size: 22px; margin-bottom: 8px;
+}
+.pi-done h4 { margin: 0; font-size: 17px; color: #1e2a4a; }
+.pi-done p { margin: 0 0 12px; font-size: 13px; color: #6b7690; line-height: 1.7; }
+.pi-done .pi-submit { max-width: 200px; }

@@ -75,12 +75,15 @@ def build_payload() -> dict:
     }
 
 
-def post_event(base_url: str, payload: dict) -> None:
+def post_event(base_url: str, payload: dict, api_key: str) -> None:
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         f"{base_url.rstrip('/')}/api/events",
         data=data,
-        headers={"Content-Type": "application/json"},
+        # ApiKeyFilter가 /api/events를 포함한 대부분의 /api/** 경로를 X-API-Key로 막아뒀음
+        # (가이드/이 스크립트가 먼저 작성되고 나서 나중에 추가된 필터라, 헤더 없이 보내면
+        # 401 {"error":"UNAUTHORIZED", ...}로 거절당한다).
+        headers={"Content-Type": "application/json", "X-API-Key": api_key},
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=10) as resp:
@@ -93,12 +96,15 @@ def main() -> None:
     parser.add_argument("--base-url", default="http://localhost:8080")
     parser.add_argument("--count", type=int, default=10)
     parser.add_argument("--interval", type=float, default=1.0)
+    # b_gateway의 GATEWAY_API_KEY 환경변수와 같은 값이어야 함 (기본값: omecca-dev-key-2026,
+    # application.yml의 gateway.api-key 기본값 및 b_dashboard/src/config.js와 동일).
+    parser.add_argument("--api-key", default="omecca-dev-key-2026")
     args = parser.parse_args()
 
     for i in range(args.count):
         payload = build_payload()
         try:
-            post_event(args.base_url, payload)
+            post_event(args.base_url, payload, args.api_key)
         except urllib.error.URLError as exc:
             print(f"요청 실패 ({i + 1}/{args.count}): {exc}")
             break

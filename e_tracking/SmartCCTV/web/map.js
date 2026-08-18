@@ -348,6 +348,9 @@ class MapManager {
     this.switchBaseMap(CONFIG.DEFAULT_BASEMAP);
 
     setTimeout(() => this.map.invalidateSize(), 100);
+    setTimeout(() => this.map.invalidateSize(), 500);
+    setTimeout(() => this.map.invalidateSize(), 1200);
+    window.addEventListener("resize", () => this.map.invalidateSize());
   }
 
   _renderBaseMapControl() {
@@ -507,9 +510,13 @@ class VideoManager {
   }
 
   // options.immediate = true 이면 fade 없이 즉시 전환 (초기 로드용)
+  // options.force = true 이면 "같은 카메라면 아무것도 안 건드린다" 가드를 건너뛰고 무조건
+  // 다시 연결한다. 대시보드에서 CCTV 영상 패널이 숨겨진(display:none) 채로 한동안 재생되고
+  // 있던 영상을 다시 꺼낼 때(예: "추적 차량" 클릭, "CCTV 영상 보기" 버튼) 이 값을 true로
+  // 넘겨야 한다 - 그렇지 않으면 브라우저가 숨겨진 동안 멈춰둔 낡은 프레임이 그대로 보인다.
   switchTo(viewModel, options = {}) {
-    if (!viewModel || viewModel.id === this.currentId) return;
-    const { immediate = false } = options;
+    const { immediate = false, force = false } = options;
+    if (!viewModel || (viewModel.id === this.currentId && !force)) return;
 
     const apply = () => {
       this.currentId = viewModel.id;
@@ -1155,14 +1162,15 @@ class TrafficCameraManager {
   }
 
   // 카메라 선택 허브: 지도 Zoom / Popup Open / 선택 하이라이트 / 영상 전환을 함께 실행한다.
+  // opts.force는 그대로 VideoManager.switchTo()로 전달된다 (같은 카메라라도 강제 재연결).
   selectRecord(marker, record, opts = {}) {
-    const { openPopup = false, zoom = false, switchVideo = false } = opts;
+    const { openPopup = false, zoom = false, switchVideo = false, force = false } = opts;
     const vm = buildCameraViewModel(record);
 
     if (zoom) this.mapManager.focus(vm.lat, vm.lng, CONFIG.FOCUS_ZOOM);
     if (openPopup) marker.openPopup();
     this._setSelectedMarker(marker);
-    if (switchVideo) this.videoManager.switchTo(vm);
+    if (switchVideo) this.videoManager.switchTo(vm, { force });
   }
 
   // 관리번호로 카메라를 선택 (이벤트 패널 클릭, AI 자동 감지 등에서 사용).
@@ -1556,8 +1564,14 @@ class UticCameraManager {
   }
 
   // 카메라 선택 허브: 지도 Zoom / Popup Open / 선택 하이라이트 / 영상 전환(공급원이 있으면)을 함께 실행한다.
+  // [버그 수정] opts.force가 여기서 읽히지도, videoManager.switchTo()로 전달되지도 않고
+  // 있었다 - 그래서 selectById(..., { force: true })를 호출하는 모든 곳(대시보드 이벤트
+  // 클릭, "CCTV 영상 보기" 버튼, Forza 데모 stage 전환 follow 등)에서 force 옵션이 조용히
+  // 무시되고 있었다. VideoManager.switchTo() 자체는 force를 올바르게 처리하는데, 정작 그
+  // 값을 넘겨주는 이 함수(실제로 쓰이는 UticCameraManager 쪽)에 force가 빠져 있었던 것이
+  // 근본 원인이었다.
   selectRecord(marker, record, opts = {}) {
-    const { openPopup = false, zoom = false, switchVideo = false } = opts;
+    const { openPopup = false, zoom = false, switchVideo = false, force = false } = opts;
 
     if (zoom) this.mapManager.focus(record.lat, record.lng, CONFIG.FOCUS_ZOOM);
     if (openPopup) marker.openPopup();
@@ -1565,7 +1579,7 @@ class UticCameraManager {
 
     if (switchVideo && this.videoManager) {
       const vm = buildUticCameraViewModel(record, this.videoSourceRegistry);
-      this.videoManager.switchTo(vm); // videoUrl이 null이면 VideoManager가 알아서 "연결 예정" 상태를 보여준다
+      this.videoManager.switchTo(vm, { force }); // videoUrl이 null이면 VideoManager가 알아서 "연결 예정" 상태를 보여준다
     }
 
     if (this.onCameraSelected) this.onCameraSelected(record);
@@ -1820,6 +1834,17 @@ class VehicleManager {
     if (!this.marker || !this.isAlertActive) return;
     this.isAlertActive = false;
     this.marker.setIcon(this._createIcon(false));
+  }
+
+  // 대시보드("추적 차량" 사이드바 버튼)에서 postMessage로 호출한다.
+  // 지금 지도에 떠 있는 추적 차량 마커로 지도를 이동시키고 상세 팝업을 연다.
+  // 아직 추적 중인 차량이 없으면(마커 미생성) false를 반환한다.
+  focusCurrent(mapManager) {
+    if (!this.marker) return false;
+    const { lat, lng } = this.marker.getLatLng();
+    mapManager.focus(lat, lng);
+    this.marker.openPopup();
+    return true;
   }
 
   /* ----------------------------------------------------------------
@@ -2086,6 +2111,12 @@ class UIManager {
     this._applyTheme();
   }
 
+  setTheme(theme) {
+  if (theme !== "dark" && theme !== "light") return;
+  this.theme = theme;
+  this._applyTheme();
+}
+
   _applyTheme() {
     this.root.setAttribute("data-theme", this.theme);
     this._themeIconEl.textContent = this.theme === "dark" ? "🌙" : "☀️";
@@ -2131,6 +2162,17 @@ class ToastManager {
       <div class="ai-toast__plate">차량번호 : ${eventData.plate}</div>
     `;
 
+    this.containerEl.appendChild(el);
+    setTimeout(() => el.remove(), 3000);
+  }
+
+  // 대시보드("추적 차량" 버튼) 등에서 카메라/이벤트 컨텍스트 없이 짧은 안내 문구만
+  // 띄우고 싶을 때 쓰는 범용 버전. show()와 마크업만 다르고 동작은 동일하다.
+  showMessage(text) {
+    if (!this.containerEl) return;
+    const el = document.createElement("div");
+    el.className = "ai-toast";
+    el.innerHTML = `<div class="ai-toast__title">${text}</div>`;
     this.containerEl.appendChild(el);
     setTimeout(() => el.remove(), 3000);
   }
@@ -2541,6 +2583,18 @@ class EventManager {
     this.demoSequenceIndex = -1; // A=0,B=1,C=2,D=3 - 지금까지 확인된 가장 앞선 지점의 순번
     this._demoMovement = null; // 지금 진행 중인 구간(A→B 등)의 도로 경로 캐시 - beginDemoStageMovement() 참고
 
+    // [버그 수정: "A→B 넘어갈 때 영상이 안 바뀌고 C를 지나야 바뀜"] 예전에는 "지금 재생 중인
+    // 영상의 카메라가 방금 지나온 카메라와 같은가"를 completeDemoStageMovement()에서 비교해서
+    // 자동 전환 여부를 판단했다. 그런데 A→B 구간을 이동하는 동안 팝업의 "현재 위치"
+    // (state.currentCameraId)는 사실 도착지(B)를 가리키고 있어서(updateDemoStageProgress가
+    // movement.toVM 기준으로 채움), 사용자가 그 시점에 "CCTV 영상 보기"를 누르면 실제로는
+    // B의 영상에 연결됐다 - 그래서 그 비교가 A→B 경계에서는 항상 어긋나 전환이 한 정거장
+    // 밀렸다. 이제는 "이 차량을 계속 따라가며 보고 싶다"는 의도를 demoVideoFollowActive
+    // 플래그로 명시적으로 저장하고(버튼 클릭 시 켜짐 - window.__appSelectCamera 참고),
+    // 켜져 있으면 매 stage가 "시작"될 때(beginDemoStageMovement - realCamId가 항상 그
+    // stage 자신의 카메라라서 헷갈릴 여지가 없음)마다 무조건 그 카메라 영상으로 전환한다.
+    this.demoVideoFollowActive = false;
+
     // ---- Forza 데모 전용 "알림(이벤트 카드)" 상태 ----
     // [버그 수정] 예전엔 6초 무재감지 시 RESOLVED로 풀렸다가 다시 감지되면 새 카드를 또
     // 만들 수 있었다 - A 영상 안에서도 anomaly가 3.38초/12.4초/23.1초 세 번 나오는데, 그
@@ -2563,7 +2617,13 @@ class EventManager {
   // ---- 실시간 연동의 유일한 진입점 ----
   // record: UTIC 카메라 원본 레코드 (cam_id/name/lat/lng/center_name 필드를 담은 객체)
   // eventData.trackId가 있으면 활성 이벤트 관리(중복 방지/자동 해제)에 사용된다.
-  triggerAiEvent(record, eventData) {
+  // options.force: true면 "같은 카메라면 영상을 안 건드린다"는 아래 기본 가드를 건너뛰고
+  // 무조건 영상을 새로 연결한다 (대시보드에서 방금 도착한 이벤트 등). 이 메서드를 호출한 뒤에
+  // 또 selectById()를 별도로 다시 호출하지 말 것 - switchTo()가 220ms 페이드 후 비동기로
+  // 영상을 교체하므로, 거의 동시에 두 번 호출하면 두 로드가 서로를 가로막아 오히려 영상이
+  // 깨질 수 있다(재현: force 재호출을 이 메서드 밖에서 별도로 했다가 발견한 버그).
+  triggerAiEvent(record, eventData, options = {}) {
+    const force = !!options.force;
     const cameraViewModel = buildUticCameraViewModel(record, this.videoSourceRegistry);
     const normalized = Object.assign({ icon: "🚨", severity: "alert" }, eventData);
     const trackKey = eventData.trackId != null ? String(eventData.trackId) : null;
@@ -2576,9 +2636,11 @@ class EventManager {
     this.renderPanel();
 
     // ② 지도 FlyTo + ③ CCTV 자동 선택 + ④ Popup 자동 Open + ⑤ 영상 자동 전환
-    // (이미 같은 카메라가 선택/재생 중이면 VideoManager가 알아서 아무것도 건드리지 않는다 = 영상 끊김 없음)
+    // (force가 아니면: 이미 같은 카메라가 선택/재생 중일 때 VideoManager가 알아서 아무것도
+    //  건드리지 않는다 = 영상 끊김 없음. force면: 대시보드 CCTV 패널이 그동안 숨겨져 있었을
+    //  수 있으므로 무조건 새로 연결한다.)
     this.cameraManager.setAlert(cameraViewModel.id, true);
-    this.cameraManager.selectById(cameraViewModel.id, { openPopup: true, zoom: true, switchVideo: true });
+    this.cameraManager.selectById(cameraViewModel.id, { openPopup: true, zoom: true, switchVideo: true, force });
 
     // ⑥ 차량 Marker 생성 (빨간 pulse로 강조)
     this.vehicleManager.spawnAtEvent(cameraViewModel, eventData);
@@ -2725,6 +2787,20 @@ class EventManager {
   // "한 번만" 미리 계산해서 캐싱해 둔다 - 매 timeupdate마다 다시 계산하지 않는다.
   // D처럼 "다음 지점"이 없는 마지막 stage에서는 이동 자체가 없다(요구사항 6).
   beginDemoStageMovement(demoId, realCamId) {
+    // [버그 수정] 예전에는 vehicleCurrentCamera가 오직 completeDemoStageMovement()에서만
+    // 갱신돼서, A stage가 재생되는 동안(=아직 한 번도 도착한 적이 없는 최초 구간)에는
+    // 계속 null이었다. realCamId는 "지금 막 시작한 이 stage 자신의" 카메라이므로, stage가
+    // 시작되는 이 시점에 곧바로 확정해도 항상 정확하다(도착을 기다릴 필요가 없다).
+    this.vehicleCurrentCamera = realCamId;
+
+    // 이 차량을 "계속 따라가며 보고" 있는 사용자가 있다면(demoVideoFollowActive - 버튼을
+    // 한 번이라도 눌렀다는 뜻), stage가 바뀔 때마다 화면(줌/팝업)은 그대로 둔 채 영상만
+    // 자동으로 이 stage의 카메라로 전환한다. force:true로 넘겨서 "같은 카메라면 무시"
+    // 가드와 무관하게 항상 재연결한다.
+    if (this.demoVideoFollowActive) {
+      this.cameraManager.selectById(realCamId, { openPopup: false, zoom: false, switchVideo: true, force: true });
+    }
+
     const stageIdx = this.demoOrder.indexOf(demoId);
     const nextIdx = stageIdx + 1;
     if (nextIdx >= this.demoOrder.length) {
@@ -2844,6 +2920,11 @@ class EventManager {
 
       if (!this.trajectorySegments) this.trajectorySegments = [];
       this.trajectorySegments.push({ from: realCamId, to: nextRealCamId, globalVehicleId: CONFIG.DEMO_VEHICLE_ID });
+      // [참고] 영상 자동 전환(follow)은 여기서 하지 않는다 - beginDemoStageMovement()가
+      // 각 stage가 "시작"될 때(realCamId가 항상 그 stage 자신의 카메라라 헷갈릴 여지가
+      // 없는 시점) demoVideoFollowActive를 보고 일괄 처리한다. 이 함수(complete)는 항상
+      // 그 직후(_finishStage → _advanceToStage → onStageStart)에 이어서 호출되므로 별도로
+      // 중복 처리할 필요가 없다.
     }
     // D(마지막 stage)는 nextIdx가 범위를 벗어나므로 여기서 아무것도 바꾸지 않는다 -
     // vehicleCurrentCamera는 C→D 전환 때 이미 D로 확정되어 있고, 그 상태 그대로
@@ -3181,6 +3262,77 @@ document.addEventListener("DOMContentLoaded", () => {
   // 초기 화면: 이상 감지 0 / 연결 CCTV 0 / 추적 차량 0 / 이상 차량 0
   uiManager.updateHeaderStats({ cameraCount: 0, trackedVehicleCount: 0, alertVehicleCount: 0, alertDetectionCount: 0 });
 
+  window.addEventListener("message", (event) => {
+    const data = event.data;
+    if (data && data.type === "omecca-theme" && (data.theme === "dark" || data.theme === "light")) {
+      uiManager.setTheme(data.theme);
+    }
+
+    // 대시보드가 "지도"/"추적 차량" 전체화면 뷰로 전환될 때 보내는 메시지.
+    // showVideoPanel=true면 우측에 실시간 CCTV 영상 패널을 함께 보여준다
+    // (좁은 대시보드 미니 지도에서는 항상 false로 감춰둔다 - is-embed-map 기본 동작).
+    if (data && data.type === "omecca-view-mode") {
+      document.documentElement.classList.toggle("show-video-panel", !!data.showVideoPanel);
+    }
+
+    // "추적 차량" 사이드바 버튼 클릭 시: 현재 지도에 떠 있는 추적 차량으로 포커스 이동 + 팝업 오픈.
+    // 아직 추적 중인 차량이 없으면(마커 없음) 안내 토스트만 띄운다.
+    if (data && data.type === "omecca-focus-tracked-vehicle") {
+      const focused = vehicleManager.focusCurrent(mapManager);
+      if (!focused) {
+        toastManager.showMessage("🚗 현재 추적 중인 차량이 없습니다");
+      }
+    }
+
+    // 대시보드 이벤트 카드(예: 음주운전 의심 차량 등 차량 관련 이벤트) 클릭 시 보내는 메시지.
+    // 그 이벤트가 가리키는 차량을 지도 위에 즉시 표시하고(마커+이동경로), 가능하면
+    // 해당 카메라의 실시간 CCTV 영상까지 함께 바로 연결한다.
+    if (data && data.type === "omecca-track-vehicle-event") {
+      const payload = data.vehicle || {};
+      const record = payload.camId ? uticCameraManager.getRecordById(payload.camId) : null;
+      const eventData = {
+        trackId: payload.trackId,
+        lat: payload.lat,
+        lng: payload.lng,
+        plate: payload.plate || null,
+        type: payload.type || "이상 감지",
+        reason: payload.reason || "-",
+        confidence: payload.confidence != null ? payload.confidence : null,
+        time: payload.time || new Date().toLocaleTimeString("ko-KR", { hour12: false }),
+      };
+
+      if (record) {
+        // 대시보드 이벤트의 camId가 실제 UTIC CCTV 목록과 매칭되는 경우 -
+        // 기존 실시간 파이프라인(마커 이동 + 이동경로 + 카메라 팝업 + 영상 전환)을 그대로 재사용한다.
+        // force: true - 대시보드에서 방금 도착한 이벤트는 CCTV 영상 패널이 그동안 숨겨져
+        // 있었을 수 있으므로 항상 강제로 새로 연결한다. (주의: 이 호출 하나로 영상 전환까지
+        // 끝나므로, 뒤에서 selectById를 또 한 번 호출하면 두 로드가 겹쳐 오히려 영상이
+        // 깨진다 - triggerAiEvent(record, eventData, { force: true }) 안에서만 처리할 것.)
+        eventManager.triggerAiEvent(record, eventData, { force: true });
+      } else if (payload.lat != null && payload.lng != null) {
+        // camId가 UTIC 303건 목록에 없는 경우(다른 모듈의 mock 카메라 ID 등) -
+        // 좌표는 있으므로 지도 위 위치/이동경로는 그대로 보여주고, 영상 연동만 생략한다.
+        const fallbackCam = {
+          id: payload.camId || `EVT-${eventData.trackId || eventData.time}`,
+          name: payload.locationLabel || payload.camId || "-",
+          lat: payload.lat,
+          lng: payload.lng,
+        };
+        vehicleManager.spawnAtEvent(fallbackCam, eventData);
+        toastManager.showMessage("📹 이 카메라는 실시간 CCTV 연동 대상이 아닙니다");
+      } else {
+        toastManager.showMessage("🚗 위치 정보가 없어 지도에 표시할 수 없습니다");
+      }
+
+      // 위 두 경로 모두 끝난 뒤, 최종적으로 차량 마커 자체로 포커스를 옮기고
+      // "TRACK ... 🚗 추적 차량" 상세 팝업(+CCTV 영상 보기 버튼)을 연다.
+      vehicleManager.focusCurrent(mapManager);
+    }
+  });
+  if (window.parent && window.parent !== window) {
+    window.parent.postMessage({ type: "omecca-map-ready" }, "*");
+  }
+
   const eventManager = new EventManager(
     uticCameraManager,
     vehicleManager,
@@ -3277,9 +3429,38 @@ document.addEventListener("DOMContentLoaded", () => {
   forzaDemoTimeline.start();
   window.forzaDemoTimeline = forzaDemoTimeline;
 
-  // 차량 팝업의 "📹 CCTV 영상 보기" 버튼에서 호출할 수 있도록 전역에 노출
+  // 차량 팝업의 "📹 CCTV 영상 보기" 버튼에서 호출할 수 있도록 전역에 노출.
+  // force: true - 관제요원이 명시적으로 "이 카메라를 보겠다"고 누른 클릭이므로, 이미 같은
+  // 카메라가 (숨겨진 패널 뒤에서 한동안) "선택된" 상태로 남아 있었더라도 무조건 새로
+  // 연결한다. force가 없으면 VideoManager가 "이미 같은 카메라"로 보고 아무것도 하지 않아서
+  // 버튼을 눌러도 반응이 없거나(끊긴 채로 멈춘 영상이 그대로 보임) 하는 문제가 있었다.
   window.__appSelectCamera = (cameraId) => {
-    uticCameraManager.selectById(cameraId, { openPopup: true, zoom: true, switchVideo: true });
+    // [버그 수정] 대시보드(부모 창)에 iframe으로 임베드된 상태에서는, "대시보드"
+    // 화면(미니 지도 + 이벤트 목록 레이아웃)에는 실시간 CCTV 영상 패널 자체가 CSS로
+    // display:none 처리되어 있다("추적 차량" 전체화면 레이아웃에만 존재). 그 상태에서
+    // 이 버튼을 눌러 영상을 연결해봐야 화면에 아무 변화가 없는 것처럼 보였다 - 실제로는
+    // 영상이 연결됐지만 숨겨진 패널 안에서였을 뿐이다. 이제 버튼 클릭 자체를 "이 차량을
+    // 추적하며 영상을 보고 싶다"는 의도로 보고, 부모 창(대시보드)에게 "추적 차량" 뷰로
+    // 전환해달라고 먼저 요청한다 - 전환된 뒤에는 omecca-view-mode 메시지로 영상 패널이
+    // 다시 보이게 되고, force:true 덕분에 아래 selectById가 영상을 새로 연결한다.
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({ type: "omecca-request-tracking-view" }, "*");
+    }
+
+    // [버그 수정: "A→B 넘어갈 때 영상이 안 바뀌고 C를 지나야 바뀜"의 원인 중 하나] 이동
+    // 애니메이션 도중에는 팝업의 "현재 위치"(state.currentCameraId, 즉 이 함수의 인자로
+    // 넘어오는 cameraId)가 실제로는 도착지 카메라를 가리키고 있을 수 있다
+    // (VehicleManager.updateDemoStageProgress가 movement.toVM 기준으로 채우기 때문).
+    // Forza 데모 차량이라면 eventManager.vehicleCurrentCamera(그 stage가 "시작"된 시점에
+    // 확정되는, 절대 헷갈릴 여지가 없는 값)가 있으면 그것을 우선 사용한다.
+    const targetCameraId = eventManager.vehicleCurrentCamera || cameraId;
+
+    // 이 클릭을 "이 차량을 계속 따라가며 보고 싶다"는 의도로 기록해 둔다 - 이후
+    // A→B→C→D로 stage가 바뀔 때마다(beginDemoStageMovement) 자동으로 영상이 끊기지 않고
+    // 이어서 전환된다.
+    eventManager.demoVideoFollowActive = true;
+
+    uticCameraManager.selectById(targetCameraId, { openPopup: true, zoom: true, switchVideo: true, force: true });
   };
 
   // 서울 UTIC CCTV 303건 로드 + 영상 공급원 로드를 "둘 다 끝난 뒤에" render()한다.
@@ -3308,32 +3489,28 @@ document.addEventListener("DOMContentLoaded", () => {
       // 연결 CCTV 수(303) + 영상 공급원 배지가 정확히 반영된 뒤 헤더를 갱신한다
       eventManager.updateStats();
 
-      // ---- Python(AI) 이벤트 자동 감지 시작 ----
-      const aiEventListener = new AiEventListener("data/event.json", 3000, (data) => {
-        const camId = data.cam_id;
-
-        if (!CONFIG.ANOMALY_ENABLED_CAM_IDS.includes(camId)) {
-          console.warn(`event.json: 이번 단계에서 허용되지 않은 cam_id(${camId}) - 무시합니다.`);
-          return;
-        }
-
-        const record = uticCameraManager.getRecordById(camId);
-        if (!record) {
-          console.warn(`event.json: 알 수 없는 cam_id(${camId}) - UTIC CCTV 목록에서 찾을 수 없습니다.`);
-          return;
-        }
-
-        eventManager.triggerAiEvent(record, {
-          time: data.time,
-        plate: data.plate || null, // 없으면 팝업/카드에서 Track ID로 대체 표시
-        type: data.event_type === "ANOMALY_DRIVING" ? "이상운전 감지" : data.event_type,
-        reason: data.reason,
-        confidence: data.confidence != null ? data.confidence : null, // 규칙 기반 판정은 값이 없을 수 있음
-        trackId: data.track_id,
-      });
-    });
-    aiEventListener.start();
-    window.aiEventListener = aiEventListener;
+      // ---- (비활성화됨) Python(AI) 이벤트 자동 감지 - 구형 파일 폴링 경로 ----
+      // AiEventListener는 data/event.json을 3초마다 폴링하는 옛날 anomaly_detection.py
+      // 연동 방식이다. 지금은 realtime_anomaly.py → server.js → WebSocket(아래
+      // AiWebSocketListener, "주 경로")으로 완전히 대체됐고, data/event.json을 만들어주는
+      // 스크립트가 프로젝트 어디에도 없어서(grep 확인 완료) 계속 켜두면 3초마다
+      // "GET data/event.json 404" 콘솔 스팸만 영구히 발생한다. 옛 파일 기반 연동이
+      // 다시 필요해지는 경우를 위해 클래스 정의와 사용 예시는 남겨두되, 기본으로는
+      // 시작하지 않는다.
+      //
+      // const aiEventListener = new AiEventListener("data/event.json", 3000, (data) => {
+      //   const camId = data.cam_id;
+      //   if (!CONFIG.ANOMALY_ENABLED_CAM_IDS.includes(camId)) return;
+      //   const record = uticCameraManager.getRecordById(camId);
+      //   if (!record) return;
+      //   eventManager.triggerAiEvent(record, {
+      //     time: data.time, plate: data.plate || null,
+      //     type: data.event_type === "ANOMALY_DRIVING" ? "이상운전 감지" : data.event_type,
+      //     reason: data.reason, confidence: data.confidence ?? null, trackId: data.track_id,
+      //   });
+      // });
+      // aiEventListener.start();
+      // window.aiEventListener = aiEventListener;
 
     // ---- Python(AI) 이벤트 자동 감지 시작 (실시간, 주 경로) ----
     // realtime_anomaly.py의 event_aggregator 프로세스가 server/server.js로 POST하면,

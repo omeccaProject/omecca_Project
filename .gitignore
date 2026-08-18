@@ -28,3 +28,10 @@ c_person_risk/*.mp4
 .DS_Store
 .env
 node_modules/
+# 작업 중 임시로 되돌린(삭제 예정) 코드 백업 폴더 - 실제 코드 아님
+**/_to_delete*/
+_to_delete*/
+*.tar.gz
+
+# GIS 지도 서버 실행 로그
+e_tracking/SmartCCTV/*.log

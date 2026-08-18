@@ -17,8 +17,10 @@ const express = require("express");
 const cors = require("cors");
 const uticRouter = require("./routes/utic");
 const { createMapEventsModule } = require("./routes/mapEvents");
+const db = require("./db");
 
 const app = express();
+db.init(); // PostGIS 연결 시도 (실패해도 서버는 계속 뜸)
 
 // 로컬 테스트 단계이므로 CORS를 열어둔다. 실제 운영 배포 시에는 프론트엔드 origin으로 제한할 것.
 app.use(cors());

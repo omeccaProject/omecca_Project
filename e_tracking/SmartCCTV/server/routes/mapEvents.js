@@ -22,6 +22,8 @@ const express = require("express");
 const fs = require("fs");
 const path = require("path");
 const { WebSocketServer } = require("ws");
+const db = require("../db");
+const { forwardToGateway } = require("../gatewayForward");
 
 // realtime_anomaly.py의 EVENT_LOG_PATH(ai_map_events.log)와는 별개로,
 // "서버가 실제로 브로드캐스트한 이벤트"만 별도로 남겨서 디버깅에 쓴다.
@@ -88,6 +90,8 @@ function createMapEventsModule() {
     }
 
     broadcast(req.body);
+    db.saveEvent(req.body).catch(() => {});
+    forwardToGateway(req.body).catch(() => {});
     console.log(
       `[MAP EVENT] ${req.body.source_type} ${req.body.source_id} → WebSocket 클라이언트 ${clients.size}개에 전달`
     );
@@ -96,6 +100,16 @@ function createMapEventsModule() {
 
   router.get("/events/health", (req, res) => {
     res.json({ ok: true, connectedClients: clients.size });
+  });
+
+  router.get("/trajectory/:vehicleId", async (req, res) => {
+    const rows = await db.getTrajectory(req.params.vehicleId);
+    res.json({ vehicleId: req.params.vehicleId, points: rows });
+  });
+
+  router.get("/vehicles/recent", async (req, res) => {
+    const rows = await db.listRecentVehicles();
+    res.json({ vehicles: rows });
   });
 
   return {

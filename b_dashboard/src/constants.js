@@ -40,3 +40,15 @@ export const RISK_LABEL = { 3: '높음', 2: '중간', 1: '낮음' }
 // 이벤트 리스트 패널의 위험도별 아코디언 섹션 제목
 export const TIER_LABEL = { 3: '고위험 이벤트', 2: '중위험 이벤트', 1: '정보 이벤트' }
 export const RISK_TIERS = [3, 2, 1]
+
+// 이 이벤트 유형들은 "차량"과 직접 관련된 이벤트라서(음주운전 의심/미등록차량/신호위반/불법유턴),
+// 실시간으로 들어오면 화면 중앙에 알림 팝업을 띄우고(App.jsx), 클릭하면 대시보드가 "추적 차량"
+// 뷰로 넘어가서 GIS 지도 위에 그 차량을 바로 보여준다(MainDashboard.jsx). WANTED_PERSON/WEAPON/
+// DEBRIS는 차량이 아니므로 대상에서 뺀다. App.jsx/MainDashboard.jsx 둘 다 이 값을 그대로 써야
+// 하므로 여기 한 곳에만 정의해둔다.
+export const VEHICLE_TRACK_EVENT_TYPES = new Set([
+  'DUI_PATTERN',
+  'UNREGISTERED_VEHICLE',
+  'SIGNAL_VIOLATION',
+  'UTURN_VIOLATION',
+])

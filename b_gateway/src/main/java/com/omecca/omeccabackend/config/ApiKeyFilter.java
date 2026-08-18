@@ -35,7 +35,14 @@ public class ApiKeyFilter extends OncePerRequestFilter {
         if (path.startsWith("/api/admin/")) {
             return true;
         }
-        return "GET".equalsIgnoreCase(request.getMethod()) && path.matches("^/api/reports/\\d+/download$");
+        // 리포트 조회(목록 "/api/reports", 상세 "/api/reports/{id}", 다운로드 "/api/reports/{id}/download")는
+        // SecurityConfig가 JWT(로그인)로 이미 막고 있음 -> 이중 인증 방지.
+        // 단, 리포트 "생성"(POST /api/reports)은 b_report 같은 탐지 모듈이 X-API-Key로 호출하는 경로라 그대로 검사 대상.
+        if ("GET".equalsIgnoreCase(request.getMethod())
+                && (path.equals("/api/reports") || path.startsWith("/api/reports/"))) {
+            return true;
+        }
+        return false;
     }
 
     @Override
