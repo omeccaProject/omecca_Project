@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { login } from '../api'
 import { saveSession } from '../auth'
 
-// b_gateway POST /api/auth/login 호출. 성공하면 토큰을 저장하고 메인 관제 화면("/")으로 이동.
+// b_gateway POST /api/auth/login 호출. 성공하면 토큰을 저장하고 관제 대시보드("/dashboard")로 이동.
 // AuthService가 던지는 에러 메시지(아이디/비번 불일치, 승인 대기, 거절됨)를 그대로 보여준다.
 export default function LoginPage({ navigate }) {
   const [username, setUsername] = useState('')
@@ -21,7 +21,7 @@ export default function LoginPage({ navigate }) {
     try {
       const res = await login({ username: username.trim(), password })
       saveSession(res)
-      navigate('/')
+      navigate('/dashboard')
     } catch (err) {
       setError(err.message || '로그인에 실패했습니다.')
     } finally {

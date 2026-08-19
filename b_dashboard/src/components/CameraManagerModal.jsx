@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
-import { fetchCameras, createCamera, updateCamera, deleteCamera } from '../api'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { fetchCameras, createCamera, updateCamera, deleteCamera, fetchCameraCatalog } from '../api'
 
 const EMPTY_FORM = { camId: '', name: '', streamUrl: '', streamFormat: 'HLS' }
 
@@ -15,6 +15,49 @@ export default function CameraManagerModal({ onClose, onChanged }) {
   const [formError, setFormError] = useState('')
   const [busyId, setBusyId] = useState(null)
 
+  // UTIC 카메라 사전 등록 카탈로그 자동완성(고도화). cam_id나 이름 입력창에 타이핑하면
+  // /api/camera-catalog를 debounce로 검색해서 후보를 보여주고, 하나를 고르면 streamUrl까지
+  // 자동으로 채워준다 - 매번 URL을 직접 복사/붙여넣기 하지 않아도 되게 하는 게 목적.
+  const [suggestions, setSuggestions] = useState([])
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const searchTimerRef = useRef(null)
+
+  useEffect(() => () => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
+  }, [])
+
+  const searchCatalog = (query) => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
+    if (!query.trim()) {
+      setSuggestions([])
+      setShowSuggestions(false)
+      return
+    }
+    searchTimerRef.current = setTimeout(() => {
+      fetchCameraCatalog(query.trim())
+        .then((list) => {
+          setSuggestions(Array.isArray(list) ? list : [])
+          setShowSuggestions(true)
+        })
+        .catch(() => {
+          // 자동완성은 등록을 돕는 보조 기능이라, 검색이 실패해도 직접 입력은 그대로 가능해야
+          // 한다 - 에러를 화면에 띄우지 않고 조용히 후보만 비운다.
+          setSuggestions([])
+        })
+    }, 250)
+  }
+
+  const handlePickSuggestion = (item) => {
+    setForm({
+      camId: item.camId,
+      name: item.name,
+      streamUrl: item.streamUrl || '',
+      streamFormat: item.streamFormat || 'HLS',
+    })
+    setShowSuggestions(false)
+    setSuggestions([])
+  }
+
   const load = useCallback(() => {
     setLoading(true)
     setLoadError('')
@@ -29,7 +72,11 @@ export default function CameraManagerModal({ onClose, onChanged }) {
   }, [load])
 
   const handleFieldChange = (field) => (e) => {
-    setForm((prev) => ({ ...prev, [field]: e.target.value }))
+    const value = e.target.value
+    setForm((prev) => ({ ...prev, [field]: value }))
+    if (field === 'camId' || field === 'name') {
+      searchCatalog(value)
+    }
   }
 
   const handleSubmit = async (e) => {
@@ -50,6 +97,8 @@ export default function CameraManagerModal({ onClose, onChanged }) {
         streamFormat: form.streamUrl.trim() ? form.streamFormat : undefined,
       })
       setForm(EMPTY_FORM)
+      setSuggestions([])
+      setShowSuggestions(false)
       load()
       onChanged?.()
     } catch (err) {
@@ -62,7 +111,29 @@ export default function CameraManagerModal({ onClose, onChanged }) {
   const handleToggleStatus = async (cam) => {
     setBusyId(cam.id)
     try {
-      await updateCamera(cam.id, { status: cam.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE' })
+      const activating = cam.status !== 'ACTIVE'
+      const payload = { status: activating ? 'ACTIVE' : 'INACTIVE' }
+
+      // 비활성 → 활성화로 전환하는데 이 카메라에 아직 실시간 영상 URL이 등록돼 있지 않다면
+      // (예: URL 없이 먼저 등록해뒀거나, 등록 이후에 UTIC 카탈로그가 채워진 경우), 같은
+      // cam_id로 카탈로그를 찾아서 streamUrl/streamFormat까지 같이 채워 넣는다 - 그래야
+      // "활성화" 버튼만 눌러도 바로 CCTV 영상이 뜬다(사용자가 매번 URL을 직접 찾아
+      // 입력해야 하는 번거로움을 없애는 게 목적).
+      if (activating && !cam.streamUrl) {
+        try {
+          const matches = await fetchCameraCatalog(cam.camId)
+          const catalogMatch = (Array.isArray(matches) ? matches : []).find((m) => m.camId === cam.camId)
+          if (catalogMatch?.streamUrl) {
+            payload.streamUrl = catalogMatch.streamUrl
+            payload.streamFormat = catalogMatch.streamFormat || 'HLS'
+          }
+        } catch {
+          // 카탈로그 조회가 실패해도 활성화 자체는 계속 진행한다 - 영상 없이 활성화될 뿐,
+          // 상태 변경까지 막을 이유는 없다.
+        }
+      }
+
+      await updateCamera(cam.id, payload)
       load()
       onChanged?.()
     } catch (err) {
@@ -95,24 +166,53 @@ export default function CameraManagerModal({ onClose, onChanged }) {
         </div>
 
         <form className="cam-mgr-form" onSubmit={handleSubmit}>
-          <label>
-            <span>cam_id</span>
-            <input
-              type="text"
-              placeholder="예: CAM-01, L010263"
-              value={form.camId}
-              onChange={handleFieldChange('camId')}
-            />
-          </label>
-          <label className="grow">
-            <span>이름/위치</span>
-            <input
-              type="text"
-              placeholder="예: 강남대로 교차로"
-              value={form.name}
-              onChange={handleFieldChange('name')}
-            />
-          </label>
+          {/* cam_id/이름 입력창 + UTIC 카탈로그 자동완성 드롭다운. 후보를 고르면
+              streamUrl/streamFormat까지 자동으로 채워진다(handlePickSuggestion). */}
+          <div className="cam-mgr-autocomplete-wrap">
+            <label>
+              <span>cam_id</span>
+              <input
+                type="text"
+                placeholder="예: CAM-01, L010263"
+                value={form.camId}
+                onChange={handleFieldChange('camId')}
+                onFocus={() => { if (suggestions.length) setShowSuggestions(true) }}
+                onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+              />
+            </label>
+            <label className="grow">
+              <span>이름/위치</span>
+              <input
+                type="text"
+                placeholder="예: 강남대로 교차로"
+                value={form.name}
+                onChange={handleFieldChange('name')}
+                onFocus={() => { if (suggestions.length) setShowSuggestions(true) }}
+                onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+              />
+            </label>
+            {showSuggestions && suggestions.length > 0 && (
+              <div className="cam-mgr-suggest-list">
+                {suggestions.map((item) => (
+                  <button
+                    type="button"
+                    key={item.camId}
+                    className="cam-mgr-suggest-item"
+                    // onClick 대신 onMouseDown - input의 onBlur(150ms 딜레이)보다 먼저 발생시켜서
+                    // 클릭이 blur에 의해 드롭다운이 닫히기 전에 확실히 반영되게 한다.
+                    onMouseDown={(e) => {
+                      e.preventDefault()
+                      handlePickSuggestion(item)
+                    }}
+                  >
+                    <span className="cam-mgr-suggest-camid">{item.camId}</span>
+                    <span className="cam-mgr-suggest-name">{item.name}</span>
+                    <span className="cam-mgr-suggest-badge">URL 자동입력</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <label className="grow">
             <span>실시간 영상 URL(선택)</span>
             <input

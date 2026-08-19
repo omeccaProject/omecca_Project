@@ -272,6 +272,67 @@ body {
   border-radius: 8px 0 0 8px;
 }
 
+/* "추적 차량" 화면 전용 - 지도(+ 그 iframe 안의 실시간 CCTV 영상 패널, 김준호 map.js 소유이라
+   건드리지 않음) 아래에 "추적 차량 목록"을 가로 밴드로 붙인다. */
+.control-content-tracking {
+  flex-direction: column;
+}
+.control-content-tracking .control-map-col {
+  border-right: none;
+  border-bottom: 1px solid var(--c-border);
+  flex: 1 1 auto;
+}
+.control-content-tracking .control-events-wrap {
+  flex: 0 0 auto;
+}
+.control-content-tracking .control-events-col {
+  width: 100%;
+  max-height: 260px;
+  padding: 14px 18px;
+}
+.control-content-tracking .control-events-col.collapsed {
+  width: 100%;
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+/* flex 카드열 대신 grid로 바꿔서, 마지막 줄에 카드가 다 안 차더라도 각 카드가 남은 폭을
+   나눠 갖게(1fr) 해서 오른쪽에 빈 공간이 안 남게 한다(예전 flex:0 0 280px는 4개 들어가고
+   남는 폭만큼 항상 오른쪽이 비어 보였음). */
+.control-content-tracking .control-events-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+  align-content: flex-start;
+  overflow-y: auto;
+}
+.control-content-tracking .control-event-card {
+  min-width: 0;
+}
+/* 접기 버튼 - 가로 밴드 상단 중앙에, 예전보다 훨씬 넓고 잘 보이게(180x26, 배경 대비 강조) */
+.control-content-tracking .sidebar-collapse-btn-right {
+  left: 50%;
+  top: -26px;
+  width: 180px;
+  height: 26px;
+  transform: translateX(-50%);
+  background: var(--c-bg3);
+  border: 1px solid var(--c-border2);
+  border-top: none;
+  border-radius: 0 0 12px 12px;
+}
+.control-content-tracking .sidebar-collapse-btn-right svg {
+  /* 방향(위/아래)은 컴포넌트 쪽(IconChevron rotateBase)에서 인라인 style로 이미 계산해서
+     내려주므로 여기서는 크기만 살짝 키운다 - transform을 여기 또 넣으면 인라인 style한테
+     항상 밀려서(우선순위 낮음) 적용도 안 되고 헷갈리기만 함. */
+  width: 16px;
+  height: 16px;
+}
+.control-content-tracking .sidebar-collapse-btn-right:hover {
+  background: var(--c-bg2);
+  border-color: var(--c-accent);
+}
+
 /* 대시보드/지도/CCTV/이벤트 4개 뷰가 번갈아 렌더링되는 사이드바 우측 영역.
    대시보드 뷰일 때만 지도(flex:1) + 이벤트 카드열(380px)이 나란히 뜨고,
    지도/CCTV/이벤트 전체화면 뷰일 때는 하나의 패널이 이 영역을 꽉 채운다. */
@@ -520,6 +581,18 @@ body {
 }
 .control-event-card.tier-2 {
   border-color: color-mix(in srgb, var(--c-amber) 40%, var(--c-border));
+}
+
+/* "추적 차량 목록"에서 관심대상으로 등록만 되고 아직 실제 탐지 이벤트가 안 들어온 차량 -
+   지도에 보여줄 위치 정보가 없어 클릭해도 포커싱이 안 되므로, 클릭 가능한 카드들과
+   시각적으로 구분되게 커서/테두리를 다르게 준다. */
+.control-event-card.pending {
+  cursor: default;
+  border-style: dashed;
+  opacity: .85;
+}
+.control-event-card.pending:hover {
+  border-color: var(--c-border);
 }
 
 .control-event-top {
@@ -1686,6 +1759,70 @@ body {
 .cam-mgr-submit-btn:disabled {
   opacity: .6;
   cursor: default;
+}
+/* UTIC 카메라 사전 등록 카탈로그 자동완성 - cam_id/이름 입력창을 감싸서 그 아래에
+   드롭다운을 절대좌표로 띄운다. flex 속성은 기존에 label 두 개가 .cam-mgr-form의
+   직접 자식이었을 때와 레이아웃이 그대로 보이도록 동일하게 맞춘 것. */
+.cam-mgr-autocomplete-wrap {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  flex: 1;
+}
+.cam-mgr-suggest-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 4px;
+  background: var(--c-bg2);
+  border: 1px solid var(--c-border2);
+  border-radius: 10px;
+  overflow: hidden;
+  max-height: 220px;
+  overflow-y: auto;
+  z-index: 20;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
+}
+.cam-mgr-suggest-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border: none;
+  border-bottom: 1px solid var(--c-border);
+  background: none;
+  color: var(--c-text);
+  font-size: 12.5px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.cam-mgr-suggest-item:last-child {
+  border-bottom: none;
+}
+.cam-mgr-suggest-item:hover {
+  background: var(--c-bg3);
+}
+.cam-mgr-suggest-camid {
+  font-family: var(--font-mono);
+  color: var(--c-muted);
+  flex-shrink: 0;
+}
+.cam-mgr-suggest-name {
+  flex: 1;
+  font-weight: 600;
+}
+.cam-mgr-suggest-badge {
+  flex-shrink: 0;
+  font-size: 10.5px;
+  color: var(--c-accent);
+  border: 1px solid var(--c-accent);
+  border-radius: 999px;
+  padding: 2px 8px;
 }
 .cam-mgr-form-error {
   font-size: 12px;

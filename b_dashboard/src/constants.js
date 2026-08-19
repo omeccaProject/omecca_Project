@@ -52,3 +52,27 @@ export const VEHICLE_TRACK_EVENT_TYPES = new Set([
   'SIGNAL_VIOLATION',
   'UTURN_VIOLATION',
 ])
+
+// 관심 대상(TargetsPanel) 차량 등록 시 "차종" 입력을 돕는 추천 목록(datalist) - 자유 입력도
+// 가능하지만, 실무에서 자주 쓰는 모델을 브랜드/트림까지 구체적으로 미리 넣어둬서 관제요원이
+// 빠르게 고를 수 있게 한다. 목록에 없는 차종도 직접 타이핑해서 등록 가능.
+export const VEHICLE_MODEL_SUGGESTIONS = [
+  '현대 아반떼AD',
+  '현대 아반떼CN7',
+  '현대 쏘나타DN8',
+  '현대 싼타페',
+  '현대 그랜저IG',
+  '현대 그랜저GN7',
+  '기아 K5',
+  '기아 K8',
+  '기아 스포티지',
+  '기아 쏘렌토',
+  '기아 카니발',
+  '제네시스 G80',
+  '쌍용 렉스턴',
+  '쉐보레 트레일블레이저',
+]
+
+// 관심 대상 차량 등록 시 "차량 색상" 선택지. 자주 쓰는 색상 위주로 고정 목록을 두되,
+// "기타"를 고르면 직접 입력할 수 있게 TargetsPanel에서 처리한다.
+export const VEHICLE_COLOR_OPTIONS = ['흰색', '검정', '은색', '회색', '파랑', '빨강', '노랑', '기타']

@@ -23,6 +23,12 @@ public class TargetCreateRequest {
 
     private String label;
 
+    /** 차량 색상 (targetType=VEHICLE일 때 선택 입력). 예: 흰색, 검정, 은색 */
+    private String color;
+
+    /** 차종 - 구체적으로. 예: 싼타페, 아반떼AD, 아반떼CN7 (targetType=VEHICLE일 때 선택 입력) */
+    private String vehicleModel;
+
     @NotBlank
     private String registeredBy;
 }

@@ -49,6 +49,16 @@ export default function CctvGrid({ events, focusedEvent, onSelectCam, camOffset 
   // 비어있으면 realCameras.js를 폴백으로 써서 화면이 깨지지 않게 한다.
   const [liveCameras, setLiveCameras] = useState(FALLBACK_REAL_CAMERAS)
 
+  // "카메라 관리" API가 실제로 응답해서 진짜 등록된 카메라 목록을 알려준 적이 있다면,
+  // 그 camId들을 처음 등장한 순서 그대로 여기 누적 보관한다. camIds 그리드 계산에서
+  // 이 목록을 맨 앞에 고정해두면, 카메라를 삭제해도 그 칸의 "자리"는 그대로 유지되고
+  // (realCameraById에 더 이상 없으니 idle로만 바뀜) 뒤에 있던 다른 카메라가 그 자리로
+  // 당겨져 들어오는 현상(reflow)이 없어진다.
+  // 주의: 초기값/폴백값(FALLBACK_REAL_CAMERAS)은 절대 여기 섞지 않는다 - 섞으면 아직 API가
+  // 응답하기 전의 임시 목록이 "진짜 등록된 카메라"보다 먼저 자리를 선점해버려서, 실제로
+  // 등록·활성화된 카메라가 뒤로 밀려나 그리드 화면 밖으로 벗어나는 회귀가 생긴다.
+  const [knownCamIds, setKnownCamIds] = useState([])
+
   const loadLiveCameras = useCallback(() => {
     fetchCameras()
       .then((list) => {
@@ -56,9 +66,19 @@ export default function CctvGrid({ events, focusedEvent, onSelectCam, camOffset 
           .filter((c) => c.status === 'ACTIVE' && c.streamUrl)
           .map((c) => ({ camId: c.camId, name: c.name, videoUrl: c.streamUrl }))
         setLiveCameras(withStream.length > 0 ? withStream : FALLBACK_REAL_CAMERAS)
+
+        // API가 실제로 응답했을 때만(설령 withStream이 아직 비어있더라도) 그 결과를
+        // knownCamIds에 반영한다 - 폴백 목록은 절대 반영하지 않는다.
+        setKnownCamIds((prev) => {
+          const currentRealIds = withStream.map((c) => c.camId)
+          const existing = new Set(prev)
+          const appended = currentRealIds.filter((id) => !existing.has(id))
+          return appended.length ? [...prev, ...appended] : prev
+        })
       })
       .catch(() => {
         // API 자체가 아직 없거나(구버전 서버) 실패하면 기존 하드코딩 목록을 그대로 유지.
+        // knownCamIds는 건드리지 않는다 - 아직 뭐가 진짜 등록된 카메라인지 알 수 없으므로.
         setLiveCameras(FALLBACK_REAL_CAMERAS)
       })
   }, [])
@@ -97,9 +117,17 @@ export default function CctvGrid({ events, focusedEvent, onSelectCam, camOffset 
   const seenCams = [...new Set(events.map((ev) => ev.camId).filter(Boolean))]
   // 실제로 실시간 영상이 연결된 카메라(liveCameras, DB "카메라 관리"에서 등록된 것)는
   // 항상 그리드 맨 앞에 고정 노출한다.
-  const realCamIds = liveCameras.map((c) => c.camId)
   const realCameraById = Object.fromEntries(liveCameras.map((c) => [c.camId, c]))
-  const camIds = [...new Set([...realCamIds, ...seenCams, ...FALLBACK_CAMS])].slice(camOffset, camOffset + effectiveCount)
+  // knownCamIds(진짜 등록된 적 있는 카메라, 순서 고정)를 맨 앞에 둬서 삭제 시 뒤 카메라가
+  // 앞으로 당겨지지 않게 하고, 그 다음 liveCameras의 현재 camId(API 응답 전/실패 시의
+  // 폴백 목록을 화면에 그대로 보여주기 위함 - knownCamIds가 비어있는 그 순간에도 화면이
+  // 안 깨지게), seenCams, FALLBACK_CAMS 순서로 채운다.
+  const camIds = [...new Set([
+    ...knownCamIds,
+    ...liveCameras.map((c) => c.camId),
+    ...seenCams,
+    ...FALLBACK_CAMS,
+  ])].slice(camOffset, camOffset + effectiveCount)
 
   const latestByCam = {}
   events.forEach((ev) => {

@@ -39,6 +39,8 @@ public class TargetService {
                 .plateNumber(request.getPlateNumber())
                 .personRefId(request.getPersonRefId())
                 .label(request.getLabel())
+                .color(targetType == TargetType.VEHICLE ? request.getColor() : null)
+                .vehicleModel(targetType == TargetType.VEHICLE ? request.getVehicleModel() : null)
                 .registeredBy(request.getRegisteredBy())
                 .status(TargetStatus.ACTIVE)
                 .build();

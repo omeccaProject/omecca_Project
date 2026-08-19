@@ -220,8 +220,16 @@ export default function App() {
   if (pathname === '/landing') return <LandingPage navigate={navigate} />
   if (pathname.startsWith('/admin')) return <AdminApprovalPage navigate={navigate} />
 
-  if (!isLoggedIn()) {
+  // "/"(주소만 치고 들어온 경우)나 그 외 정의되지 않은 경로는 로그인 여부와 상관없이
+  // 항상 랜딩페이지부터 보여준다. 실제 관제 대시보드는 "/dashboard"에서만 렌더링하며,
+  // 로그인 성공(LoginPage)했을 때만 그쪽으로 이동시킨다.
+  if (pathname !== '/dashboard') {
     return <LandingPage navigate={navigate} />
+  }
+
+  if (!isLoggedIn()) {
+    navigate('/login')
+    return null
   }
 
   const user = getUser()
@@ -251,6 +259,7 @@ export default function App() {
           total={events.length}
           vehicleTargetCount={vehicleTargetCount}
           personTargetCount={personTargetCount}
+          targets={targets}
           darkMode={darkMode}
           activeView={activeView}
           onChangeView={setActiveView}

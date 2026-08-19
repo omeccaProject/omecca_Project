@@ -102,8 +102,10 @@ function IconSquare() {
 }
 
 // 좌/우 사이드바 접기·펼치기 버튼 아이콘. 기본은 왼쪽(‹)을 가리키고,
-// flipped=true면 오른쪽(›)을 가리키게 180도 회전한다.
-function IconChevron({ flipped }) {
+// flipped=true면 오른쪽(›)을 가리키게 180도 회전한다. "추적 차량" 화면의 목록은
+// 오른쪽이 아니라 지도 아래쪽에 가로로 펼쳐지므로, rotateBase=-90을 넘기면 좌/우(‹›)
+// 대신 위/아래(⌃⌄)를 가리키게 기준 각도를 틀어준다(펼침=아래로 열림 느낌 ⌄, 접힘=⌃).
+function IconChevron({ flipped, rotateBase = 0 }) {
   return (
     <svg
       viewBox="0 0 24 24"
@@ -112,7 +114,7 @@ function IconChevron({ flipped }) {
       strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
-      style={{ transform: flipped ? 'rotate(180deg)' : 'none' }}
+      style={{ transform: `rotate(${rotateBase + (flipped ? 180 : 0)}deg)` }}
     >
       <path d="M15 6l-6 6 6 6" />
     </svg>
@@ -176,6 +178,7 @@ export default function MainDashboard({
   total,
   vehicleTargetCount,
   personTargetCount,
+  targets,
   darkMode,
   activeView,
   onChangeView,
@@ -281,6 +284,48 @@ export default function MainDashboard({
 
   const seenCams = [...new Set(events.map((ev) => ev.camId).filter(Boolean))]
   const camIds = seenCams.length > 0 ? seenCams : []
+
+  // "추적 차량" 화면 오른쪽에 띄우는 목록. 두 가지 경로로 항목이 생긴다.
+  // 1) 이벤트 경로: 차량 관련 이벤트(음주운전 의심/미등록차량/신호위반/불법유턴)가 들어오면
+  //    자동으로 뜬다. trackId가 같으면 가장 최근 것 하나만 남긴다.
+  // 2) 등록 경로: 관심 대상(TargetsPanel)에서 차량을 등록하면, 아직 실제 탐지 이벤트가 안
+  //    들어왔어도 "탐지 대기중" 카드로 즉시 목록에 뜬다. targets는 App.jsx에서 status=ACTIVE만
+  //    불러오므로(fetchActiveTargets), "추적 종료" 버튼을 누르는 순간 이 배열에서 빠지고
+  //    목록에서도 같이 사라진다 - 별도 삭제 로직 없이 목록이 항상 "현재 ACTIVE한 대상"만 반영.
+  // 같은 번호판이 이벤트로 이미 잡혀 있으면(더 정보가 많음) 등록 카드 쪽은 중복으로 안 띄운다.
+  const trackedVehicles = (() => {
+    const byTrack = new Map()
+    events.forEach((ev) => {
+      if (!VEHICLE_TRACK_EVENT_TYPES.has(ev.eventType)) return
+      const key = ev.trackId || `evt-${ev.id}`
+      const existing = byTrack.get(key)
+      if (!existing || new Date(ev.occurredAt) > new Date(existing.occurredAt)) {
+        byTrack.set(key, ev)
+      }
+    })
+    const eventEntries = [...byTrack.values()].map((ev) => ({
+      kind: 'event',
+      key: `event-${ev.trackId || ev.id}`,
+      time: ev.occurredAt,
+      event: ev,
+    }))
+
+    const seenPlates = new Set(
+      eventEntries.map((entry) => fmtPlate(entry.event)).filter((p) => p && p !== '-'),
+    )
+
+    const targetEntries = (targets || [])
+      .filter((t) => t.targetType === 'VEHICLE')
+      .filter((t) => !t.plateNumber || !seenPlates.has(t.plateNumber))
+      .map((t) => ({
+        kind: 'target',
+        key: `target-${t.id}`,
+        time: t.createdAt,
+        target: t,
+      }))
+
+    return [...eventEntries, ...targetEntries].sort((a, b) => new Date(b.time) - new Date(a.time))
+  })()
 
   // "📄 PDF 리포트 생성" 버튼 클릭: b_report(파이썬/ReportLab)를 그 자리에서 호출해 실제
   // PDF를 만들고, 완성된 바이너리를 받아 즉시 다운로드시킨다. 관제요원이 버튼을 누른
@@ -393,7 +438,12 @@ export default function MainDashboard({
         </button>
       </div>
 
-      <div className="control-content">
+      <div className={`control-content ${activeView === 'tracking' ? 'control-content-tracking' : ''}`}>
+        {/* "추적 차량" 화면은 "추적 차량 목록"을 오른쪽 세로 사이드바 대신 지도/CCTV 영상
+            패널(김준호 map.js가 iframe 내부에서 그리는 영역) 바로 아래에 가로 배치로 붙여달라는
+            요청으로 바뀜 - control-map-col/control-events-wrap의 DOM 위치·순서는 그대로 두고
+            (아래 주석처럼 지도 iframe을 조건부 렌더링하면 안 되므로) control-content-tracking
+            클래스로 CSS(App.css)에서만 flex-direction을 column으로 바꿔 쌓이게 한다. */}
         {/* 이 지도 iframe은 activeView가 뭐든 항상 DOM에 남아있어야 한다(조건부 렌더링 금지).
             예전엔 activeView가 'cctv'/'events'/'targets'일 때 이 블록 자체가 사라졌는데,
             그러면 React가 iframe을 통째로 unmount해버려서 안에서 진행 중이던 추적 차량
@@ -403,7 +453,7 @@ export default function MainDashboard({
             "control-map-col-hidden"(display:none) 클래스로 화면에서만 숨겨서, iframe 내부 상태가
             뷰를 왔다갔다 해도 계속 살아있게(추적이 끊기지 않게) 한다. */}
         <div
-          className={`control-map-col ${activeView !== 'dashboard' ? 'control-map-col-full' : ''} ${
+          className={`control-map-col ${activeView !== 'dashboard' && activeView !== 'tracking' ? 'control-map-col-full' : ''} ${
             activeView === 'dashboard' || activeView === 'map' || activeView === 'tracking' ? '' : 'control-map-col-hidden'
           }`}
         >
@@ -494,6 +544,76 @@ export default function MainDashboard({
         {activeView === 'events' && (
           <div className="control-fullview">
             <EventList events={events} focusedId={focusedEvent?.id ?? null} onSelect={onSelectCam} />
+          </div>
+        )}
+
+        {activeView === 'tracking' && (
+          <div className="control-events-wrap">
+            <button
+              type="button"
+              className="sidebar-collapse-btn sidebar-collapse-btn-right"
+              onClick={() => setRightCollapsed((v) => !v)}
+              title={rightCollapsed ? '추적 차량 목록 펼치기' : '추적 차량 목록 접기'}
+            >
+              <IconChevron flipped={!rightCollapsed} rotateBase={-90} />
+            </button>
+            <aside className={`control-events-col ${rightCollapsed ? 'collapsed' : ''}`}>
+              <div className="control-events-head">추적 차량 목록</div>
+              <div className="control-events-list">
+                {trackedVehicles.length === 0 && (
+                  <div className="control-events-empty">추적 중인 차량이 없습니다</div>
+                )}
+                {trackedVehicles.map((entry) => {
+                  if (entry.kind === 'event') {
+                    const ev = entry.event
+                    const risk = EVENT_RISK[ev.eventType] || 1
+                    const isFocused = focusedEvent?.id === ev.id
+                    return (
+                      <div
+                        key={entry.key}
+                        role="button"
+                        tabIndex={0}
+                        className={`control-event-card tier-${risk} ${isFocused ? 'focused' : ''}`}
+                        onClick={() => handleEventCardClick(ev)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') handleEventCardClick(ev)
+                        }}
+                      >
+                        <div className="control-event-top">
+                          <span>{fmtTime(ev.occurredAt)} · {ev.camId || '-'}</span>
+                        </div>
+                        <div className="control-event-title-row">
+                          <span className="control-event-title">{EVENT_LABEL[ev.eventType] || ev.eventType}</span>
+                          {risk === 3 && <span className="control-event-chip chip-red">위험</span>}
+                        </div>
+                        <div className="control-event-sub">
+                          {metaLine(ev)}{ev.trackId ? ` · TRACK ${ev.trackId}` : ''}
+                        </div>
+                      </div>
+                    )
+                  }
+
+                  // kind === 'target': 관심 대상으로 등록만 됐고 아직 실제 탐지 이벤트가
+                  // 안 들어온 차량 - 지도에 보여줄 위치 정보가 없으므로 클릭해도 포커싱은 안 됨.
+                  const t = entry.target
+                  const modelLine = [t.color, t.vehicleModel].filter(Boolean).join(' ')
+                  return (
+                    <div key={entry.key} className="control-event-card pending">
+                      <div className="control-event-top">
+                        <span>{fmtTime(t.createdAt)} · 관심대상 등록</span>
+                      </div>
+                      <div className="control-event-title-row">
+                        <span className="control-event-title">{t.plateNumber || '번호판 미상'}</span>
+                        <span className="control-event-chip chip-amber">탐지 대기중</span>
+                      </div>
+                      <div className="control-event-sub">
+                        {modelLine || '-'}{t.label ? ` · ${t.label}` : ''}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </aside>
           </div>
         )}
 

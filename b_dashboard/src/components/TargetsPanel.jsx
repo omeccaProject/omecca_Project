@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { fetchTargets, createTarget, closeTarget } from '../api'
 import { getUser } from '../auth'
+import { VEHICLE_MODEL_SUGGESTIONS, VEHICLE_COLOR_OPTIONS } from '../constants'
 
 function fmtTime(iso) {
   if (!iso) return '-'
@@ -13,7 +14,7 @@ const STATUS_TABS = [
   { value: 'CLOSED', label: '종료됨' },
 ]
 
-const EMPTY_FORM = { targetType: 'VEHICLE', plateNumber: '', personRefId: '', label: '' }
+const EMPTY_FORM = { targetType: 'VEHICLE', plateNumber: '', personRefId: '', label: '', color: '', colorCustom: '', vehicleModel: '' }
 
 // 관심 대상(target) 등록/조회/추적종료 화면. 사이드바 "관심 대상"에서 들어온다.
 // 백엔드 API(/api/targets)는 이미 완성돼있어서(TargetController/TargetService), 여기는 그 위의
@@ -62,11 +63,14 @@ export default function TargetsPanel({ onChanged }) {
 
     setSubmitting(true)
     try {
+      const resolvedColor = form.color === '기타' ? form.colorCustom.trim() : form.color
       await createTarget({
         targetType: form.targetType,
         plateNumber: form.targetType === 'VEHICLE' ? form.plateNumber.trim() : undefined,
         personRefId: form.targetType === 'PERSON' ? form.personRefId.trim() : undefined,
         label: form.label.trim() || undefined,
+        color: form.targetType === 'VEHICLE' ? (resolvedColor || undefined) : undefined,
+        vehicleModel: form.targetType === 'VEHICLE' ? (form.vehicleModel.trim() || undefined) : undefined,
         registeredBy,
       })
       setForm(EMPTY_FORM)
@@ -129,6 +133,46 @@ export default function TargetsPanel({ onChanged }) {
             </label>
           )}
 
+          {form.targetType === 'VEHICLE' && (
+            <>
+              <label>
+                <span>차량 색상</span>
+                <select value={form.color} onChange={handleFieldChange('color')}>
+                  <option value="">선택 안 함</option>
+                  {VEHICLE_COLOR_OPTIONS.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </label>
+              {form.color === '기타' && (
+                <label>
+                  <span>색상 직접 입력</span>
+                  <input
+                    type="text"
+                    placeholder="예: 청록색"
+                    value={form.colorCustom}
+                    onChange={handleFieldChange('colorCustom')}
+                  />
+                </label>
+              )}
+              <label className="grow">
+                <span>차종</span>
+                <input
+                  type="text"
+                  list="vehicle-model-suggestions"
+                  placeholder="예: 아반떼CN7, 싼타페"
+                  value={form.vehicleModel}
+                  onChange={handleFieldChange('vehicleModel')}
+                />
+                <datalist id="vehicle-model-suggestions">
+                  {VEHICLE_MODEL_SUGGESTIONS.map((m) => (
+                    <option key={m} value={m} />
+                  ))}
+                </datalist>
+              </label>
+            </>
+          )}
+
           <label className="grow">
             <span>메모(선택)</span>
             <input
@@ -173,6 +217,9 @@ export default function TargetsPanel({ onChanged }) {
             <div className="targets-row-main">
               <div className="targets-row-title">
                 {t.targetType === 'VEHICLE' ? (t.plateNumber || '-') : (t.personRefId || '-')}
+                {t.targetType === 'VEHICLE' && (t.color || t.vehicleModel)
+                  ? ` · ${[t.color, t.vehicleModel].filter(Boolean).join(' ')}`
+                  : ''}
                 {t.label ? ` · ${t.label}` : ''}
               </div>
               <div className="targets-row-sub">

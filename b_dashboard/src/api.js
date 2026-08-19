@@ -100,6 +100,16 @@ export async function deleteCamera(id) {
   if (!res.ok) throw new Error(await parseErrorMessage(res, '카메라 삭제에 실패했습니다.'))
 }
 
+// UTIC 카메라 사전 등록 카탈로그 검색(자동완성). "카메라 관리"에서 cam_id나 이름을 입력하면
+// 이걸 호출해 후보를 찾고, 하나를 고르면 streamUrl/streamFormat을 자동으로 채운다.
+// query가 비어있으면 백엔드가 빈 배열을 주므로(CameraCatalogService.search), 호출부에서
+// 굳이 빈 문자열일 때 호출을 막지 않아도 안전하다.
+export async function fetchCameraCatalog(query) {
+  const res = await fetch(`/api/camera-catalog?query=${encodeURIComponent(query)}`, { headers: AUTH_HEADERS })
+  if (!res.ok) throw new Error(`카메라 카탈로그 검색 실패: ${res.status}`)
+  return res.json()
+}
+
 // 응답 body가 JSON이면 message/error 필드를, 아니면 fallback 문구를 사용한다.
 async function parseErrorMessage(res, fallback) {
   try {

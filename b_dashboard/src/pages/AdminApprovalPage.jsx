@@ -57,7 +57,7 @@ export default function AdminApprovalPage({ navigate }) {
       <div className="admin-page">
         <div className="admin-guard">
           관리자 권한이 필요한 화면입니다.
-          <button type="button" onClick={() => navigate('/')}>관제 화면으로</button>
+          <button type="button" onClick={() => navigate('/dashboard')}>관제 화면으로</button>
         </div>
       </div>
     )
@@ -90,10 +90,10 @@ export default function AdminApprovalPage({ navigate }) {
   return (
     <div className="admin-page">
       <div className="admin-topbar">
-        <div className="auth-brand" onClick={() => navigate('/')}>Vigilog</div>
+        <div className="auth-brand" onClick={() => navigate('/dashboard')}>Vigilog</div>
         <div className="admin-topbar-right">
           <span>관리자: {me?.name}님</span>
-          <button type="button" onClick={() => navigate('/')}>관제 화면으로</button>
+          <button type="button" onClick={() => navigate('/dashboard')}>관제 화면으로</button>
           <button type="button" onClick={() => { clearSession(); navigate('/login') }}>로그아웃</button>
         </div>
       </div>

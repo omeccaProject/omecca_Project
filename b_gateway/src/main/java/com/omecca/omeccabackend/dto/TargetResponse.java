@@ -15,6 +15,8 @@ public class TargetResponse {
     private String plateNumber;
     private String personRefId;
     private String label;
+    private String color;
+    private String vehicleModel;
     private String registeredBy;
     private String status;
     private LocalDateTime createdAt;
@@ -27,6 +29,8 @@ public class TargetResponse {
                 .plateNumber(target.getPlateNumber())
                 .personRefId(target.getPersonRefId())
                 .label(target.getLabel())
+                .color(target.getColor())
+                .vehicleModel(target.getVehicleModel())
                 .registeredBy(target.getRegisteredBy())
                 .status(target.getStatus().name())
                 .createdAt(target.getCreatedAt())
