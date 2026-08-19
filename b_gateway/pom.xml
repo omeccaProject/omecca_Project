@@ -43,6 +43,24 @@
             <artifactId>mysql-connector-j</artifactId>
             <scope>runtime</scope>
         </dependency>
+        <!--
+            DB 스키마 자동 적용 (Flyway).
+            src/main/resources/db/migration 의 V*.sql 을 순서대로 한 번씩만 적용하고,
+            어디까지 했는지 flyway_schema_history 테이블에 기록한다. 각자 컴퓨터에서
+            schema.sql / migration_*.sql 을 손으로 돌릴 필요가 없어진다.
+
+            flyway-mysql 을 같이 넣어야 한다. Flyway 10 부터 DB 별 지원이 분리돼서
+            빠뜨리면 "Unsupported Database: MySQL" 로 기동에 실패한다.
+            버전은 spring-boot-starter-parent 3.3.4 가 관리하므로 적지 않는다.
+        -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-mysql</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
