@@ -21,7 +21,7 @@ class WeaponDetector:
         self.model_path = model_path
         self.device = 0 if torch.cuda.is_available() else 'cpu'
         self.model = YOLO(model_path)
-        self.model.to(self.device)
+        self.model.to(self.device)   # ← 추가: 모델을 실제로 GPU/CPU로 이동
         self.conf_threshold = conf_threshold
 
         # 커스텀 흉기 모델이 아닌 일반 COCO 모델일 경우 허용할 흉기류 라벨
