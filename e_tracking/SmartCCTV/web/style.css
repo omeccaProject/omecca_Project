@@ -1600,3 +1600,43 @@ html[data-theme="light"] .leaflet-control-attribution {
     border-top: 1px solid var(--border);
   }
 }
+
+
+/* ==================================================
+   임베드 모드 (?embed=map) - 대시보드 iframe 안에 넣을 때
+   헤더/영상패널/이벤트패널/검색패널을 숨기고 지도만 남긴다.
+   지도 로직(#map, TrafficCameraManager 등)은 전혀 건드리지 않고
+   순수 CSS로만 레이아웃을 가린다.
+================================================== */
+.is-embed-map .app-header {
+  display: none;
+}
+.is-embed-map .app-body {
+  height: 100vh;
+}
+.is-embed-map .event-panel {
+  display: none;
+}
+.is-embed-map .cctv-search-panel {
+  display: none;
+}
+.is-embed-map .ai-toast-container {
+  display: none;
+}
+
+.is-embed-map .map-pane {
+  height: 100% !important;
+  flex: 1 1 auto;
+}
+
+/* "추적 차량" 전체화면 뷰(대시보드가 omecca-view-mode postMessage로 토글) -
+   지도는 그대로 두고 우측에 실시간 CCTV 영상 패널만 다시 노출한다.
+   AI 관제 이벤트 리스트(event-panel__header/list)는 대시보드 쪽에 이미
+   똑같은 목록이 있으므로 중복을 피해 계속 숨겨둔다. */
+.is-embed-map.show-video-panel .event-panel {
+  display: flex;
+}
+.is-embed-map.show-video-panel .event-panel__header,
+.is-embed-map.show-video-panel .event-panel__list {
+  display: none;
+}

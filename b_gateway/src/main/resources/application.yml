@@ -1,5 +1,31 @@
 server:
   port: 8080
+  error:
+    include-message: always
+
+gateway:
+  api-key: ${GATEWAY_API_KEY}
+
+app:
+  auth:
+    jwt-secret: ${JWT_SECRET}
+
+# 대시보드 "📄 PDF 리포트 생성" 버튼이 눌렸을 때 b_report(PDF 증거 리포트 생성기)를
+# 그 자리에서 호출하는 기능 (ReportGenerationService 참고). 이벤트가 생길 때마다
+# 자동으로 만드는 게 아니라, 관제요원이 상세화면에서 버튼을 눌렀을 때만 생성한다.
+# 전부 기본값이 있어서 아무것도 설정 안 해도 동작한다 - b_report가 없거나 파이썬 의존성이
+# 안 깔려있으면 버튼 눌렀을 때 명확한 에러 메시지만 뜨고, 서버 자체엔 영향 없다.
+# 끄고 싶으면 환경변수 REPORT_GENERATION_ENABLED=false 로 실행하면 된다.
+report:
+  generation:
+    enabled: ${REPORT_GENERATION_ENABLED:true}
+    # b_gateway 실행 위치(보통 b_gateway/) 기준 상대경로. omecca_Project 하위에
+    # b_gateway/b_report/b_dashboard가 형제 폴더라는 구조를 그대로 가정한다.
+    project-dir: ${REPORT_PROJECT_DIR:../b_report}
+    frame-base-dir: ${REPORT_FRAME_BASE_DIR:../b_dashboard/public}
+    gateway-url: ${REPORT_GATEWAY_URL:http://localhost:8080}
+    python-executable: ${REPORT_PYTHON_EXECUTABLE:python3}
+
 
 spring:
   application:

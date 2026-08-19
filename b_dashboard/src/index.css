@@ -1,4 +1,6 @@
 * { box-sizing: border-box; }
+html, body, #root { height: 100%; }
+#root { display: flex; flex-direction: column; }
 body {
   margin: 0;
   font-family: -apple-system, "Malgun Gothic", Arial, sans-serif;

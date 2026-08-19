@@ -14,6 +14,15 @@ from face_detect import FaceDetector
 from event_publisher import send_event
 
 COOLDOWN_SEC = 3.0
+PKL_CHECK_INTERVAL = 1.0  # ← 추가: Hot-Reload 폴링 주기(초)
+
+def resize_for_display(frame, max_width=960):
+    """화면 표시용으로만 축소. 탐지/좌표 계산은 이미 끝난 뒤라 정확도에 영향 없음"""
+    h, w = frame.shape[:2]
+    if w <= max_width:
+        return frame
+    scale = max_width / w
+    return cv2.resize(frame, (max_width, int(h * scale)))
 
 def clip_bbox_xyxy(bbox, w, h):
     """좌표 클리핑 (화면 밖 좌표 이탈 방어)"""
@@ -44,7 +53,8 @@ def run_pipeline(video_source=0, conf_threshold=0.50, skip_frames=15):
 
     frame_idx = 0
     cached_faces = []
-    
+    last_pkl_check = 0.0  # ← 추가: 마지막으로 pkl 변경 확인한 시각
+
     # 쿨다운 관리 딕셔너리 (인물 ID별 / 무기 라벨별)
     last_sent_wanted = {}
     last_sent_weapon = {}
@@ -57,6 +67,11 @@ def run_pipeline(video_source=0, conf_threshold=0.50, skip_frames=15):
         frame_idx += 1
         h, w = frame.shape[:2]
         now = time.time()
+
+        # 0. Hot-Reload 폴링 (1초 간격으로 face_embeddings.pkl 변경 확인)  ← 추가
+        if now - last_pkl_check > PKL_CHECK_INTERVAL:
+            face_det.check_and_reload()
+            last_pkl_check = now
         
         # 1. 흉기 탐지 (실시간 GPU 추론)
         weapons = weapon_det.detect_weapons(frame)
@@ -157,8 +172,13 @@ def run_pipeline(video_source=0, conf_threshold=0.50, skip_frames=15):
             cv2.rectangle(frame, (bx[0], bx[1]), (bx[2], bx[3]), (0, 0, 255), 2)
             cv2.putText(frame, f"{w_item['label']} {w_item['confidence']:.2f}", (bx[0], max(15, bx[1] - 10)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+        display_frame = resize_for_display(frame, max_width=960)
+        cv2.imshow("C-Part Test", display_frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
 
     cap.release()
+    cv2.destroyAllWindows()
     print('[*] 파이프라인 정상 종료')
 
 if __name__ == '__main__':

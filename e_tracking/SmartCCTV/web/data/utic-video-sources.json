@@ -31,6 +31,126 @@
       "video_url": "https://strm1.spatic.go.kr/live/73.stream/chunklist_w2053157549.m3u8",
       "video_format": "HLS",
       "source_type": "서울교통정보센터"
+    },
+    {
+      "cam_id": "L010139",
+      "video_url": "https://strm1.spatic.go.kr/live/72.stream/chunklist_w997501396.m3u8",
+      "video_format": "HLS",
+      "source_type": "서울교통정보센터"
+    },
+    {
+      "cam_id": "L010417",
+      "video_url": "https://strm1.spatic.go.kr/live/71.stream/chunklist_w757045976.m3u8",
+      "video_format": "HLS",
+      "source_type": "서울교통정보센터"
+    },
+    {
+      "cam_id": "L010065",
+      "video_url": "https://strm1.spatic.go.kr/live/70.stream/chunklist_w360269996.m3u8",
+      "video_format": "HLS",
+      "source_type": "서울교통정보센터"
+    },
+    {
+      "cam_id": "L010057",
+      "video_url": "https://strm1.spatic.go.kr/live/74.stream/chunklist_w1686001889.m3u8",
+      "video_format": "HLS",
+      "source_type": "서울교통정보센터"
+    },
+    {
+      "cam_id": "L010067",
+      "video_url": "https://strm1.spatic.go.kr/live/67.stream/chunklist_w2027144219.m3u8",
+      "video_format": "HLS",
+      "source_type": "서울교통정보센터"
+    },
+    {
+      "cam_id": "L010059",
+      "video_url": "https://strm2.spatic.go.kr/live/257.stream/chunklist_w2016759099.m3u8",
+      "video_format": "HLS",
+      "source_type": "서울교통정보센터"
+    },
+    {
+      "cam_id": "L010200",
+      "video_url": "https://strm1.spatic.go.kr/live/84.stream/chunklist_w742801142.m3u8",
+      "video_format": "HLS",
+      "source_type": "서울교통정보센터"
+    },
+    {
+      "cam_id": "L010201",
+      "video_url": "https://strm1.spatic.go.kr/live/39.stream/chunklist_w1995291208.m3u8",
+      "video_format": "HLS",
+      "source_type": "서울교통정보센터"
+    },
+    {
+      "cam_id": "L010035",
+      "video_url": "https://strm3.spatic.go.kr/live/270.stream/chunklist_w483949893.m3u8",
+      "video_format": "HLS",
+      "source_type": "서울교통정보센터"
+    },
+    {
+      "cam_id": "L010034",
+      "video_url": "https://strm1.spatic.go.kr/live/95.stream/chunklist_w1757989951.m3u8",
+      "video_format": "HLS",
+      "source_type": "서울교통정보센터"
+    },
+    {
+      "cam_id": "L010036",
+      "video_url": "https://strm1.spatic.go.kr/live/32.stream/chunklist_w792463215.m3u8",
+      "video_format": "HLS",
+      "source_type": "서울교통정보센터"
+    },
+    {
+      "cam_id": "L010025",
+      "video_url": "https://strm1.spatic.go.kr/live/23.stream/chunklist_w1287068082.m3u8",
+      "video_format": "HLS",
+      "source_type": "서울교통정보센터"
+    },
+    {
+      "cam_id": "L010609",
+      "video_url": "https://strm4.spatic.go.kr/live/347.stream/chunklist_w2022844708.m3u8",
+      "video_format": "HLS",
+      "source_type": "서울교통정보센터"
+    },
+    {
+      "cam_id": "L010610",
+      "video_url": "https://strm4.spatic.go.kr/live/348.stream/chunklist_w2022844708.m3u8",
+      "video_format": "HLS",
+      "source_type": "서울교통정보센터"
+    },
+    {
+      "cam_id": "L010222",
+      "video_url": "https://strm2.spatic.go.kr/live/249.stream/chunklist_w550956998.m3u8",
+      "video_format": "HLS",
+      "source_type": "서울교통정보센터"
+    }, 
+    {
+      "cam_id": "L010181",
+      "video_url": "https://strm2.spatic.go.kr/live/250.stream/chunklist_w767372825.m3u8",
+      "video_format": "HLS",
+      "source_type": "서울교통정보센터"
+    },
+    {
+      "cam_id": "L010175",
+      "video_url": "https://strm1.spatic.go.kr/live/33.stream/chunklist_w693507665.m3u8",
+      "video_format": "HLS",
+      "source_type": "서울교통정보센터"
+    },
+    {
+      "cam_id": "L010098",
+      "video_url": "https://strm2.spatic.go.kr/live/246.stream/chunklist_w954960516.m3u8",
+      "video_format": "HLS",
+      "source_type": "서울교통정보센터"
+    },
+    {
+      "cam_id": "L010218",
+      "video_url": "https://strm1.spatic.go.kr/live/96.stream/chunklist_w769630191.m3u8",
+      "video_format": "HLS",
+      "source_type": "서울교통정보센터"
+    },
+    {
+      "cam_id": "L010431",
+      "video_url": "https://strm1.spatic.go.kr/live/97.stream/chunklist_w1467383714.m3u8",
+      "video_format": "HLS",
+      "source_type": "서울교통정보센터"
     }
   ]
 }

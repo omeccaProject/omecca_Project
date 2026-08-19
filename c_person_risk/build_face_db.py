@@ -2,12 +2,18 @@ import face_recognition
 import os
 import pickle
 
-KNOWN_FACES_DIR = "known_faces"
-OUTPUT_FILE = "face_embeddings.pkl"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+KNOWN_FACES_DIR = os.path.join(BASE_DIR, "known_faces")
+OUTPUT_FILE = os.path.join(BASE_DIR, "face_embeddings.pkl")
 
 def build_database():
     db = []  # [{"id": "W001", "name": "홍길동", "embedding": [...]}]
-    
+
+    if not os.path.exists(KNOWN_FACES_DIR):
+        print(f"⚠️ known_faces 폴더가 없습니다: {KNOWN_FACES_DIR}")
+        print("   폴더를 만들고 사진(W001_이름.jpg 형식)을 넣은 뒤 다시 실행하세요.")
+        return
+
     for filename in os.listdir(KNOWN_FACES_DIR):
         if not filename.lower().endswith((".jpg", ".png", ".jpeg")):
             continue

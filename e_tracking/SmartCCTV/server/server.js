@@ -17,8 +17,10 @@ const express = require("express");
 const cors = require("cors");
 const uticRouter = require("./routes/utic");
 const { createMapEventsModule } = require("./routes/mapEvents");
+const db = require("./db");
 
 const app = express();
+db.init(); // PostGIS 연결 시도 (실패해도 서버는 계속 뜸)
 
 // 로컬 테스트 단계이므로 CORS를 열어둔다. 실제 운영 배포 시에는 프론트엔드 origin으로 제한할 것.
 app.use(cors());
@@ -34,6 +36,7 @@ app.use("/api/utic", uticRouter);
 // 서빙되든(python -m http.server, Live Server, file:// 등) 이 서버(server.js)를 통해서만
 // 영상을 가져오면 항상 동일하게 동작한다 - web/map.js의 CONFIG.FORZA_DEMO_SOURCES가
 // "http://localhost:<PORT>/videos/forza_A.mp4" 형태의 절대 URL로 이 경로를 참조한다.
+
 app.use("/videos", express.static(path.resolve(__dirname, "../videos")));
 app.use(express.static(path.resolve(__dirname, "../web")));   // ← 추가: web/index.html을 "/"에서 서빙
 

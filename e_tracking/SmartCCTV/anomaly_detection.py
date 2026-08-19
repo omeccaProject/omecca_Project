@@ -32,6 +32,8 @@ Alert / Event (draw_warning + emit_event)
 """
 
 import math
+import os
+import platform
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
@@ -40,6 +42,54 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from ultralytics import YOLO
+
+
+# ==================================================
+# 한글 폰트 경로 (OS별 자동 탐색 - 이 파일 안에서 이 블록 하나만 존재해야 함)
+# ==================================================
+# 이전에 파일 아래쪽 "화면 표시" 섹션에 하드코딩된 FONT_PATH가 하나 더 있었는데,
+# 그게 여기서 찾은 값을 덮어써서 macOS에서 항상 윈도우 경로로 되돌아가는 버그가 있었다.
+# 그래서 폰트 관련 정의는 이 블록 하나로 통합했다.
+
+def _resolve_font(candidates):
+    """후보 경로들을 순서대로 실제로 열어보고, 되는 첫 번째 경로를 반환한다.
+    파일이 존재해도 Pillow/FreeType이 못 여는 폰트가 있어서(AppleGothic.ttf 일부
+    환경에서 확인됨) 존재 여부만 확인하지 않고 직접 로드까지 시도한다."""
+    for path in candidates:
+        if not path or not os.path.exists(path):
+            continue
+        try:
+            ImageFont.truetype(path, 16)
+            return path
+        except OSError:
+            continue
+    return None
+
+
+if platform.system() == "Windows":
+    FONT_PATH = _resolve_font(["C:/Windows/Fonts/malgun.ttf"])
+    FONT_BOLD_PATH = _resolve_font(["C:/Windows/Fonts/malgunbd.ttf"]) or FONT_PATH
+elif platform.system() == "Darwin":
+    FONT_PATH = _resolve_font([
+        "/System/Library/Fonts/AppleSDGothicNeo.ttc",
+        "/System/Library/Fonts/Supplemental/AppleGothic.ttf",
+        "/Library/Fonts/AppleGothic.ttf",
+    ])
+    # macOS엔 맑은 고딕 Bold에 대응하는 표준 경로가 없어서, 굵은 폰트도 같은 파일로 대체한다
+    # (PIL이 자체적으로 두껍게 만들어주진 않지만, 데모 화면에서 크게 문제되지 않는다)
+    FONT_BOLD_PATH = FONT_PATH
+else:
+    FONT_PATH = _resolve_font(["/usr/share/fonts/truetype/nanum/NanumGothic.ttf"])
+    FONT_BOLD_PATH = FONT_PATH
+
+if FONT_PATH is None:
+    print("[FONT] 한글 폰트를 하나도 못 찾아서 기본 폰트로 대체합니다 (한글이 깨져 보일 수 있음)")
+
+
+def _load_font(path, size):
+    if path is None:
+        return ImageFont.load_default()
+    return ImageFont.truetype(path, size)
 
 
 # ==================================================
@@ -97,11 +147,10 @@ WARNING_TITLE_KOR = "이상 주행 감지"    # 예: ABNORMAL DRIVING
 WEAVING_REASON_KOR = "지그재그 주행"    # 예: WEAVING
 
 # 한글 출력용 폰트. 매 프레임 새로 로드하면 느려지므로 모듈 로드 시 한 번만 생성한다.
-FONT_PATH = "C:/Windows/Fonts/malgun.ttf"
-FONT_BOLD_PATH = "C:/Windows/Fonts/malgunbd.ttf"  # 번호판(굵은 글씨) 전용
-FONT_TITLE = ImageFont.truetype(FONT_PATH, 22)      # "이상 주행 감지"
-FONT_BODY = ImageFont.truetype(FONT_PATH, 18)       # 원인
-FONT_PLATE = ImageFont.truetype(FONT_BOLD_PATH, 22)  # 번호판 (굵게)
+# (FONT_PATH / FONT_BOLD_PATH는 파일 위쪽 "한글 폰트 경로" 블록에서 이미 OS별로 결정됨)
+FONT_TITLE = _load_font(FONT_PATH, 22)       # "이상 주행 감지"
+FONT_BODY = _load_font(FONT_PATH, 18)        # 원인
+FONT_PLATE = _load_font(FONT_BOLD_PATH, 22)  # 번호판 (굵게)
 
 # --------------------------------------------------
 # 실시간 이벤트 로그 패널 (좌측 상단)
@@ -129,8 +178,8 @@ EVENT_LOG_VEHICLE_COLOR = (255, 255, 255)   # 흰색 - 차량 번호판
 EVENT_LOG_LABEL_COLOR = (255, 255, 255)   # 흰색 - 이벤트 종류
 EVENT_LOG_DIVIDER_COLOR = (255, 255, 255, 70)  # 반투명 흰색 구분선
 
-FONT_LOG_TITLE = ImageFont.truetype(FONT_PATH, 20)
-FONT_LOG_BODY = ImageFont.truetype(FONT_PATH, 16)
+FONT_LOG_TITLE = _load_font(FONT_PATH, 20)
+FONT_LOG_BODY = _load_font(FONT_PATH, 16)
 
 
 # ==================================================
@@ -188,52 +237,19 @@ def websocket_event_handler(event: AnomalyEvent):
 
 
 # ============================================================
-# gis_event_bridge_PATCH.py
+# GIS 이벤트 브릿지 (web/data/event.json에 기록)
 # ------------------------------------------------------------
-# anomaly_detection.py에 "추가만" 하는 패치입니다.
-# 기존 함수(detect, update_track, detect_weaving, handle_anomaly,
-# draw_warning, run 등)는 단 한 줄도 수정하지 않습니다.
-#
-# 적용 방법
-# ------------------------------------------------------------
-# 1. 아래 "여기부터"~"여기까지" 블록을 anomaly_detection.py의
-#    websocket_event_handler 함수 정의 바로 다음(향후 확장 스텁들 근처)에
-#    그대로 붙여넣습니다.
-#
-# 2. anomaly_detection.py 맨 아래
-#
-#        if __name__ == "__main__":
-#            register_event_handler(console_event_handler)
-#            run()
-#
-#    이 블록을 아래처럼 바꿉니다.
-#
-#        if __name__ == "__main__":
-#            _gis_read_existing_seq()
-#            register_event_handler(console_event_handler)
-#            register_event_handler(gis_event_handler)
-#            run(video_path="videos/0805.mp4")   # ← 0807.mp4가 아니라 0805.mp4로 변경
-#
-#    ⚠️ 중요: 현재 anomaly_detection.py 상단의
-#        VIDEO_PATH = "videos/0807.mp4"
-#    는 0807.mp4를 가리키고 있습니다. GIS에서는 H4642 CCTV가
-#    0805.mp4에 연결되어 있으므로, 실제로 분석할 영상도 0805.mp4여야
-#    의미가 맞습니다. run(video_path=...) 인자로 넘기거나, 위 상수
-#    자체를 "videos/0805.mp4"로 바꿔주세요.
+# emit_event()가 호출하는 핸들러 중 하나. 탐지/추적/이상운전 판정
+# 로직에는 관여하지 않고, 이미 만들어진 AnomalyEvent를 GIS가 읽는
+# 파일 형식으로 옮겨 적기만 한다.
 # ============================================================
 
 import json
-import os
 
-# --------------------------------------------------
-# GIS 연동 설정
-# --------------------------------------------------
-# anomaly_detection.py를 프로젝트 루트(SMARTCCTV/)에서 실행한다고 가정한 경로입니다.
-# 만약 다른 위치에서 실행한다면 이 경로만 실제 위치에 맞게 바꿔주세요.
+# anomaly_detection.py를 프로젝트 루트(SmartCCTV/)에서 실행한다고 가정한 경로입니다.
 GIS_EVENT_JSON_PATH = "web/data/event.json"
 
 # 이번 단계에서는 H4642(이수어린이집 앞) 하나만 분석 대상입니다.
-# GIS의 TEST_VIDEO_OVERRIDES에 등록된 것과 동일한 cam_id/설치장소를 그대로 사용합니다.
 GIS_CAM_ID = "H4642"
 GIS_LOCATION_NAME = "이수어린이집 앞"
 
@@ -254,11 +270,7 @@ def _gis_read_existing_seq():
 
 
 def gis_event_handler(event: AnomalyEvent):
-    """emit_event()가 호출하는 핸들러 중 하나.
-
-    AnomalyEvent(판정 로직이 이미 만들어 둔 결과)를 그대로 받아서
-    GIS의 web/data/event.json 계약 형식으로 옮겨 적기만 한다.
-    탐지/추적/이상운전 판정 로직에는 전혀 관여하지 않는다.
+    """AnomalyEvent를 GIS의 web/data/event.json 계약 형식으로 옮겨 적는다.
 
     주의:
     - event.position은 영상 프레임 픽셀 좌표(x, y)이지 위경도가 아니므로
@@ -276,11 +288,11 @@ def gis_event_handler(event: AnomalyEvent):
         "location_name": GIS_LOCATION_NAME,
         "event_type": "ANOMALY_DRIVING",
         "track_id": str(event.track_id),
-        "plate": get_vehicle_plate(event.track_id),  # 화면(draw_warning)에 표시 중인 것과 동일한 더미 번호판
-        "reason": WEAVING_REASON_KOR,  # "지그재그 주행" (기존 상수 재사용)
+        "plate": get_vehicle_plate(event.track_id),
+        "reason": WEAVING_REASON_KOR,
         "time": datetime.now().strftime("%H:%M:%S"),
-        "confidence": None,  # 규칙 기반 판정 - 수치형 신뢰도 없음. 하드코딩하지 않음.
-        "video_position_px": {"x": event.position[0], "y": event.position[1]},  # 참고용(픽셀 좌표)
+        "confidence": None,
+        "video_position_px": {"x": event.position[0], "y": event.position[1]},
     }
 
     # 원자적 쓰기: GIS가 폴링 중 절반만 써진 JSON을 읽지 않도록 임시 파일 → rename
@@ -294,9 +306,6 @@ def gis_event_handler(event: AnomalyEvent):
         f"track_id={event.track_id} -> {GIS_EVENT_JSON_PATH}"
     )
 
-# ============================================================
-# 여기까지가 anomaly_detection.py에 추가할 내용입니다.
-# ============================================================
 
 # ==================================================
 # Track별 궤적 분석 상태
@@ -326,9 +335,6 @@ def get_or_create_track_state(track_id: int) -> TrackState:
 # ==================================================
 # 번호판 표시 (현재: 더미 매핑 / 향후: PaddleOCR 인식 결과로 교체)
 # ==================================================
-# get_vehicle_plate() 하나만 호출부에서 사용하고, 내부 구현은 자유롭게 바꿀 수 있도록
-# 분리해뒀다. 나중에 PaddleOCR을 붙일 때는 이 함수 내부만
-# "OCR 인식 결과 조회"로 교체하면 되고, draw_warning() 등 호출부는 손댈 필요가 없다.
 
 DUMMY_PLATES = [
     "12가3456",
@@ -341,19 +347,11 @@ DUMMY_PLATES = [
     "33아1234",
 ]
 
-# Track ID -> 번호판 문자열 (최초 등장 시 한 번만 배정, 이후 동일 차량은 같은 번호판 유지)
 track_to_plate: dict[int, str] = {}
 _dummy_plate_index = 0
 
 
 def get_vehicle_plate(track_id: int) -> str:
-    """
-    화면에 표시할 차량 번호판 문자열을 반환한다.
-
-    지금은 Track ID마다 더미 번호판을 순서대로 배정해서 반환하지만,
-    향후 PaddleOCR로 실제 번호판 인식이 가능해지면
-    이 함수 내부만 "OCR 인식 결과 조회" 코드로 교체하면 된다.
-    """
     global _dummy_plate_index
 
     if track_id not in track_to_plate:
@@ -414,7 +412,6 @@ def update_track(track_id: int, center: tuple, frame_idx: int):
     prev_point = state.positions[-2]
     displacement = math.hypot(center[0] - prev_point[0], center[1] - prev_point[1])
 
-    # 거의 정지한 상태에서는 각도가 노이즈로 크게 튈 수 있으므로 계산을 건너뜀
     if displacement < MIN_DISPLACEMENT_PX:
         return
 
@@ -435,12 +432,6 @@ def update_track(track_id: int, center: tuple, frame_idx: int):
 # ==================================================
 
 def detect_weaving(track_id: int, frame_idx: int) -> bool:
-    """
-    최근 WEAVING_WINDOW_FRAMES 이내에 기록된 방향 전환들을 살펴보고,
-    좌<->우 전환이 WEAVING_MIN_ALTERNATIONS 회 이상 반복되었는지 확인한다.
-
-    점수나 학습 모델을 쓰지 않는 순수 규칙 기반 로직이다.
-    """
     state = track_states.get(track_id)
 
     if state is None:
@@ -462,10 +453,6 @@ def detect_weaving(track_id: int, frame_idx: int) -> bool:
     return alternations >= WEAVING_MIN_ALTERNATIONS
 
 
-# 등록된 이상 주행 판별 규칙들.
-# 나중에 "급정지", "역주행" 같은 패턴을 추가하려면
-# 같은 시그니처(track_id, frame_idx) -> (event_type, label) | None 의
-# 함수를 만들어 이 리스트에 추가하기만 하면 된다.
 def _check_weaving_rule(track_id: int, frame_idx: int):
     if detect_weaving(track_id, frame_idx):
         return "WEAVING_DETECTED", WEAVING_REASON_KOR
@@ -478,7 +465,6 @@ ANOMALY_RULES = [
 
 
 def evaluate_anomaly_rules(track_id: int, frame_idx: int):
-    """등록된 규칙들을 순서대로 평가해, 처음으로 감지된 (event_type, label)을 반환한다."""
     for rule in ANOMALY_RULES:
         result = rule(track_id, frame_idx)
         if result is not None:
@@ -486,18 +472,7 @@ def evaluate_anomaly_rules(track_id: int, frame_idx: int):
     return None
 
 
-# --------------------------------------------------
-# Event Hold (경고 상태 유지)
-# --------------------------------------------------
-# 판단 알고리즘(detect_weaving 등)은 전혀 건드리지 않는다.
-# "지금 이 순간 Weaving인가?"와 "지금 경고를 계속 보여줘야 하는가?"를
-# 분리해서, 후자만 HOLD_WARNING_FRAMES 기준으로 별도 판단한다.
-
 def is_abnormal_active(track_id: int, frame_idx: int) -> bool:
-    """
-    최근 HOLD_WARNING_FRAMES 이내에 Weaving이 감지된 적이 있다면
-    지금 당장 재감지되지 않았더라도 '경고 유지 상태'로 간주한다.
-    """
     state = track_states.get(track_id)
 
     if state is None:
@@ -511,24 +486,11 @@ def is_abnormal_active(track_id: int, frame_idx: int) -> bool:
 # ==================================================
 
 def draw_warning(frame, box, track_id: int, label: str):
-    """
-    이상 주행 차량 경고를 그린다.
-
-    - 박스(사각형)는 텍스트가 아니므로 그대로 OpenCV(cv2.rectangle)로 그린다.
-    - 한글 텍스트(번호판 / 제목 / 원인)는 OpenCV가 한글을 지원하지 않으므로
-      PIL(ImageDraw + ImageFont)로 한 번에 그린 뒤 다시 frame에 반영한다.
-    - 번호판은 get_vehicle_plate()를 통해 가져온다 (현재는 더미, 추후 OCR 결과로 교체 예정).
-
-    frame은 numpy 배열을 그 자리에서(in-place) 갱신하므로,
-    호출부(handle_anomaly, run)의 기존 사용 방식은 그대로 유지된다.
-    """
     x1, y1, x2, y2 = box
     plate = get_vehicle_plate(track_id)
 
-    # 박스 (OpenCV)
     cv2.rectangle(frame, (x1, y1), (x2, y2), WARNING_COLOR, 3)
 
-    # 한글 텍스트 (PIL)
     pil_image = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
     draw = ImageDraw.Draw(pil_image)
 
@@ -542,27 +504,19 @@ def draw_warning(frame, box, track_id: int, label: str):
 # ==================================================
 # 실시간 이벤트 로그 (좌측 상단 패널)
 # ==================================================
-# "이상 주행 에피소드"가 새로 시작된 순간에만 1건씩 쌓인다.
-# (같은 에피소드가 HOLD_WARNING_FRAMES 동안 유지되는 중에는 추가되지 않음)
 event_logs = deque(maxlen=EVENT_LOG_MAXLEN)
 
 
 def add_event_log(track_id: int, label: str):
-    """이상 주행 에피소드가 새로 시작된 순간, 이벤트 로그에 1건을 등록한다."""
     event_logs.append({
         "time": datetime.now().strftime("%H:%M:%S"),
         "track_id": track_id,
-        "plate": get_vehicle_plate(track_id),  # 차량 위 UI와 동일한 더미 번호판(추후 OCR 결과로 교체)
+        "plate": get_vehicle_plate(track_id),
         "label": label,
     })
 
 
 def _calc_event_log_panel_height(entry_count: int) -> int:
-    """
-    이벤트 개수에 맞는 패널 전체 높이를 계산한다.
-    draw_event_log_panel()의 실제 그리기 루프와 반드시 같은 값을 써야 하므로,
-    두 곳 모두 이 함수(또는 아래의 동일한 EVENT_LOG_* 상수)를 통해서만 계산한다.
-    """
     if entry_count == 0:
         return 0
 
@@ -576,10 +530,6 @@ def _calc_event_log_panel_height(entry_count: int) -> int:
 
 
 def draw_event_log_panel(frame):
-    """좌측 상단에 반투명 배경의 실시간 이벤트 로그 패널을 그린다 (PIL).
-
-    패널 높이는 현재 이벤트 개수에 맞춰 자동으로 커지거나 작아진다.
-    """
     if not event_logs:
         return
 
@@ -588,7 +538,6 @@ def draw_event_log_panel(frame):
 
     base = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)).convert("RGBA")
 
-    # 반투명 배경은 별도 레이어에 그린 뒤 합성한다 (alpha 채널 사용)
     overlay = Image.new("RGBA", base.size, (0, 0, 0, 0))
     overlay_draw = ImageDraw.Draw(overlay)
     overlay_draw.rectangle(
@@ -605,7 +554,6 @@ def draw_event_log_panel(frame):
     x_right = EVENT_LOG_PANEL_X + EVENT_LOG_PANEL_WIDTH - EVENT_LOG_PADDING_X
     y = EVENT_LOG_PANEL_Y + EVENT_LOG_PADDING_TOP
 
-    # 제목 아래 구분선
     overlay_draw.line(
         [(x_left, y + EVENT_LOG_TITLE_HEIGHT - 6), (x_right, y + EVENT_LOG_TITLE_HEIGHT - 6)],
         fill=EVENT_LOG_DIVIDER_COLOR,
@@ -628,7 +576,6 @@ def draw_event_log_panel(frame):
         draw.text((x_left, y), entry["label"], font=FONT_LOG_BODY, fill=EVENT_LOG_LABEL_COLOR)
         y += EVENT_LOG_LINE_HEIGHT
 
-        # 마지막 이벤트 뒤에는 구분선을 그리지 않는다 (아래 여백만 남김)
         if i < entry_count - 1:
             draw.line(
                 [(x_left, y + EVENT_LOG_ENTRY_GAP // 2), (x_right, y + EVENT_LOG_ENTRY_GAP // 2)],
@@ -646,46 +593,29 @@ def draw_event_log_panel(frame):
 # ==================================================
 
 def handle_anomaly(frame, box, track_id: int, frame_idx: int, fps: float):
-    """
-    한 Track에 대해 이상 주행 규칙을 평가한다.
-
-    - 지금 새로 Weaving이 감지되면: 경고 유지 시간을 현재 프레임으로 갱신(연장)한다.
-    - 새로 감지되지 않았더라도 HOLD_WARNING_FRAMES 이내라면: 계속 경고 상태를 유지한다.
-    - 콘솔/이벤트 로그는 "실제로 새로 감지된 순간"에만 남긴다 (유지 기간 동안 스팸 방지).
-    - 좌측 상단 이벤트 로그는 "새 에피소드가 시작된 순간"에만 1건 등록한다.
-    """
     state = get_or_create_track_state(track_id)
 
-    # 이번 프레임에 새로 감지되어 last_weaving_frame이 갱신되기 "전" 상태를 먼저 확인해둔다.
-    # (에피소드가 이미 진행 중이었는지, 지금 막 새로 시작하는지 구분하기 위함)
     was_active_before = is_abnormal_active(track_id, frame_idx)
 
-    # ① 판단 알고리즘은 그대로 호출 (수정 없음)
     result = evaluate_anomaly_rules(track_id, frame_idx)
 
     if result is not None:
-        # 새로 감지됨 -> 유지 시간을 지금 시점으로 연장
         state.last_weaving_frame = frame_idx
 
-    # ② / ③ 유지 시간이 지났고 새로 감지도 안 됐다면 정상 상태 -> 아무 것도 하지 않음
     if not is_abnormal_active(track_id, frame_idx):
         return
 
-    # 여기 도달하면 "방금 감지됨" 또는 "유지 시간 중" 둘 중 하나이므로 경고를 계속 그린다
     label = result[1] if result is not None else WEAVING_REASON_KOR
     draw_warning(frame, box, track_id, label)
 
-    # 좌측 상단 이벤트 로그: 이전에는 비활성 상태였는데 지금 막 새로 감지된 경우 = 새 에피소드 시작
     if result is not None and not was_active_before:
         add_event_log(track_id, WARNING_TITLE_KOR)
 
-    # 새로 감지된 경우가 아니면(유지 기간 중이면) 콘솔 로그는 남기지 않는다
     if result is None:
         return
 
     event_type, label = result
 
-    # 콘솔/이벤트 로그는 너무 자주 찍히지 않도록 쿨다운을 둔다
     if frame_idx - state.last_alert_frame < ALERT_COOLDOWN_FRAMES:
         return
 
@@ -716,7 +646,6 @@ def run(video_path: str = VIDEO_PATH, output_path: str = OUTPUT_PATH):
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
 
-    # HOLD_WARNING_SECONDS(초 단위 설정)를 실제 영상 fps 기준 프레임 수로 정확히 환산
     global HOLD_WARNING_FRAMES
     HOLD_WARNING_FRAMES = max(1, round(HOLD_WARNING_SECONDS * fps))
 
@@ -752,7 +681,6 @@ def run(video_path: str = VIDEO_PATH, output_path: str = OUTPUT_PATH):
                 update_track(track_id, center, frame_idx)
                 handle_anomaly(annotated_frame, (x1, y1, x2, y2), track_id, frame_idx, fps)
 
-        # 좌측 상단 실시간 이벤트 로그 패널 (프레임당 1회, 영상 저장에도 함께 포함됨)
         draw_event_log_panel(annotated_frame)
 
         out.write(annotated_frame)

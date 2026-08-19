@@ -1,56 +1,80 @@
-import { EVENT_LABEL, EVENT_TYPES } from '../constants'
+import { useEffect, useState } from 'react'
+
+function fmtClock(date) {
+  const p = (n) => String(n).padStart(2, '0')
+  return `${date.getFullYear()}-${p(date.getMonth() + 1)}-${p(date.getDate())} ${p(date.getHours())}:${p(date.getMinutes())}:${p(date.getSeconds())} KST`
+}
 
 export default function Header({
-  connected, total, targetCount,
-  autoFocus, onAutoFocusChange,
-  filterType, onFilterTypeChange,
-  filterCam, onFilterCamChange,
+  connected,
   onRefresh,
-  view, onViewChange,          // ← 추가
+  refreshing,
+  darkMode, onToggleDarkMode,
+  user, onLogout, onGoAdmin,
+  onSplitScreen,
 }) {
+  const [now, setNow] = useState(() => new Date())
+
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 1000)
+    return () => clearInterval(t)
+  }, [])
+
   return (
-    <header>
-      <h1>통합 관제 대시보드</h1>
-
-      <div className="view-tabs">                                          {/* ← 추가 시작 */}
-        <button
-          className={view === 'events' ? 'active' : ''}
-          onClick={() => onViewChange('events')}
-        >
-          이벤트 대시보드
-        </button>
-        <button
-          className={view === 'map' ? 'active' : ''}
-          onClick={() => onViewChange('map')}
-        >
-          GIS 지도
-        </button>
-      </div>                                                                {/* ← 추가 끝 */}
-
-      <div className="status">
-        <span className={`dot ${connected ? 'on' : 'off'}`} />
-        <span>{connected ? '실시간 연결됨' : '연결 끊김'}</span>
+    <header className="top-bar">
+      <div className="top-bar-left">
+        <span className="top-bar-dots">
+          <span /><span /><span />
+        </span>
+        <span className="top-bar-brand">Vigilog</span>
+        <span className={`top-bar-live ${connected ? 'on' : 'off'}`}>
+          <span className="top-bar-live-dot" />
+          {connected ? 'LIVE' : 'OFFLINE'}
+        </span>
+        <span className="top-bar-sep">/</span>
+        <span className="top-bar-title">통합 관제 대시보드</span>
+        <span className="top-bar-sep">·</span>
+        <span className="top-bar-clock">{fmtClock(now)}</span>
       </div>
-      <div className="stat">누적 이벤트 <b>{total}</b></div>
-      <div className="stat">관심대상 관련 <b>{targetCount}</b></div>
 
-      <div className="filters">
-        <label className="toggle">
-          <input type="checkbox" checked={autoFocus} onChange={(e) => onAutoFocusChange(e.target.checked)} />
-          신규 이벤트 자동 포커싱
-        </label>
-        <select value={filterType} onChange={(e) => onFilterTypeChange(e.target.value)}>
-          <option value="">전체 이벤트 유형</option>
-          {EVENT_TYPES.map((t) => (
-            <option key={t} value={t}>{EVENT_LABEL[t]}</option>
-          ))}
-        </select>
-        <input
-          placeholder="CCTV ID 필터 (예: CAM-01)"
-          value={filterCam}
-          onChange={(e) => onFilterCamChange(e.target.value)}
-        />
-        <button onClick={onRefresh}>새로고침</button>
+      <div className="top-bar-right">
+        {onSplitScreen && (
+          <button
+            type="button"
+            className="top-bar-icon-btn"
+            title="3분할 모드 (1번 모니터=지금 화면 그대로, 2·3번 모니터에 CCTV 9개씩)"
+            onClick={onSplitScreen}
+          >
+            ▦
+          </button>
+        )}
+        <button
+          type="button"
+          className={`top-bar-icon-btn ${refreshing ? 'spinning' : ''}`}
+          title="새로고침"
+          onClick={onRefresh}
+          disabled={refreshing}
+        >
+          ⟳
+        </button>
+        <button
+          type="button"
+          className="top-bar-icon-btn"
+          title={darkMode ? '라이트 모드로 전환' : '다크 모드로 전환'}
+          onClick={onToggleDarkMode}
+        >
+          {darkMode ? '☾' : '☀'}
+        </button>
+        {onGoAdmin && (
+          <button type="button" className="top-bar-icon-btn" title="회원 승인" onClick={onGoAdmin}>
+            👤
+          </button>
+        )}
+        {user && (
+          <button type="button" className="top-bar-icon-btn" title={`로그아웃 (${user.name})`} onClick={onLogout}>
+            ⏻
+          </button>
+        )}
       </div>
     </header>
   )

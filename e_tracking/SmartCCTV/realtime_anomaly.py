@@ -214,7 +214,7 @@ DEMO_SOURCES = {
 #      "DEMO_SEQUENCE" - 창 하나에서 A→B→C→D를 순서대로 이어서 재생.
 # ================================================================
 ACTIVE_CAMERA_IDS = []
-ACTIVE_DEMO_IDS = []  # Forza 데모는 이제 웹사이트 클릭으로 재생된다 - 리허설용으로만 필요시 채울 것
+ACTIVE_DEMO_IDS = ["A"]  # Forza 데모는 이제 웹사이트 클릭으로 재생된다 - 리허설용으로만 필요시 채울 것
 RUN_MODE = "PARALLEL"  # "PARALLEL"(병렬 A/B/C/D 동시 실행) 또는 "DEMO_SEQUENCE"(A→B→C→D 순차 실행)
 
 SHOW_WINDOWS = True  # 발표 환경에서 창이 너무 많으면 필요한 소스만 SHOW_WINDOWS 개별 제어로 확장 가능

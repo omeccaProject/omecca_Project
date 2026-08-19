@@ -40,3 +40,39 @@ export const RISK_LABEL = { 3: '높음', 2: '중간', 1: '낮음' }
 // 이벤트 리스트 패널의 위험도별 아코디언 섹션 제목
 export const TIER_LABEL = { 3: '고위험 이벤트', 2: '중위험 이벤트', 1: '정보 이벤트' }
 export const RISK_TIERS = [3, 2, 1]
+
+// 이 이벤트 유형들은 "차량"과 직접 관련된 이벤트라서(음주운전 의심/미등록차량/신호위반/불법유턴),
+// 실시간으로 들어오면 화면 중앙에 알림 팝업을 띄우고(App.jsx), 클릭하면 대시보드가 "추적 차량"
+// 뷰로 넘어가서 GIS 지도 위에 그 차량을 바로 보여준다(MainDashboard.jsx). WANTED_PERSON/WEAPON/
+// DEBRIS는 차량이 아니므로 대상에서 뺀다. App.jsx/MainDashboard.jsx 둘 다 이 값을 그대로 써야
+// 하므로 여기 한 곳에만 정의해둔다.
+export const VEHICLE_TRACK_EVENT_TYPES = new Set([
+  'DUI_PATTERN',
+  'UNREGISTERED_VEHICLE',
+  'SIGNAL_VIOLATION',
+  'UTURN_VIOLATION',
+])
+
+// 관심 대상(TargetsPanel) 차량 등록 시 "차종" 입력을 돕는 추천 목록(datalist) - 자유 입력도
+// 가능하지만, 실무에서 자주 쓰는 모델을 브랜드/트림까지 구체적으로 미리 넣어둬서 관제요원이
+// 빠르게 고를 수 있게 한다. 목록에 없는 차종도 직접 타이핑해서 등록 가능.
+export const VEHICLE_MODEL_SUGGESTIONS = [
+  '현대 아반떼AD',
+  '현대 아반떼CN7',
+  '현대 쏘나타DN8',
+  '현대 싼타페',
+  '현대 그랜저IG',
+  '현대 그랜저GN7',
+  '기아 K5',
+  '기아 K8',
+  '기아 스포티지',
+  '기아 쏘렌토',
+  '기아 카니발',
+  '제네시스 G80',
+  '쌍용 렉스턴',
+  '쉐보레 트레일블레이저',
+]
+
+// 관심 대상 차량 등록 시 "차량 색상" 선택지. 자주 쓰는 색상 위주로 고정 목록을 두되,
+// "기타"를 고르면 직접 입력할 수 있게 TargetsPanel에서 처리한다.
+export const VEHICLE_COLOR_OPTIONS = ['흰색', '검정', '은색', '회색', '파랑', '빨강', '노랑', '기타']

@@ -27,6 +27,20 @@
   <!-- ================================
        상단 헤더 : 시스템 타이틀 + 실시간 상태 요약 + 다크/라이트 토글 + 시계
   ================================ -->
+
+  <script>
+  (function () {
+    var params = new URLSearchParams(window.location.search);
+    if (params.get("embed") === "map") {
+      document.documentElement.classList.add("is-embed-map");
+      // 대시보드는 보통 postMessage(omecca-view-mode)로 이 클래스를 동적으로 토글하지만,
+      // 이 iframe을 ?embed=map&panel=video로 직접 새로고침/딥링크하는 경우를 위한 기본값도 지원한다.
+      if (params.get("panel") === "video") {
+        document.documentElement.classList.add("show-video-panel");
+      }
+    }
+  })();
+  </script>
   <header class="app-header">
     <div class="app-header__brand">
       <span class="app-header__badge">AI</span>

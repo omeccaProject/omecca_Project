@@ -46,6 +46,7 @@ LNG_RANGE = (126.90, 127.10)
 
 def build_payload() -> dict:
     event_type = random.choice(EVENT_TYPES)
+    sample_idx = random.randint(1, 3)
     return {
         "camId": random.choice(CAM_IDS),
         "trackId": f"trk-{random.randint(1000, 9999)}",
@@ -70,17 +71,27 @@ def build_payload() -> dict:
             "source": "mock",
             "detailType": random.choice(DETAIL_TYPES),
         },
-        "frameRefBefore": f"mock/before_{random.randint(1, 9999)}.jpg",
-        "frameRefAfter": f"mock/after_{random.randint(1, 9999)}.jpg",
+        # 예전엔 존재하지도 않는 임의 파일명(mock/before_{random}.jpg)을 만들어 보냈는데,
+        # b_dashboard/public/mock/ 안에는 sample_before_1~3.jpg / sample_after_1~3.jpg
+        # 3쌍만 실제로 존재한다. 실존하지 않는 경로를 보내면 대시보드에서 증거 이미지가
+        # 깨져 보이는 건 물론이고, b_gateway의 리포트 자동생성(ReportTriggerService)도
+        # "파일이 없다"며 조용히 스킵해버려서 데모/테스트가 안 된다. 그래서 실제 존재하는
+        # 3쌍 중 하나를 순환해서 쓰도록 고쳤다 - 이러면 mock 데이터만으로도 b_report
+        # 자동생성 파이프라인 전체를 끝까지 테스트할 수 있다.
+        "frameRefBefore": f"mock/sample_before_{sample_idx}.jpg",
+        "frameRefAfter": f"mock/sample_after_{sample_idx}.jpg",
     }
 
 
-def post_event(base_url: str, payload: dict) -> None:
+def post_event(base_url: str, payload: dict, api_key: str) -> None:
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         f"{base_url.rstrip('/')}/api/events",
         data=data,
-        headers={"Content-Type": "application/json"},
+        # ApiKeyFilter가 /api/events를 포함한 대부분의 /api/** 경로를 X-API-Key로 막아뒀음
+        # (가이드/이 스크립트가 먼저 작성되고 나서 나중에 추가된 필터라, 헤더 없이 보내면
+        # 401 {"error":"UNAUTHORIZED", ...}로 거절당한다).
+        headers={"Content-Type": "application/json", "X-API-Key": api_key},
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=10) as resp:
@@ -93,12 +104,15 @@ def main() -> None:
     parser.add_argument("--base-url", default="http://localhost:8080")
     parser.add_argument("--count", type=int, default=10)
     parser.add_argument("--interval", type=float, default=1.0)
+    # b_gateway의 GATEWAY_API_KEY 환경변수와 같은 값이어야 함 (기본값: omecca-dev-key-2026,
+    # application.yml의 gateway.api-key 기본값 및 b_dashboard/src/config.js와 동일).
+    parser.add_argument("--api-key", default="omecca-dev-key-2026")
     args = parser.parse_args()
 
     for i in range(args.count):
         payload = build_payload()
         try:
-            post_event(args.base_url, payload)
+            post_event(args.base_url, payload, args.api_key)
         except urllib.error.URLError as exc:
             print(f"요청 실패 ({i + 1}/{args.count}): {exc}")
             break

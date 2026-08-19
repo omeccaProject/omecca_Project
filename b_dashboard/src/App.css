@@ -1,104 +1,1920 @@
-:root {
-  --bg: #eef1f8;
-  --panel-bg: #ffffff;
-  --border: #e2e6f0;
-  --text: #1e2a4a;
-  --text-muted: #6b7690;
-  --accent: #3b5bdb;
-  --accent-soft: #eef1fb;
-  --danger: #e5484d;
-  --warning: #eab308;
+* {
+  box-sizing: border-box;
 }
 
-header {
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  /* overflow:hidden이 없으면 안쪽(control-events-list 등)이 flex:1 + min-height:0으로
+     제대로 잡혀있어도, 넘치는 내용이 그냥 body 밖으로 삐져나가면서 body/뷰포트 자체가
+     스크롤돼버린다 - 지도가 스크롤에 밀려 화면 밖으로 사라져 보이던 버그의 진짜 원인이었다.
+     여기서 막아야 안쪽 컨테이너들의 overflow-y:auto가 실제로 동작(그 안에서만 스크롤)한다. */
+  overflow: hidden;
+}
+
+body {
+  font-family: 'Inter', -apple-system, "Malgun Gothic", Pretendard, Arial, sans-serif;
+}
+
+.app-shell {
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* 예전엔 min-height: 100vh였는데, 이러면 오른쪽 이벤트 리스트가 길어질 때 이 컨테이너
+     자체가 100vh를 넘게 늘어나면서 body 전체가 스크롤됐다(지도가 스크롤에 밀려 화면 밖으로
+     나가 보이던 버그의 원인). #root(height:100%, flex column)의 자식으로서 정확히 화면
+     높이만큼만 차지하고, 넘치는 내용은 안쪽(control-events-list 등)에서만 스크롤되게
+     flex: 1 + min-height: 0으로 바꿨다. */
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-shell[data-theme="light"] {
+  --c-bg: #f4f6f9;
+  --c-bg2: #ffffff;
+  --c-bg3: #eef1f5;
+  --c-border: rgba(15, 23, 42, .10);
+  --c-border2: rgba(15, 23, 42, .18);
+  --c-text: #12151a;
+  --c-muted: #5b6472;
+  --c-muted2: #94a0b0;
+  --c-green: #16a34a;
+  --c-red: #dc2626;
+  --c-amber: #d97706;
+  --c-cyan: #0891b2;
+  --c-accent: #2563eb;
+
+  --header-bg: #ffffff;
+  --header-border: rgba(15, 23, 42, .10);
+  --header-text: #12151a;
+  --header-muted: #5b6472;
+}
+
+.app-shell[data-theme="dark"] {
+  --c-bg: #08090b;
+  --c-bg2: #0d0f13;
+  --c-bg3: #14171d;
+  --c-border: rgba(255, 255, 255, .09);
+  --c-border2: rgba(255, 255, 255, .16);
+  --c-text: #f5f6f8;
+  --c-muted: #90959f;
+  --c-muted2: #55595f;
+  --c-green: #4ade80;
+  --c-red: #ef4444;
+  --c-amber: #f5a623;
+  --c-cyan: #22d3ee;
+  --c-accent: #4ade80;
+
+  --header-bg: #0d0f13;
+  --header-border: rgba(255, 255, 255, .09);
+  --header-text: #f5f6f8;
+  --header-muted: #90959f;
+}
+
+.app-shell {
+  background: var(--c-bg);
+  color: var(--c-text);
+}
+
+.top-bar {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  padding: 10px 20px;
+  background: var(--header-bg);
+  border-bottom: 1px solid var(--header-border);
+  color: var(--header-text);
+  flex-shrink: 0;
+}
+
+.top-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.top-bar-dots {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-right: 4px;
+}
+.top-bar-dots span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--c-muted2);
+  opacity: .55;
+}
+
+.top-bar-brand {
+  font-size: 13.5px;
+  font-weight: 800;
+  letter-spacing: .01em;
+  color: var(--c-accent);
+  white-space: nowrap;
+  margin-right: 2px;
+}
+
+.top-bar-live {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+.top-bar-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.top-bar-live.on {
+  color: var(--c-green);
+}
+.top-bar-live.on .top-bar-live-dot {
+  background: var(--c-green);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-green) 25%, transparent);
+}
+.top-bar-live.off {
+  color: var(--c-red);
+}
+.top-bar-live.off .top-bar-live-dot {
+  background: var(--c-red);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-red) 25%, transparent);
+}
+
+.top-bar-sep {
+  color: var(--c-muted2);
+  font-size: 13px;
+}
+
+.top-bar-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.top-bar-clock {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--header-muted);
+  white-space: nowrap;
+}
+
+.top-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.top-bar-icon-btn {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  border: 1px solid var(--c-border);
+  background: var(--c-bg3);
+  color: var(--header-text);
+  font-size: 19px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.top-bar-icon-btn:hover {
+  border-color: var(--c-accent);
+}
+.top-bar-icon-btn:disabled {
+  cursor: default;
+  opacity: .7;
+}
+/* 새로고침 버튼(⟳) 클릭 시 도는 스피너 - 눌러도 반응이 없어 보이던 문제 보완용 */
+.top-bar-icon-btn.spinning {
+  animation: top-bar-icon-spin .6s linear infinite;
+}
+@keyframes top-bar-icon-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.control-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.control-screen {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  background: var(--c-bg);
+}
+
+/* 좌측 메뉴 사이드바를 감싸는 래퍼. 접기/펼치기 버튼(sidebar-collapse-btn)이 이 래퍼의
+   오른쪽 가장자리에 절대위치로 붙어있어서, 안쪽 .control-sidebar의 너비가 0으로
+   줄어들어도(overflow:hidden) 버튼 자체는 잘리지 않고 항상 화면에 남아있는다. */
+.control-sidebar-wrap {
+  position: relative;
+  flex-shrink: 0;
+  /* flex 아이템의 min-height 기본값은 auto(내용 크기)라서, 명시하지 않으면 안쪽 내용이
+     길어질 때 이 래퍼 자체가 그만큼 늘어나버려 부모(.control-screen)의 높이 제한을
+     깨고, 결국 안쪽 overflow-y:auto가 있는 요소까지 스크롤이 안 걸리게 된다. */
+  min-height: 0;
+}
+
+/* 오른쪽 "AI 관제 이벤트" 패널을 감싸는 래퍼. 왼쪽과 동일한 구조. */
+.control-events-wrap {
+  position: relative;
+  flex-shrink: 0;
+  /* 이벤트 리스트가 길어져도 이 래퍼가 부모 높이를 넘어서 늘어나지 않도록(그래야 안쪽
+     .control-events-list의 overflow-y:auto가 실제로 스크롤을 담당하게 된다) */
+  min-height: 0;
+  display: flex;
+}
+
+.sidebar-collapse-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--c-border);
+  background: var(--c-bg2);
+  color: var(--c-muted);
+  cursor: pointer;
+  z-index: 5;
+  padding: 0;
+}
+.sidebar-collapse-btn:hover {
+  color: var(--c-text);
+  background: var(--c-bg3);
+}
+.sidebar-collapse-btn svg {
+  width: 13px;
+  height: 13px;
+}
+.sidebar-collapse-btn-left {
+  right: -20px;
+  border-left: none;
+  border-radius: 0 8px 8px 0;
+}
+.sidebar-collapse-btn-right {
+  left: -20px;
+  border-right: none;
+  border-radius: 8px 0 0 8px;
+}
+
+/* "추적 차량" 화면 전용 - 지도(+ 그 iframe 안의 실시간 CCTV 영상 패널, 김준호 map.js 소유이라
+   건드리지 않음) 아래에 "추적 차량 목록"을 가로 밴드로 붙인다. */
+.control-content-tracking {
+  flex-direction: column;
+}
+.control-content-tracking .control-map-col {
+  border-right: none;
+  border-bottom: 1px solid var(--c-border);
+  flex: 1 1 auto;
+}
+.control-content-tracking .control-events-wrap {
+  flex: 0 0 auto;
+}
+.control-content-tracking .control-events-col {
+  width: 100%;
+  max-height: 260px;
+  padding: 14px 18px;
+}
+.control-content-tracking .control-events-col.collapsed {
+  width: 100%;
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+/* flex 카드열 대신 grid로 바꿔서, 마지막 줄에 카드가 다 안 차더라도 각 카드가 남은 폭을
+   나눠 갖게(1fr) 해서 오른쪽에 빈 공간이 안 남게 한다(예전 flex:0 0 280px는 4개 들어가고
+   남는 폭만큼 항상 오른쪽이 비어 보였음). */
+.control-content-tracking .control-events-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px;
+  align-content: flex-start;
+  overflow-y: auto;
+}
+.control-content-tracking .control-event-card {
+  min-width: 0;
+}
+/* 접기 버튼 - 가로 밴드 상단 중앙에, 예전보다 훨씬 넓고 잘 보이게(180x26, 배경 대비 강조) */
+.control-content-tracking .sidebar-collapse-btn-right {
+  left: 50%;
+  top: -26px;
+  width: 180px;
+  height: 26px;
+  transform: translateX(-50%);
+  background: var(--c-bg3);
+  border: 1px solid var(--c-border2);
+  border-top: none;
+  border-radius: 0 0 12px 12px;
+}
+.control-content-tracking .sidebar-collapse-btn-right svg {
+  /* 방향(위/아래)은 컴포넌트 쪽(IconChevron rotateBase)에서 인라인 style로 이미 계산해서
+     내려주므로 여기서는 크기만 살짝 키운다 - transform을 여기 또 넣으면 인라인 style한테
+     항상 밀려서(우선순위 낮음) 적용도 안 되고 헷갈리기만 함. */
+  width: 16px;
+  height: 16px;
+}
+.control-content-tracking .sidebar-collapse-btn-right:hover {
+  background: var(--c-bg2);
+  border-color: var(--c-accent);
+}
+
+/* 대시보드/지도/CCTV/이벤트 4개 뷰가 번갈아 렌더링되는 사이드바 우측 영역.
+   대시보드 뷰일 때만 지도(flex:1) + 이벤트 카드열(380px)이 나란히 뜨고,
+   지도/CCTV/이벤트 전체화면 뷰일 때는 하나의 패널이 이 영역을 꽉 채운다. */
+.control-content {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.control-sidebar {
+  border-right: 1px solid var(--c-border);
+  padding: 22px 16px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  width: 280px;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  transition: width .2s ease, padding .2s ease, opacity .15s ease;
+}
+.control-sidebar.collapsed {
+  width: 0;
+  padding-left: 0;
+  padding-right: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.control-sidebar-section {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.control-sidebar-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: .12em;
+  color: var(--c-muted2);
+  margin-bottom: 8px;
+  padding: 0 6px;
+}
+
+.control-sidebar-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 12px;
+  padding: 8px 6px;
+  border-radius: 10px;
+  font-size: 14px;
+  color: var(--c-muted);
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.control-sidebar-row:not(.static):hover {
+  background: var(--c-bg3);
+  color: var(--c-text);
+}
+.control-sidebar-row.static {
+  cursor: default;
+}
+.control-sidebar-row-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: var(--c-bg3);
+  border: 1px solid var(--c-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--c-muted);
+  flex-shrink: 0;
+}
+.control-sidebar-row-icon svg {
+  width: 16px;
+  height: 16px;
+}
+.control-sidebar-row-label {
+  flex: 1;
+}
+.control-sidebar-row-count {
+  font-family: var(--font-mono);
+  color: var(--c-text);
+  font-weight: 700;
+  font-size: 13.5px;
+}
+
+.control-sidebar-row.active {
+  background: var(--c-bg3);
+  color: var(--c-text);
+}
+.control-sidebar-row.active .control-sidebar-row-icon {
+  background: var(--c-text);
+  color: var(--c-bg);
+  border-color: var(--c-text);
+}
+
+.control-sidebar-row.tone-red .control-sidebar-row-count {
+  color: var(--c-red);
+}
+.control-sidebar-row.tone-amber .control-sidebar-row-count {
+  color: var(--c-amber);
+}
+
+.control-map-col {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  border-right: 1px solid var(--c-border);
+}
+
+/* "지도" 사이드바 항목을 눌렀을 때 — 이벤트 카드열 없이 GIS 지도가 화면을 꽉 채움 */
+.control-map-col-full {
+  border-right: none;
+}
+
+/* CCTV/남은 이벤트/관심 대상 화면에서는 지도를 안 보여주지만, iframe은 계속 마운트해둔
+   채로 화면에서만 감춘다(display:none) — unmount하면 지도 안의 추적 진행 상태가 초기화됨.
+   display:none인 동안엔 flex 레이아웃에서 완전히 빠지므로 다른 전체화면 뷰의 너비에 영향 없음. */
+.control-map-col-hidden {
+  display: none;
+}
+
+.control-map-wrap {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  background:
+    radial-gradient(circle, rgba(255, 255, 255, .06) 1px, transparent 1.4px) 0 0 / 22px 22px,
+    var(--c-bg);
+}
+
+.control-map {
+  width: 100%;
+  height: 100%;
+  border: none;
+  display: block;
+  position: relative;
+  z-index: 1;
+}
+
+.control-map-fullscreen-btn {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  z-index: 2;
+  padding: 9px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--c-border2);
+  background: rgba(13, 15, 19, .78);
+  backdrop-filter: blur(8px);
+  color: var(--c-text);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.control-map-fullscreen-btn:hover {
+  border-color: var(--c-accent);
+}
+
+.control-events-col {
+  display: flex;
+  flex-direction: column;
+  width: 380px;
+  flex-shrink: 0;
+  min-height: 0;
+  padding: 18px 16px;
+  gap: 14px;
+  overflow: hidden;
+  box-sizing: border-box;
+  transition: width .2s ease, padding .2s ease, opacity .15s ease;
+}
+.control-events-col.collapsed {
+  width: 0;
+  padding-left: 0;
+  padding-right: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* CCTV 그리드뷰어 / 전체 이벤트 목록 전체화면 뷰 공용 래퍼 */
+.control-fullview {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 18px;
+  overflow-y: auto;
+}
+
+.control-events-head {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: .1em;
+  color: var(--c-muted2);
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.control-events-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.control-events-empty {
+  padding: 18px 10px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--c-muted2);
+  line-height: 1.6;
+}
+
+.control-event-card {
+  border: 1px solid var(--c-border);
+  border-radius: 12px;
+  background: var(--c-bg2);
+  padding: 12px 14px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--c-text);
+}
+.control-event-card:hover {
+  border-color: var(--c-border2);
+}
+.control-event-card.focused {
+  background: var(--c-bg3);
+  border-color: var(--c-accent);
+}
+.control-event-card.tier-3 {
+  border-color: color-mix(in srgb, var(--c-red) 55%, var(--c-border));
+  background: color-mix(in srgb, var(--c-red) 8%, var(--c-bg2));
+}
+.control-event-card.tier-2 {
+  border-color: color-mix(in srgb, var(--c-amber) 40%, var(--c-border));
+}
+
+/* "추적 차량 목록"에서 관심대상으로 등록만 되고 아직 실제 탐지 이벤트가 안 들어온 차량 -
+   지도에 보여줄 위치 정보가 없어 클릭해도 포커싱이 안 되므로, 클릭 가능한 카드들과
+   시각적으로 구분되게 커서/테두리를 다르게 준다. */
+.control-event-card.pending {
+  cursor: default;
+  border-style: dashed;
+  opacity: .85;
+}
+.control-event-card.pending:hover {
+  border-color: var(--c-border);
+}
+
+.control-event-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--c-muted2);
+}
+
+.control-event-pdf-btn {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  border: 1px solid var(--c-border);
+  background: var(--c-bg3);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.control-event-pdf-btn:hover:not(:disabled) {
+  border-color: var(--c-accent);
+}
+.control-event-pdf-btn:disabled {
+  opacity: .5;
+  cursor: default;
+}
+
+.control-event-title-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 14.5px;
+  font-weight: 700;
+  text-align: center;
+  justify-content: center;
+}
+
+.control-event-chip {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--c-border2);
+  letter-spacing: .02em;
+  font-weight: 600;
+}
+.control-event-chip.chip-red {
+  color: var(--c-red);
+  border-color: color-mix(in srgb, var(--c-red) 55%, var(--c-border2));
+}
+.control-event-chip.chip-amber {
+  color: var(--c-amber);
+  border-color: color-mix(in srgb, var(--c-amber) 55%, var(--c-border2));
+}
+
+.control-event-sub {
+  font-size: 12px;
+  color: var(--c-muted);
+  text-align: center;
+}
+
+.kiosk {
+  width: 100%;
+  height: 100vh;
+  background: #08090b;
+  color: #f5f6f8;
+  overflow: auto;
+
+  /* [버그 수정] .panel/.cctv-cell 등 재사용 컴포넌트들은 var(--c-border), var(--c-bg2) 같은
+     CSS 변수를 쓰는데, 그 변수들은 원래 .app-shell[data-theme="dark"]에만 정의돼 있었다.
+     kiosk 뷰(?view=cctv/events/map/monitor2/monitor3)는 .app-shell 밖에서 렌더링되므로
+     변수가 정의되지 않은 채로 쓰여서, CCTV 그리드 셀 등의 테두리/배경이 안 보이고 있었다.
+     kiosk 자체가 항상 다크 테마이므로 여기에도 같은 값을 정의해서 해결한다. */
+  --c-bg: #08090b;
+  --c-bg2: #0d0f13;
+  --c-bg3: #14171d;
+  --c-border: rgba(255, 255, 255, .09);
+  --c-border2: rgba(255, 255, 255, .16);
+  --c-text: #f5f6f8;
+  --c-muted: #90959f;
+  --c-muted2: #55595f;
+  --c-green: #4ade80;
+  --c-red: #ef4444;
+  --c-amber: #f5a623;
+  --c-cyan: #22d3ee;
+  --c-accent: #4ade80;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* 3분할 모드 2/3번 모니터(?view=monitor2/3) - CCTV 그리드 뷰어가 화면 전체를 꽉 채우게 한다.
+   기본 .kiosk는 그냥 overflow:auto인 블록 컨테이너라서, CctvGrid 내부의 flex:1 체인
+   (.cctv-panel → .cctv-grid)이 기준 삼을 flex 부모가 없어 그리드가 콘텐츠 크기만큼만
+   작게 그려졌었다 - 여기서 .kiosk 자체를 flex 컨테이너로 만들어 그 체인이 실제로
+   100vh 전체를 채우도록 한다. */
+.kiosk-cctv-fill {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 16px;
+}
+.kiosk-cctv-fill .cctv-panel {
+  flex: 1;
+  min-height: 0;
+}
+
+.pdf-report-offscreen {
+  position: fixed;
+  top: 0;
+  left: -99999px;
+  width: 800px;
+}
+
+.evidence-report-sheet {
+  width: 800px;
+  padding: 40px;
+  background: #ffffff;
+  color: #111111;
+  font-family: 'Inter', -apple-system, "Malgun Gothic", Arial, sans-serif;
+}
+
+.evidence-report-topline {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #555555;
+  letter-spacing: .04em;
+}
+
+.evidence-report-sheet hr {
+  border: none;
+  border-top: 2px solid #111111;
+  margin: 8px 0 20px;
+}
+
+.evidence-report-sheet h1 {
+  font-size: 20px;
+  margin: 0 0 20px;
+}
+
+.evidence-report-sheet h2 {
+  font-size: 14px;
+  margin: 0 0 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #dddddd;
+}
+
+.evidence-report-sheet section {
+  margin-bottom: 24px;
+}
+
+.evidence-kv {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.evidence-kv th {
+  text-align: left;
+  width: 140px;
+  padding: 6px 8px;
+  color: #555555;
+  font-weight: 600;
+  background: #f7f7f7;
+  border: 1px solid #e5e5e5;
+}
+.evidence-kv td {
+  padding: 6px 8px;
+  border: 1px solid #e5e5e5;
+}
+
+.evidence-images {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 16px;
-  padding: 14px 24px;
-  background: var(--panel-bg);
-  border-bottom: 1px solid var(--border);
 }
-header h1 { font-size: 18px; margin: 0; font-weight: 700; color: var(--text); }
-.status { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-muted); }
-.dot { width: 9px; height: 9px; border-radius: 50%; background: #c3c9d9; }
-.dot.on { background: #22b573; }
-.dot.off { background: var(--danger); }
-.stat { font-size: 13px; color: var(--text-muted); }
-.stat b { color: var(--text); font-size: 15px; }
-.filters { margin-left: auto; display: flex; gap: 8px; align-items: center; }
-select, input, button {
-  background: #f5f7fc; color: var(--text); border: 1px solid var(--border);
-  border-radius: 6px; padding: 6px 10px; font-size: 13px;
+.evidence-image-box {
+  border: 1px solid #e5e5e5;
 }
-button { cursor: pointer; }
-button:hover { background: var(--accent-soft); border-color: var(--accent); }
-label.toggle { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-muted); }
-
-main { display: flex; flex-direction: column; gap: 16px; padding: 20px 24px; }
-.top-row { display: grid; grid-template-columns: 1.6fr 1fr; gap: 16px; align-items: start; }
-@media (max-width: 1100px) {
-  .top-row { grid-template-columns: 1fr; }
+.evidence-image-label {
+  font-size: 11.5px;
+  color: #555555;
+  padding: 6px 8px;
+  background: #f7f7f7;
+  border-bottom: 1px solid #e5e5e5;
+}
+.evidence-image-frame {
+  position: relative;
+  height: 200px;
+  background: #f2f2f2;
+}
+.evidence-image-frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.evidence-image-empty {
+  width: 100%;
+  height: 100%;
+}
+.evidence-bbox {
+  position: absolute;
+  border: 2px solid #dc2626;
+  box-sizing: border-box;
+}
+.evidence-image-note {
+  font-size: 10.5px;
+  color: #888888;
+  margin-top: 6px;
 }
 
-.panel { background: var(--panel-bg); border: 1px solid var(--border); border-radius: 12px; padding: 18px;
-  box-shadow: 0 1px 2px rgba(30, 42, 74, 0.04); }
-.panel h2 { font-size: 14px; margin: 0 0 14px; color: var(--text); font-weight: 700; }
+.evidence-process-boxes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.evidence-process-box {
+  height: 70px;
+  border: 1px solid #e5e5e5;
+}
+.evidence-process-label {
+  font-size: 11.5px;
+  color: #555555;
+  padding: 6px 8px;
+}
 
-/* CCTV 그리드 */
-.cctv-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.evidence-report-footer {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #dddddd;
+  font-size: 10px;
+  color: #999999;
+}
+
+/* ==========================================================================
+   CCTV 그리드뷰어(CctvGrid) / 전체 이벤트 목록(EventList) / 공용 뱃지·프레임
+   기존엔 별도 모니터 팝업(?view=cctv|events)에서만 쓰여서 스타일이 없었음.
+   메인 대시보드 사이드바 네비게이션에서도 그대로 재사용하기 위해 다크/라이트
+   테마 변수(--c-*)에 맞춰 새로 추가.
+   ========================================================================== */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+  /* "남은 이벤트"(EventList) 화면처럼 안에 flex:1 + overflow-y:auto로 자체 스크롤하는
+     리스트(.tier-list)를 담는 패널은, 이 flex:1이 없으면 패널 자체가 내용 크기만큼
+     늘어나버려서 안쪽 리스트가 스크롤될 기준 높이를 못 잡는다(부모인 .control-fullview
+     전체가 대신 늘어나며 스크롤이 안 걸리는 것처럼 보이던 원인). */
+  flex: 1;
+}
+.panel h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--c-text);
+}
+
+/* --- CctvGrid --- */
+.cctv-panel {
+  flex: 1;
+  min-height: 0;
+}
+.cctv-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.cctv-panel-head-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.cam-manage-btn {
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--c-border);
+  background: var(--c-bg3);
+  color: var(--c-muted);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.cam-manage-btn:hover {
+  border-color: var(--c-accent);
+  color: var(--c-text);
+}
+
+.cam-count-toggle {
+  display: flex;
+  gap: 6px;
+}
+.cam-count-toggle button {
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--c-border);
+  background: var(--c-bg3);
+  color: var(--c-muted);
+  font-size: 12.5px;
+  font-family: var(--font-mono);
+  cursor: pointer;
+}
+.cam-count-toggle button:hover {
+  border-color: var(--c-accent);
+}
+.cam-count-toggle button.active {
+  background: var(--c-text);
+  color: var(--c-bg);
+  border-color: var(--c-text);
+}
+
+.cctv-grid {
+  display: grid;
+  gap: 10px;
+  flex: 1;
+  min-height: 0;
+}
+.cctv-grid-6 {
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(2, minmax(140px, 1fr));
+}
+.cctv-grid-9 {
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, minmax(120px, 1fr));
+}
+
 .cctv-cell {
-  border: 1px solid var(--border); border-radius: 10px; aspect-ratio: 4/3;
-  background: var(--panel-bg); cursor: pointer; overflow: hidden; position: relative;
-  display: flex; align-items: center; justify-content: center; transition: border-color .15s;
+  position: relative;
+  border: 1px solid var(--c-border);
+  border-radius: 12px;
+  background: var(--c-bg2);
+  overflow: hidden;
+  cursor: pointer;
+  display: flex;
 }
-.cctv-cell:hover { border-color: var(--accent); }
-.cctv-cell.active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft) inset; }
-.cctv-cell.idle { cursor: default; }
-.cctv-cell-idle { display: flex; flex-direction: column; align-items: center; gap: 4px; color: var(--text-muted); }
-.cctv-cell-cam { font-size: 13px; font-weight: 700; color: var(--text); }
-.cctv-cell-sub { font-size: 11px; color: var(--text-muted); }
-.cctv-cell-detail { width: 100%; height: 100%; display: flex; flex-direction: column; }
-.frames-mini { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 2px; background: var(--border); }
-.frames-mini img { width: 100%; height: 100%; object-fit: cover; }
-.cctv-cell-foot { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 6px 8px; background: var(--panel-bg); }
+.cctv-cell:hover {
+  border-color: var(--c-border2);
+}
+.cctv-cell.active {
+  border-color: var(--c-red);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--c-red) 55%, transparent);
+}
+.cctv-cell.idle {
+  opacity: .78;
+}
 
-.badge { display: inline-block; padding: 3px 9px; border-radius: 5px; font-size: 12px; font-weight: 600; }
+.cctv-cell-idle {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px;
+  text-align: center;
+}
+.cctv-cell-cam {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--c-text);
+}
+.cctv-cell-sub {
+  font-size: 11px;
+  color: var(--c-muted2);
+}
 
-/* 이벤트 리스트 - 위험도 아코디언 */
-.tier-list { display: flex; flex-direction: column; gap: 8px; }
+.cctv-cell-detail {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.frames-mini {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  background: var(--c-border);
+}
+.frames-mini img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.cctv-cell-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--c-bg3);
+  flex-shrink: 0;
+}
+
+/* 실시간 HLS 영상이 연결된 카메라(REAL_CAMERAS) 전용 셀 */
+.cctv-cell-live {
+  opacity: 1;
+}
+.cctv-cell-live-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.live-hls-video {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background: #000;
+}
+.live-hls-video video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.live-hls-status {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--c-muted2);
+  background: color-mix(in srgb, #000 55%, transparent);
+}
+.live-hls-status-error {
+  color: var(--c-red);
+}
+.cctv-cell-foot-live {
+  gap: 6px;
+  justify-content: flex-start;
+}
+.cctv-cell-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--c-red);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-red) 25%, transparent);
+  flex-shrink: 0;
+}
+.cctv-zoom-live-video {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.cctv-zoom-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .68);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  padding: 24px;
+}
+.cctv-zoom-box {
+  width: min(880px, 100%);
+  background: var(--c-bg2);
+  border: 1px solid var(--c-border2);
+  border-radius: 16px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.cctv-zoom-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.cctv-zoom-cam {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--c-text);
+  flex: 1;
+}
+.cctv-zoom-close {
+  border: 1px solid var(--c-border);
+  background: var(--c-bg3);
+  color: var(--c-text);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.cctv-zoom-close:hover {
+  border-color: var(--c-accent);
+}
+.frames-zoom {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.cctv-zoom-meta {
+  font-size: 13px;
+  color: var(--c-muted);
+  text-align: center;
+}
+.cctv-zoom-empty {
+  padding: 30px 10px;
+  text-align: center;
+  color: var(--c-muted2);
+  font-size: 13px;
+}
+
+.frame-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.frame-label {
+  font-size: 11.5px;
+  color: var(--c-muted2);
+  font-family: var(--font-mono);
+}
+.frame-box img {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--c-border);
+  display: block;
+}
+.frame-box .fallback {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  border: 1px dashed var(--c-border2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 8px;
+  font-size: 11.5px;
+  color: var(--c-muted2);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .01em;
+  white-space: nowrap;
+}
+
+/* --- EventList (위험도별 아코디언) --- */
+.tier-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.tier {
+  border: 1px solid var(--c-border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--c-bg2);
+  /* .tier-list의 flex 아이템인 .tier에 overflow:hidden이 걸려있으면, flexbox 스펙상
+     "자동 min-height"가 콘텐츠 크기가 아니라 0으로 계산된다(overflow가 visible이 아닌
+     flex 아이템의 특수 규칙). 그러면 열려있는 티어(예: 고위험, 카드 12개)가 여유 공간이
+     부족할 때 자기 콘텐츠 크기 이하로 짓눌려 찌그러지면서 내용이 조용히 잘려나가고,
+     정작 .tier-list 자체는 넘치는 걸로 계산이 안 돼서 스크롤바도 안 생긴다 - 스크롤이
+     전혀 안 되던 진짜 원인. flex-shrink:0으로 각 티어가 원래 콘텐츠 크기를 그대로
+     유지하게 하면, .tier-list가 실제로 넘치게 되고 그때 overflow-y:auto가 정상 동작한다. */
+  flex-shrink: 0;
+}
+.tier-3 { border-color: color-mix(in srgb, var(--c-red) 45%, var(--c-border)); }
+.tier-2 { border-color: color-mix(in srgb, var(--c-amber) 35%, var(--c-border)); }
+
 .tier-head {
-  width: 100%; display: flex; align-items: center; justify-content: space-between;
-  border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px;
-  background: var(--accent-soft); color: var(--text); font-size: 14px; font-weight: 700; text-align: left;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border: none;
+  background: transparent;
+  color: var(--c-text);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
 }
-.tier-head .tier-count {
-  background: rgba(255,255,255,.6); color: var(--text-muted); border-radius: 10px;
-  padding: 1px 9px; font-size: 12px; font-weight: 700;
+.tier-head:hover {
+  background: var(--c-bg3);
 }
-.tier-3 .tier-head { background: var(--accent); color: #fff; border-color: var(--accent); }
-.tier-3 .tier-head .tier-count { background: rgba(255,255,255,.25); color: #fff; }
-.tier-2 .tier-head { background: #fff7e0; border-color: #f3d98b; }
-.tier-1 .tier-head { background: #f5f7fc; }
-.tier-head.open { border-radius: 8px 8px 0 0; }
-.tier-body { border: 1px solid var(--border); border-top: none; border-radius: 0 0 8px 8px; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
-.tier-empty { text-align: center; color: var(--text-muted); font-size: 13px; padding: 16px 0; }
+.tier-head.open {
+  background: var(--c-bg3);
+}
+.tier-count {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--c-muted);
+}
 
-.event-row { border: 1px solid var(--border); border-left: 3px solid var(--border); border-radius: 8px; padding: 8px 10px; cursor: pointer; background: var(--panel-bg); }
-.event-row:hover { border-color: var(--accent); }
-.event-row.active { border-color: var(--accent); background: var(--accent-soft); }
-.tier-3 .event-row { border-left-color: var(--danger); }
-.tier-2 .event-row { border-left-color: var(--warning); }
-.tier-1 .event-row { border-left-color: #c3c9d9; }
-.event-row-top { display: flex; justify-content: space-between; align-items: center; gap: 6px; margin-bottom: 4px; }
-.event-row-top .time { margin-left: auto; }
-.event-row .cam { font-size: 12px; color: var(--text-muted); }
-.event-row .time { font-size: 11px; color: var(--text-muted); }
-.event-row .conf { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
-
-/* GIS 지도 탭 전환 */
-.view-tabs { display: flex; gap: 6px; margin: 0 8px; }
-.view-tabs button {
-  border: 1px solid var(--border); background: var(--panel-bg); color: var(--text-muted);
-  padding: 6px 14px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer;
+.tier-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 12px 12px;
+  /* 예전엔 열려있는 티어(예: 고위험 카드 12개)가 끝없이 늘어나고, 세 티어를 통틀어
+     .tier-list 하나가 통째로 스크롤됐다 - 그러면 "고위험" 리스트를 보다가 스크롤을
+     계속 내려야 "주의"/"저위험" 헤더가 나오는 구조였다. 이제는 열려있는 티어 하나의
+     카드 목록 자체가 이 높이(최대 420px, 화면이 작으면 화면의 55%) 안에서 자체
+     스크롤되고, 다른 티어 헤더들은 항상 그 아래 고정된 위치에 그대로 보인다. */
+  max-height: min(420px, 55vh);
+  overflow-y: auto;
 }
-.view-tabs button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.tier-empty {
+  padding: 14px 4px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--c-muted2);
+}
+
+.event-row {
+  border: 1px solid var(--c-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  background: var(--c-bg);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.event-row:hover {
+  border-color: var(--c-border2);
+}
+.event-row.active {
+  border-color: var(--c-accent);
+  background: var(--c-bg3);
+}
+.event-row-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.event-row-top-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.event-row .time {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--c-muted2);
+}
+.event-row .cam {
+  font-size: 12.5px;
+  color: var(--c-text);
+}
+.event-row .conf {
+  font-size: 11.5px;
+  color: var(--c-muted);
+}
+
+/* --- TargetsPanel (관심 대상 등록/추적종료) --- */
+.targets-panel {
+  flex: 1;
+  min-height: 0;
+}
+.targets-form {
+  border: 1px solid var(--c-border);
+  border-radius: 10px;
+  background: var(--c-bg3);
+  padding: 14px;
+}
+.targets-form-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+}
+.targets-form-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--c-muted);
+}
+.targets-form-row label.grow {
+  flex: 1;
+  min-width: 160px;
+}
+.targets-form-row input,
+.targets-form-row select {
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--c-border);
+  background: var(--c-bg2);
+  color: var(--c-text);
+  font-size: 13px;
+  font-family: inherit;
+}
+.targets-form-row input:focus,
+.targets-form-row select:focus {
+  outline: none;
+  border-color: var(--c-accent);
+}
+.targets-submit-btn {
+  padding: 9px 18px;
+  border-radius: 8px;
+  border: 1px solid var(--c-accent);
+  background: var(--c-accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.targets-submit-btn:disabled {
+  opacity: .6;
+  cursor: default;
+}
+.targets-form-error {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--c-red);
+}
+
+.targets-tabs {
+  display: flex;
+  gap: 6px;
+}
+.targets-tabs button {
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--c-border);
+  background: var(--c-bg3);
+  color: var(--c-muted);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.targets-tabs button:hover {
+  border-color: var(--c-accent);
+}
+.targets-tabs button.active {
+  background: var(--c-text);
+  color: var(--c-bg);
+  border-color: var(--c-text);
+}
+
+.targets-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.targets-empty {
+  padding: 24px 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--c-muted2);
+}
+.targets-error {
+  color: var(--c-red);
+}
+.targets-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--c-border);
+  border-radius: 10px;
+  background: var(--c-bg3);
+}
+.targets-row.closed {
+  opacity: .6;
+}
+.targets-type-badge {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  font-family: var(--font-mono);
+}
+.targets-type-badge.vehicle {
+  background: rgba(37, 99, 235, .14);
+  color: var(--c-accent);
+}
+.targets-type-badge.person {
+  background: rgba(217, 119, 6, .14);
+  color: var(--c-amber);
+}
+.targets-row-main {
+  flex: 1;
+  min-width: 0;
+}
+.targets-row-title {
+  font-size: 13.5px;
+  color: var(--c-text);
+  font-weight: 600;
+}
+.targets-row-sub {
+  font-size: 11.5px;
+  color: var(--c-muted2);
+  font-family: var(--font-mono);
+}
+.targets-close-btn {
+  flex-shrink: 0;
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--c-red);
+  background: transparent;
+  color: var(--c-red);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.targets-close-btn:hover {
+  background: rgba(220, 38, 38, .1);
+}
+.targets-close-btn:disabled {
+  opacity: .6;
+  cursor: default;
+}
+.targets-closed-chip {
+  flex-shrink: 0;
+  font-size: 11.5px;
+  color: var(--c-muted2);
+}
+
+/* --- VehicleAlertPopup (실시간 차량 이벤트 중앙 알림) --- */
+@keyframes vehicle-alert-pop-in {
+  from { opacity: 0; transform: translateY(8px) scale(.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.vehicle-alert-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 80;
+  padding: 24px;
+}
+.vehicle-alert-box {
+  position: relative;
+  width: min(420px, 100%);
+  background: var(--c-bg2);
+  border: 1px solid var(--c-border2);
+  border-radius: 16px;
+  padding: 20px 20px 18px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .35);
+  animation: vehicle-alert-pop-in .18s ease-out;
+}
+.vehicle-alert-box.tier-3 {
+  border-color: color-mix(in srgb, var(--c-red) 55%, var(--c-border));
+}
+.vehicle-alert-box.tier-2 {
+  border-color: color-mix(in srgb, var(--c-amber) 45%, var(--c-border));
+}
+.vehicle-alert-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  border: 1px solid var(--c-border);
+  background: var(--c-bg3);
+  color: var(--c-muted);
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.vehicle-alert-close:hover {
+  border-color: var(--c-accent);
+  color: var(--c-text);
+}
+.vehicle-alert-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: .08em;
+  color: var(--c-muted2);
+  margin-bottom: 4px;
+}
+.vehicle-alert-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--c-text);
+  margin-bottom: 14px;
+}
+.vehicle-alert-kv {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 16px;
+}
+.vehicle-alert-kv th {
+  text-align: left;
+  font-weight: 400;
+  font-size: 12.5px;
+  color: var(--c-muted);
+  padding: 5px 0;
+  width: 88px;
+  vertical-align: top;
+}
+.vehicle-alert-kv td {
+  text-align: left;
+  font-size: 13px;
+  color: var(--c-text);
+  padding: 5px 0;
+}
+.vehicle-alert-focus-btn {
+  width: 100%;
+  padding: 11px;
+  border-radius: 10px;
+  border: 1px solid var(--c-accent);
+  background: var(--c-accent);
+  color: #fff;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.vehicle-alert-focus-btn:hover {
+  filter: brightness(1.08);
+}
+
+/* --- EventDetailModal (이벤트 상세화면: 사건 전/후 이미지 · 위치 · PDF 리포트) --- */
+.event-detail-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 85;
+  padding: 24px;
+}
+.event-detail-box {
+  position: relative;
+  width: min(560px, 100%);
+  max-height: 90vh;
+  overflow-y: auto;
+  background: var(--c-bg2);
+  border: 1px solid var(--c-border2);
+  border-radius: 16px;
+  padding: 22px 22px 20px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .35);
+  animation: vehicle-alert-pop-in .18s ease-out;
+}
+.event-detail-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  border: 1px solid var(--c-border);
+  background: var(--c-bg3);
+  color: var(--c-muted);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+}
+.event-detail-close:hover {
+  border-color: var(--c-accent);
+  color: var(--c-text);
+}
+.event-detail-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: .08em;
+  color: var(--c-muted2);
+  margin-bottom: 4px;
+}
+.event-detail-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--c-text);
+  margin: 0 0 14px;
+}
+.event-detail-kv {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 18px;
+}
+.event-detail-kv th {
+  text-align: left;
+  font-weight: 400;
+  font-size: 12.5px;
+  color: var(--c-muted);
+  padding: 5px 0;
+  width: 100px;
+  vertical-align: top;
+}
+.event-detail-kv td {
+  text-align: left;
+  font-size: 13px;
+  color: var(--c-text);
+  padding: 5px 0;
+}
+.event-detail-images {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.event-detail-image-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.event-detail-image-label {
+  font-size: 11.5px;
+  color: var(--c-muted2);
+  text-align: center;
+}
+.event-detail-image-frame {
+  aspect-ratio: 4 / 3;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--c-border);
+  background: var(--c-bg3);
+}
+.event-detail-image-frame img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.event-detail-image-empty {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: var(--c-muted2);
+}
+.event-detail-pdf-btn {
+  width: 100%;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--c-accent);
+  background: var(--c-accent);
+  color: #fff;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.event-detail-pdf-btn:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+.event-detail-pdf-btn:disabled {
+  opacity: .6;
+  cursor: default;
+}
+
+/* --- CameraManagerModal (카메라 마스터 데이터 관리) --- */
+.cam-mgr-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 90;
+  padding: 24px;
+}
+.cam-mgr-box {
+  width: min(720px, 100%);
+  max-height: min(720px, 90vh);
+  background: var(--c-bg2);
+  border: 1px solid var(--c-border2);
+  border-radius: 16px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.cam-mgr-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.cam-mgr-head h2 {
+  font-size: 15px;
+}
+.cam-mgr-close {
+  border: 1px solid var(--c-border);
+  background: var(--c-bg3);
+  color: var(--c-text);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.cam-mgr-close:hover {
+  border-color: var(--c-accent);
+}
+.cam-mgr-form {
+  border: 1px solid var(--c-border);
+  border-radius: 10px;
+  background: var(--c-bg3);
+  padding: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+}
+.cam-mgr-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--c-muted);
+}
+.cam-mgr-form label.grow {
+  flex: 1;
+  min-width: 140px;
+}
+.cam-mgr-form input,
+.cam-mgr-form select {
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--c-border);
+  background: var(--c-bg2);
+  color: var(--c-text);
+  font-size: 13px;
+  font-family: inherit;
+}
+.cam-mgr-form input:focus,
+.cam-mgr-form select:focus {
+  outline: none;
+  border-color: var(--c-accent);
+}
+.cam-mgr-submit-btn {
+  padding: 9px 18px;
+  border-radius: 8px;
+  border: 1px solid var(--c-accent);
+  background: var(--c-accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cam-mgr-submit-btn:disabled {
+  opacity: .6;
+  cursor: default;
+}
+/* UTIC 카메라 사전 등록 카탈로그 자동완성 - cam_id/이름 입력창을 감싸서 그 아래에
+   드롭다운을 절대좌표로 띄운다. flex 속성은 기존에 label 두 개가 .cam-mgr-form의
+   직접 자식이었을 때와 레이아웃이 그대로 보이도록 동일하게 맞춘 것. */
+.cam-mgr-autocomplete-wrap {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  flex: 1;
+}
+.cam-mgr-suggest-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 4px;
+  background: var(--c-bg2);
+  border: 1px solid var(--c-border2);
+  border-radius: 10px;
+  overflow: hidden;
+  max-height: 220px;
+  overflow-y: auto;
+  z-index: 20;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
+}
+.cam-mgr-suggest-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border: none;
+  border-bottom: 1px solid var(--c-border);
+  background: none;
+  color: var(--c-text);
+  font-size: 12.5px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.cam-mgr-suggest-item:last-child {
+  border-bottom: none;
+}
+.cam-mgr-suggest-item:hover {
+  background: var(--c-bg3);
+}
+.cam-mgr-suggest-camid {
+  font-family: var(--font-mono);
+  color: var(--c-muted);
+  flex-shrink: 0;
+}
+.cam-mgr-suggest-name {
+  flex: 1;
+  font-weight: 600;
+}
+.cam-mgr-suggest-badge {
+  flex-shrink: 0;
+  font-size: 10.5px;
+  color: var(--c-accent);
+  border: 1px solid var(--c-accent);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+.cam-mgr-form-error {
+  font-size: 12px;
+  color: var(--c-red);
+}
+.cam-mgr-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cam-mgr-empty {
+  padding: 24px 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--c-muted2);
+}
+.cam-mgr-error {
+  color: var(--c-red);
+}
+.cam-mgr-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--c-border);
+  border-radius: 10px;
+  background: var(--c-bg3);
+}
+.cam-mgr-row.inactive {
+  opacity: .55;
+}
+.cam-mgr-live-badge {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  background: var(--c-bg2);
+  color: var(--c-muted2);
+}
+.cam-mgr-live-badge.on {
+  background: color-mix(in srgb, var(--c-red) 16%, transparent);
+  color: var(--c-red);
+}
+.cam-mgr-row-main {
+  flex: 1;
+  min-width: 0;
+}
+.cam-mgr-row-title {
+  font-size: 13.5px;
+  color: var(--c-text);
+  font-weight: 600;
+}
+.cam-mgr-row-camid {
+  margin-left: 6px;
+  font-size: 11.5px;
+  color: var(--c-muted2);
+  font-family: var(--font-mono);
+  font-weight: 400;
+}
+.cam-mgr-row-sub {
+  font-size: 11.5px;
+  color: var(--c-muted2);
+}
+.cam-mgr-toggle-btn,
+.cam-mgr-delete-btn {
+  flex-shrink: 0;
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--c-border);
+  background: transparent;
+  color: var(--c-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.cam-mgr-toggle-btn:hover {
+  border-color: var(--c-accent);
+  color: var(--c-text);
+}
+.cam-mgr-delete-btn {
+  border-color: var(--c-red);
+  color: var(--c-red);
+}
+.cam-mgr-delete-btn:hover {
+  background: rgba(220, 38, 38, .1);
+}
+.cam-mgr-toggle-btn:disabled,
+.cam-mgr-delete-btn:disabled {
+  opacity: .6;
+  cursor: default;
+}

@@ -78,6 +78,7 @@ public class EventService {
         Event saved = eventRepository.save(event);
         EventResponse response = EventResponse.from(saved, objectMapper);
         messagingTemplate.convertAndSend("/topic/events", response);
+
         return response;
     }
 

@@ -31,8 +31,44 @@ DB 비밀번호가 root 기본값이 아니면 실행 전에 환경변수로 지
 
 ```bash
 export DB_USERNAME=root
-export DB_PASSWORD=your_password
+export DB_PASSWORD=Omecca\!2026 #비밀번호에 특수문자 있을 시 앞에 \넣기
 ```
+
+`GATEWAY_API_KEY` / `JWT_SECRET`도 반드시 실행 전에 지정해야 합니다 (기본값 없음 — 안 넣으면
+게이트웨이가 아예 안 켜집니다). 팀 전체가 같은 값을 써야 모듈→게이트웨이 인증(`X-API-Key`)이
+맞으니, 아래 값을 그대로 쓰세요:
+
+```bash
+export GATEWAY_API_KEY=omecca-dev-key-2026
+export JWT_SECRET=omecca-jwt-secret-change-this
+```
+
+> **Windows(PowerShell) 쓰는 사람은 주의**: 위 `export` 명령어는 Mac/Linux(bash·zsh) 전용
+> 문법입니다. PowerShell에서는 아무 에러 없이 그냥 무시되기 때문에 환경변수가 하나도
+> 설정되지 않은 채로 실행하게 되는데, 겉으로는 "가이드대로 했는데 인증이 안 된다"처럼
+> 보입니다. PowerShell에서는 아래처럼 쓰세요(4개 값 전부 동일하게 적용):
+>
+> ```powershell
+> $env:DB_USERNAME="root"
+> $env:DB_PASSWORD="Omecca!2026"
+> $env:GATEWAY_API_KEY="omecca-dev-key-2026"
+> $env:JWT_SECRET="omecca-jwt-secret-change-this"
+> ```
+>
+> 이 방식은 그 터미널 창을 닫으면 사라집니다. 매번 다시 치기 싫으면 `application.properties`
+> 맨 아래에 `gateway.api-key=omecca-dev-key-2026`, `app.auth.jwt-secret=omecca-jwt-secret-change-this`
+> 두 줄을 직접 추가해두는 게 더 편합니다 — 이러면 OS와 무관하게 항상 같은 값으로 고정됩니다.
+
+터미널을 새로 열 때마다 다시 실행해야 하면 `~/.zshrc` 맨 아래에 이 4줄을 추가해두면 편합니다.
+(실제 배포 시에는 이 값들을 `openssl rand -hex 32` 등으로 만든 진짜 랜덤 값으로 바꿔서 쓰세요 —
+지금은 팀 전체가 같은 값으로 맞춰야 병합 작업이 되니 이 기본값 그대로 씁니다.)
+
+`JWT_SECRET`은 길이 제한이 있는 값이 아닙니다 — 이 프로젝트는 jjwt 같은 외부 라이브러리 없이
+HMAC-SHA256을 직접 구현해서 쓰기 때문에(`JwtService.java`), 32바이트 미만이라고 `WeakKeyException`
+같은 에러가 나지 않습니다. 즉 **아무 문자열이나 써도 되지만, 그 값을 팀원 전원이 정확히 똑같이
+써야만** 합니다. JWT는 "발급한 서버"와 "검증하는 서버"가 같은 비밀키로 서명을 확인하는 구조라,
+한 글자라도 다르면 다른 사람이 로그인해서 받은 토큰이 내 서버에서 401로 거부됩니다 — 새로운
+값을 만들 필요는 없고, 위에 적힌 `omecca-jwt-secret-change-this`를 그대로 맞춰 쓰면 됩니다.
 
 ---
 
@@ -49,6 +85,10 @@ cd b_gateway
   ```bash
   curl localhost:8080/api/health
   ```
+
+> **참고**: `GATEWAY_API_KEY`/`JWT_SECRET`을 위 1번 단계에서 export 안 하고 그냥 실행하면
+> `Could not resolve placeholder 'GATEWAY_API_KEY'` 에러와 함께 게이트웨이가 안 켜집니다.
+> `DB_USERNAME`/`DB_PASSWORD`와 동일하게 필수값으로 바뀌었으니 꼭 먼저 export하세요.
 
 ---
 
@@ -79,21 +119,53 @@ rm -rf ../b_gateway/src/main/resources/static/*
 cp -r dist/* ../b_gateway/src/main/resources/static/
 ```
 
-이후엔 `http://localhost:8080`으로 접속하면 됨 (기존 방식과 동일).
+---
+
+## 3-1. GIS 지도 서버(e_tracking/SmartCCTV) 실행
+
+대시보드 화면 중앙의 지도는 `b_dashboard`가 아니라 **별도의 Node 서버**(`e_tracking/SmartCCTV/server`)가
+`http://localhost:4000`에서 띄우는 페이지를 iframe(`?embed=map`)으로 불러오는 구조입니다.
+이 서버를 안 띄우면 지도 부분만 비어 보이거나, 브라우저 콘솔에 `localhost:4000` 관련
+**404 Not Found**가 찍힙니다 — 대시보드/게이트웨이가 멀쩡히 떠 있어도 지도 서버가 따로 안 떠 있으면 발생하는 정상적인 증상입니다.
+
+```bash
+cd e_tracking/SmartCCTV
+cp .env.example .env    # 처음 한 번만 — 값 채워넣기(아래 참고)
+cd server
+npm install              # 처음 한 번만
+node server.js
+```
+
+- 기본 포트 `4000`. 정상 기동되면 콘솔에 `UTIC 프록시 테스트 서버 실행 중: http://localhost:4000`이 찍힘.
+- `.env`(`e_tracking/SmartCCTV/.env`, `server/`가 아니라 그 한 단계 위)에 최소한 아래 값은 채워야 함:
+  - `GATEWAY_API_KEY=omecca-dev-key-2026` — **1단계에서 게이트웨이에 export한 값과 반드시 동일해야 함**
+    (다르면 이 서버가 감지한 이상운전(DUI_PATTERN) 이벤트를 게이트웨이로 전달할 때 `401`로 거절당함)
+  - `UTIC_API_KEY` / `UTIC_CCTV_API_URL` 등 UTIC 관련 값 — 실제 CCTV 영상 연동에만 필요, 없어도
+    지도 자체(Forza 데모, 실시간 이벤트 표시)는 정상 동작함
+  - `PGHOST` 등 PostGIS 값 — 연결 실패해도 서버는 죽지 않고 그대로 뜸(선택 사항)
+- 헬스체크: `curl localhost:4000/api/health`
+- **"Port 4000 was already in use"** 에러가 나면 `lsof -i :4000` → `kill -9 <PID>` 후 재시도.
 
 ---
 
 ## 4. Target / ROI 등록 API 테스트 (선택)
 
+> 이 아래 `/api/**` 요청들은 전부 `ApiKeyFilter`가 걸려 있어서 `X-API-Key` 헤더가 없으면
+> `401 {"error":"UNAUTHORIZED", ...}`로 거절당함(2단계에서 게이트웨이가 이미 떠 있어야 함).
+> 기본 키는 `omecca-dev-key-2026`(application.yml의 `gateway.api-key` 기본값, `b_dashboard/src/config.js`와 동일 —
+> `GATEWAY_API_KEY` 환경변수로 바꿔서 띄웠으면 그 값을 대신 넣을 것).
+
 ```bash
 # 관심 대상 등록
 curl -X POST localhost:8080/api/targets \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: omecca-dev-key-2026" \
   -d '{"targetType":"VEHICLE","plateNumber":"12가3456","registeredBy":"operator01"}'
 
 # ROI 등록
 curl -X POST localhost:8080/api/rois \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: omecca-dev-key-2026" \
   -d '{"camId":"CAM-01","roiType":"ZONE","name":"1번 차로 정지구역","geometryJson":{"type":"polygon","points":[[0,0],[100,0],[100,100],[0,100]]}}'
 ```
 
@@ -104,6 +176,7 @@ curl -X POST localhost:8080/api/rois \
 ```bash
 cd b_gateway
 python3 scripts/mock_events.py --count 10 --interval 1
+# GATEWAY_API_KEY를 기본값이 아닌 다른 값으로 띄웠다면: --api-key <그 값>도 같이 넘길 것
 ```
 
 - 콘솔에 `[201] {...}` 로 저장된 이벤트가 찍힘
@@ -140,7 +213,7 @@ Image.new('RGB', (640,480), (90,40,40)).save('samples_after.jpg')
 
 ```bash
 python -m src.main \
-  --event-id 2 \
+  --event-id 4 \
   --title "신호위반 증거 리포트" \
   --event-type SIGNAL_VIOLATION \
   --occurred-at "2026-08-06T13:22:27" \
@@ -174,16 +247,17 @@ curl localhost:8080/api/reports
 - PDF 한글은 reportlab 내장 CID 폰트(`HYSMyeongJo-Medium`, `HYGothic-Medium`)로 렌더링됨.
   별도 폰트 파일 설치 불필요하나, `·`(가운뎃점) 같은 특수문자는 깨지므로 텍스트에 넣지 말 것 — `/`나 `-`로 대체.
 - report는 `event_id`당 1건만 등록 가능 (DB `UNIQUE` 제약). 같은 이벤트로 재테스트하려면 다른 이벤트 id 사용.
-- 인증/권한은 아직 미구현 상태 (탐지 모듈용 API 키, 관제요원 로그인/JWT 예정 — 다음 작업).
+- 인증/권한은 이미 구현 완료 — 모듈→게이트웨이는 `X-API-Key`, 관제요원 로그인은 JWT(1단계 참고).
 
 ---
 
 ## 전체 순서 한눈에 보기
 
 1. `mysql -u root -p < b_gateway/src/main/resources/schema.sql`
-2. `cd b_gateway && ./mvnw spring-boot:run`
+2. `export GATEWAY_API_KEY=... JWT_SECRET=...` (1단계 참고) → `cd b_gateway && ./mvnw spring-boot:run`
 3. `cd b_dashboard && npm install && npm run dev` → 브라우저 `http://localhost:5173` 접속 확인
-4. (선택) `/api/targets`, `/api/rois` curl 테스트
-5. `python3 scripts/mock_events.py --count 10 --interval 1`
-6. `cd b_report && source .venv/bin/activate && python -m src.main ...`
-7. `curl localhost:8080/api/reports` 로 최종 확인
+4. `cd e_tracking/SmartCCTV/server && npm install && node server.js` → 지도가 안 뜨거나 404가 나면 이 서버가 꺼져있는 것
+5. (선택) `/api/targets`, `/api/rois` curl 테스트
+6. `python3 scripts/mock_events.py --count 10 --interval 1`
+7. `cd b_report && source .venv/bin/activate && python -m src.main ...`
+8. `curl localhost:8080/api/reports` 로 최종 확인
