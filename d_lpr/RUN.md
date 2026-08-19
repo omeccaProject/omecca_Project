@@ -368,11 +368,11 @@ db:
   driver: mysql
   host: localhost
   port: 3306
-  user: omeca
-  database: omeca
+  user: omecca
+  database: omecca
 ```
 
-비밀번호는 `config.yaml` 에 적지 않는다. `.env` 의 `OMECA_DB_PASSWORD` 를 쓴다.
+비밀번호는 `config.yaml` 에 적지 않는다. `.env` 의 `OMECCA_DB_PASSWORD` 를 쓴다.
 
 팀 DB(`omecca`: target/roi/event/report)와는 테이블이 겹치지 않는다.
 우리 것은 차량 원장·위반·인식로그로, 미등록 차량 판별에 쓴다.

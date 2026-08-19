@@ -40,6 +40,7 @@ sys.path.insert(0, str(BASE))
 
 from app.core.schemas import ViolationType                       # noqa: E402
 from app.violation.engine import ViolationEngine                 # noqa: E402
+from app.core.gateway import GatewayClient                       # noqa: E402
 from app.violation.roi import ZoneRegistry                       # noqa: E402
 from app.violation.signal_state import (                         # noqa: E402
     PedPhase, SignalPhase, TimelineSignal,
@@ -153,6 +154,8 @@ def main() -> None:
     ap.add_argument("--show", action="store_true")
     ap.add_argument("--save", default="")
     ap.add_argument("--events", default=str(BASE / "output" / "uturn_events.json"))
+    ap.add_argument("--gateway", default="", metavar="URL",
+                    help="b_gateway 로도 전송 (예: http://localhost:8080)")
     ap.add_argument("--lpr", action="store_true", help="번호판 인식도 함께 (느림)")
     a = ap.parse_args()
 
@@ -228,6 +231,12 @@ def main() -> None:
 
     # --- 엔진 --------------------------------------------------------
     engine = ViolationEngine(zones=zones, signal_provider=signal)
+
+    gw = None
+    if a.gateway:
+        gw = GatewayClient(base_url=a.gateway).start()
+        gw.subscribe_to_bus()
+        print(f"게이트웨이 전송: {gw.url}")
 
     # --- 차량 검출 ---------------------------------------------------
     if a.fake:
@@ -307,6 +316,9 @@ def main() -> None:
         api_signal.stop()
         print(f"\n신호 API 폴링 {api_signal.stats['polls']}회 "
               f"(성공 {api_signal.stats['ok']} / 실패 {api_signal.stats['failed']})")
+    if gw is not None:
+        gw.stop(drain=True)
+        print(f"게이트웨이 전송 결과: {gw.stats}")
     if writer is not None:
         writer.release()
     if a.show:

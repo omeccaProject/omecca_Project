@@ -13,8 +13,8 @@ from pathlib import Path
 from typing import Any
 
 BASE_DIR = Path(__file__).resolve().parents[2]
-CONFIG_PATH = Path(os.environ.get("OMECA_CONFIG", BASE_DIR / "config.yaml"))
-ENV_PATH = Path(os.environ.get("OMECA_ENV", BASE_DIR / ".env"))
+CONFIG_PATH = Path(os.environ.get("OMECCA_CONFIG", BASE_DIR / "config.yaml"))
+ENV_PATH = Path(os.environ.get("OMECCA_ENV", BASE_DIR / ".env"))
 
 
 def load_dotenv(path: Path = ENV_PATH, override: bool = False) -> int:
@@ -155,12 +155,12 @@ def _env(key: str, default: Any) -> Any:
 class DBConfig:
     # driver: sqlite (로컬/모의) | mysql (실 운영)
     driver: str = "sqlite"
-    sqlite_path: str = str(BASE_DIR / "data" / "omeca.db")
+    sqlite_path: str = str(BASE_DIR / "data" / "omecca.db")
     host: str = "localhost"
     port: int = 3306
-    user: str = "omeca"
-    password: str = "omeca"
-    database: str = "omeca"
+    user: str = "omecca"
+    password: str = "omecca"
+    database: str = "omecca"
 
 
 @dataclass
@@ -239,14 +239,14 @@ class Settings:
                     setattr(target, k, v)
 
         # 환경변수 오버라이드
-        s.lpr.mock = _env("OMECA_LPR_MOCK", s.lpr.mock)
-        s.db.driver = _env("OMECA_DB_DRIVER", s.db.driver)
-        s.db.host = _env("OMECA_DB_HOST", s.db.host)
-        s.db.port = _env("OMECA_DB_PORT", s.db.port)
-        s.db.user = _env("OMECA_DB_USER", s.db.user)
-        s.db.password = _env("OMECA_DB_PASSWORD", s.db.password)
-        s.db.database = _env("OMECA_DB_NAME", s.db.database)
-        s.server.port = _env("OMECA_PORT", s.server.port)
+        s.lpr.mock = _env("OMECCA_LPR_MOCK", s.lpr.mock)
+        s.db.driver = _env("OMECCA_DB_DRIVER", s.db.driver)
+        s.db.host = _env("OMECCA_DB_HOST", s.db.host)
+        s.db.port = _env("OMECCA_DB_PORT", s.db.port)
+        s.db.user = _env("OMECCA_DB_USER", s.db.user)
+        s.db.password = _env("OMECCA_DB_PASSWORD", s.db.password)
+        s.db.database = _env("OMECCA_DB_NAME", s.db.database)
+        s.server.port = _env("OMECCA_PORT", s.server.port)
         return s
 
 

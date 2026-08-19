@@ -247,7 +247,7 @@ def main() -> int:
     print("    db:\n      driver: mysql")
     print(f"      host: {a.host}\n      port: {a.port}")
     print(f"      user: {a.user}\n      database: {a.database}")
-    print("\n비밀번호는 config.yaml 에 적지 말고 .env 의 OMECA_DB_PASSWORD 를 쓴다.")
+    print("\n비밀번호는 config.yaml 에 적지 말고 .env 의 OMECCA_DB_PASSWORD 를 쓴다.")
     return 0
 
 

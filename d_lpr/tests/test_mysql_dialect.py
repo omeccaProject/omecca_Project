@@ -47,7 +47,10 @@ class TestSchemaFiles:
             for s in sqlglot.parse(sql, dialect="mysql")
             if isinstance(s, exp.Create) and s.args.get("kind") == "TABLE"
         }
-        assert {"vehicle", "violation", "plate_read_log"} <= tables
+        # violation 은 ERD v1.0 결정 2번으로 event 로 흡수됐다.
+        # repository.py 가 자체 DDL 로 로컬 저장소(SQLite/MySQL)에만 만든다.
+        assert {"vehicle", "plate_read_log"} <= tables
+        assert "violation" not in tables
 
     def test_seed_plates_are_valid_format(self):
         """시드에 실재하지 않는 번호판이 섞이면 대조 테스트가 무의미해진다."""
@@ -66,9 +69,13 @@ class TestSchemaFiles:
             assert f"'{row[0]}'" in sql, f"seed.sql 에 {row[0]} 누락"
 
     def test_violation_has_no_fk_to_vehicle(self):
-        """미등록 차량도 기록해야 하므로 vehicle 로의 FK 가 있으면 안 된다."""
-        sql = (ROOT / "sql" / "schema.sql").read_text(encoding="utf-8")
-        body = sql.split("CREATE TABLE IF NOT EXISTS violation")[1].split(";")[0]
+        """미등록 차량도 기록해야 하므로 vehicle 로의 FK 가 있으면 안 된다.
+
+        violation 테이블은 sql/schema.sql 에서 빠지고 repository.py 의
+        자체 DDL 로만 만들어지므로, 검사 대상도 그쪽으로 옮긴다.
+        """
+        src = (ROOT / "app" / "vehicle" / "repository.py").read_text(encoding="utf-8")
+        body = src.split("CREATE TABLE IF NOT EXISTS violation")[1].split(")\"\"\"")[0]
         assert "FOREIGN KEY" not in body.upper()
 
 

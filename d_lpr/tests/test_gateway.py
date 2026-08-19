@@ -122,9 +122,13 @@ class TestMeta:
                   "stationaryDurationSec", "trajectoryFeatures"):
             assert k in m
 
-    def test_roi_id_extracted_from_zone(self):
-        assert to_gateway_payload(make_event(zone_id="INT-12"))["roiId"] == 12
-        assert to_gateway_payload(make_event(zone_id="uturn_A"))["roiId"] is None
+    def test_roi_id_always_null(self):
+        # b_gateway 의 roi.id 와 대응 관계가 없으므로 숫자를 만들지 않는다.
+        # 원본 zone_id 는 meta.roiName 으로 전달한다.
+        for z in ("INT-12", "uturn_A", "uturn_B2", "center_uturn3"):
+            p = to_gateway_payload(make_event(zone_id=z))
+            assert p["roiId"] is None
+            assert p["meta"]["roiName"] == z
 
 
 class TestBusPayload:

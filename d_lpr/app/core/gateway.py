@@ -100,13 +100,13 @@ def to_gateway_payload(
         "objectClass": OBJECT_CLASS_VEHICLE,
         "bbox": box,
         "confidence": round(float(confidence if confidence is not None
-                                  else ev.plate_confidence), 4),
+                                  else ev.plate_confidence), 3),
         "occurredAt": datetime.fromtimestamp(ev.timestamp).strftime("%Y-%m-%dT%H:%M:%S"),
         "location": ({"lat": lat, "lng": lng} if lat is not None else None),
         "isRegisteredTarget": bool(is_registered_target),
         "targetId": target_id,
         # ROI/가상 라인 ID. 우리는 문자열 zone_id 를 쓰므로 meta 에도 원본을 남긴다
-        "roiId": _as_long(ev.zone_id),
+        "roiId": None,
         "meta": {
             "plateNumber": ev.plate_no or None,
             "matchedDbId": matched_db_id,
@@ -145,14 +145,6 @@ def _risk_category(type_value: str) -> Optional[str]:
         return RISK_CATEGORY.get(ViolationType(type_value))
     except ValueError:
         return None
-
-
-def _as_long(zone_id: str) -> Optional[int]:
-    """'INT-A' 같은 문자열 ROI 식별자에서 숫자만 뽑는다. 없으면 None."""
-    if not zone_id:
-        return None
-    digits = "".join(ch for ch in zone_id if ch.isdigit())
-    return int(digits) if digits else None
 
 
 # ==========================================================================
@@ -292,7 +284,7 @@ def _payload_from_bus(p: dict[str, Any]) -> dict[str, Any]:
         "location": ({"lat": loc[0], "lng": loc[1]} if loc else None),
         "isRegisteredTarget": False,
         "targetId": None,
-        "roiId": _as_long(p.get("zone_id", "")),
+        "roiId": None,
         "meta": {
             "plateNumber": p.get("plate_no") or None,
             "matchedDbId": None,

@@ -1,15 +1,14 @@
 # 오메카3 - LPR / 차량 위반 감지 설정
-# 환경변수가 있으면 환경변수가 우선한다 (예: OMECA_LPR_MOCK=0)
+# 환경변수가 있으면 환경변수가 우선한다 (예: OMECCA_LPR_MOCK=0)
 
 db:
-  # sqlite: 로컬 개발·시연 / mysql: 팀 통합 서버
   driver: sqlite
-  sqlite_path: data/omeca.db
+  sqlite_path: data/omecca.db
   host: localhost
   port: 3306
-  user: omeca
-  password: omeca
-  database: omeca
+  user: omecca
+  password: omecca
+  database: omecca
 
 lpr:
   # true 이면 YOLO 가중치·EasyOCR·영상 없이도 전체 파이프라인이 동작한다
