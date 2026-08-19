@@ -31,7 +31,7 @@ DB 비밀번호가 root 기본값이 아니면 실행 전에 환경변수로 지
 
 ```bash
 export DB_USERNAME=root
-export DB_PASSWORD=your_password
+export DB_PASSWORD=Omecca\!2026 #비밀번호에 특수문자 있을 시 앞에 \넣기
 ```
 
 `GATEWAY_API_KEY` / `JWT_SECRET`도 반드시 실행 전에 지정해야 합니다 (기본값 없음 — 안 넣으면
@@ -43,9 +43,32 @@ export GATEWAY_API_KEY=omecca-dev-key-2026
 export JWT_SECRET=omecca-jwt-secret-change-this
 ```
 
+> **Windows(PowerShell) 쓰는 사람은 주의**: 위 `export` 명령어는 Mac/Linux(bash·zsh) 전용
+> 문법입니다. PowerShell에서는 아무 에러 없이 그냥 무시되기 때문에 환경변수가 하나도
+> 설정되지 않은 채로 실행하게 되는데, 겉으로는 "가이드대로 했는데 인증이 안 된다"처럼
+> 보입니다. PowerShell에서는 아래처럼 쓰세요(4개 값 전부 동일하게 적용):
+>
+> ```powershell
+> $env:DB_USERNAME="root"
+> $env:DB_PASSWORD="Omecca!2026"
+> $env:GATEWAY_API_KEY="omecca-dev-key-2026"
+> $env:JWT_SECRET="omecca-jwt-secret-change-this"
+> ```
+>
+> 이 방식은 그 터미널 창을 닫으면 사라집니다. 매번 다시 치기 싫으면 `application.properties`
+> 맨 아래에 `gateway.api-key=omecca-dev-key-2026`, `app.auth.jwt-secret=omecca-jwt-secret-change-this`
+> 두 줄을 직접 추가해두는 게 더 편합니다 — 이러면 OS와 무관하게 항상 같은 값으로 고정됩니다.
+
 터미널을 새로 열 때마다 다시 실행해야 하면 `~/.zshrc` 맨 아래에 이 4줄을 추가해두면 편합니다.
 (실제 배포 시에는 이 값들을 `openssl rand -hex 32` 등으로 만든 진짜 랜덤 값으로 바꿔서 쓰세요 —
 지금은 팀 전체가 같은 값으로 맞춰야 병합 작업이 되니 이 기본값 그대로 씁니다.)
+
+`JWT_SECRET`은 길이 제한이 있는 값이 아닙니다 — 이 프로젝트는 jjwt 같은 외부 라이브러리 없이
+HMAC-SHA256을 직접 구현해서 쓰기 때문에(`JwtService.java`), 32바이트 미만이라고 `WeakKeyException`
+같은 에러가 나지 않습니다. 즉 **아무 문자열이나 써도 되지만, 그 값을 팀원 전원이 정확히 똑같이
+써야만** 합니다. JWT는 "발급한 서버"와 "검증하는 서버"가 같은 비밀키로 서명을 확인하는 구조라,
+한 글자라도 다르면 다른 사람이 로그인해서 받은 토큰이 내 서버에서 401로 거부됩니다 — 새로운
+값을 만들 필요는 없고, 위에 적힌 `omecca-jwt-secret-change-this`를 그대로 맞춰 쓰면 됩니다.
 
 ---
 
