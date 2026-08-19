@@ -3,6 +3,7 @@ import pickle
 import threading
 import cv2
 import numpy as np
+import torch
 import face_recognition
 from ultralytics import YOLO
 
@@ -21,8 +22,10 @@ class FaceDetector:
         self.known_embeddings = []
         self.last_mtime = 0
 
-        # YOLO Person 탐지용 모델 초기화 (1회만 로드)
+        # YOLO Person 탐지용 모델 초기화 (1회만 로드, GPU 있으면 GPU로)
+        device = 0 if torch.cuda.is_available() else 'cpu'
         self.person_model = YOLO("yolov8n.pt")
+        self.person_model.to(device)
 
         self.load_db()
 
