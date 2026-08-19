@@ -88,6 +88,8 @@ class VehicleRepository:
         self.driver = (driver or settings.db.driver).lower()
         self.sqlite_path = sqlite_path or settings.db.sqlite_path
         self._lock = threading.Lock()
+        # MySQL 에 violation 이 없다는 안내를 한 번만 찍기 위한 표시
+        self._warned_violation = False
         self._conn = self._connect()
         self._ph = "?" if self.driver == "sqlite" else "%s"
         if self.driver == "sqlite":
@@ -262,8 +264,35 @@ class VehicleRepository:
 
     # ------------------------------------------------------------------
     # violation
+    #
+    #   ERD v1.0 결정 2번으로 **violation 테이블은 b_gateway 의 event 로 흡수**됐다.
+    #   그래서 `sql/schema.sql`(MySQL 용)에는 이 테이블이 없다.
+    #
+    #   SQLite 에는 남겨 둔다. `repository.py` 안의 SQLITE_SCHEMA 가 직접 만든다.
+    #   run_demo.py 와 /api/violations, /api/stats 가 이걸 읽기 때문에, 없애면
+    #   로컬 시연과 통계 화면이 통째로 빈다.
+    #
+    #       SQLite (로컬 개발·시연)  → 여기에 저장하고 여기서 읽는다
+    #       MySQL  (팀 통합)         → 저장하지 않는다. GatewayClient 가 HTTP 로
+    #                                  b_gateway 에 보내고, 조회도 그쪽 API 를 쓴다
+    #                                  (run_uturn.py --gateway http://localhost:8080)
+    #
+    #   MySQL 에서 그냥 INSERT 하면 "table doesn't exist" 가 이벤트마다 쌓인다.
+    #   예외를 삼키게 돼 있어 죽지는 않지만 로그가 못 쓰게 된다.
     # ------------------------------------------------------------------
+    def _violation_is_local(self) -> bool:
+        """이 저장소가 violation 을 직접 들고 있는가 (SQLite 일 때만)."""
+        if self.driver == "sqlite":
+            return True
+        if not self._warned_violation:
+            log.info("MySQL 모드: violation 은 b_gateway 의 event 로 보냅니다 "
+                     "(로컬 저장·조회 생략). 전송은 GatewayClient 담당.")
+            self._warned_violation = True
+        return False
+
     def save_violation(self, ev: ViolationEvent) -> None:
+        if not self._violation_is_local():
+            return
         occurred = datetime.fromtimestamp(ev.timestamp).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
         lat, lon = (ev.location or (None, None))
         self._exec(
@@ -296,6 +325,8 @@ class VehicleRepository:
         self, limit: int = 100, violation_type: Optional[str] = None,
         cam_id: Optional[str] = None, risk_level: Optional[str] = None,
     ) -> list[dict[str, Any]]:
+        if not self._violation_is_local():
+            return []
         sql = "SELECT * FROM violation WHERE 1=1"
         params: list[Any] = []
         if violation_type:
@@ -309,19 +340,27 @@ class VehicleRepository:
         return self._rows(sql, params)
 
     def count_by_type(self) -> dict[str, int]:
+        if not self._violation_is_local():
+            return {}
         rows = self._rows("SELECT violation_type, COUNT(*) AS cnt FROM violation GROUP BY violation_type")
         return {r["violation_type"]: int(r["cnt"]) for r in rows}
 
     def count_by_cam(self) -> dict[str, int]:
+        if not self._violation_is_local():
+            return {}
         rows = self._rows("SELECT cam_id, COUNT(*) AS cnt FROM violation GROUP BY cam_id ORDER BY cnt DESC")
         return {r["cam_id"]: int(r["cnt"]) for r in rows}
 
     def count_by_risk(self) -> dict[str, int]:
+        if not self._violation_is_local():
+            return {}
         rows = self._rows("SELECT risk_level, COUNT(*) AS cnt FROM violation GROUP BY risk_level")
         return {r["risk_level"]: int(r["cnt"]) for r in rows}
 
     def count_by_hour(self) -> dict[str, int]:
         """시간대별 발생 건수. 관제 인력 배치 근거 자료로 쓴다."""
+        if not self._violation_is_local():
+            return {}
         if self.driver == "sqlite":
             sql = "SELECT strftime('%H', occurred_at) AS h, COUNT(*) AS cnt FROM violation GROUP BY h ORDER BY h"
         else:  # pragma: no cover
@@ -329,6 +368,8 @@ class VehicleRepository:
         return {r["h"]: int(r["cnt"]) for r in self._rows(sql) if r["h"] is not None}
 
     def count_by_day(self, days: int = 14) -> dict[str, int]:
+        if not self._violation_is_local():
+            return {}
         if self.driver == "sqlite":
             sql = ("SELECT substr(occurred_at,1,10) AS d, COUNT(*) AS cnt FROM violation "
                    "GROUP BY d ORDER BY d DESC LIMIT ?")

@@ -11,10 +11,22 @@
     1) pymysql 설치 여부
     2) 서버 접속        (호스트·포트·계정)
     3) 데이터베이스 존재 (없으면 --create 로 만든다)
-    4) 스키마 적용      (sql/schema.sql)
+    4) 스키마 적용      (vehicle / plate_read_log)
     5) 읽기/쓰기        (seed 넣고 조회)
     6) 한글 저장        (utf8mb4 가 아니면 '가' 가 깨진다)
     7) 실제 조회 경로   (VehicleMatcher 가 MySQL 로 판별하는지)
+
+우리 테이블은 둘뿐이다
+    `violation` 은 ERD v1.0 결정 2번으로 b_gateway 의 `event` 테이블에 흡수됐다.
+    위반은 DB 에 직접 쓰지 않고 GatewayClient 가 HTTP 로 보낸다.
+
+팀 통합 환경(Flyway)에서는
+    b_gateway 가 Flyway 로 스키마를 만든다. `flyway_schema_history` 가 보이면
+    이 스크립트는 **확인만** 하고 `--create` 를 권하지 않는다. 여기서 손으로
+    만들면 Flyway 이력과 실제 스키마가 어긋나 나중에 ddl-auto: validate 에서 걸린다.
+
+        cd ..\\omecca_Project\\b_gateway
+        java -jar target\\omecca-backend-0.0.1-SNAPSHOT.jar   ← 이게 테이블을 만든다
 
 사용법
     python check_mysql.py                     # 접속만 확인
@@ -139,9 +151,29 @@ def main() -> int:
     with conn.cursor() as c:
         c.execute("SHOW TABLES")
         tables = {r[0] for r in c.fetchall()}
-    need = {"vehicle", "violation", "plate_read_log"}
+
+    # 우리가 직접 쓰는 테이블은 둘뿐이다.
+    #   violation 은 ERD v1.0 결정 2번으로 b_gateway 의 event 로 흡수됐다.
+    #   위반은 DB 가 아니라 GatewayClient 가 HTTP 로 보낸다. 여기서 violation 을
+    #   찾으면 통합된 DB 에서 늘 '실패' 가 뜬다.
+    need = {"vehicle", "plate_read_log"}
     missing = need - tables
-    if not missing:
+
+    # Flyway 가 스키마를 관리하면 --create 로 손댈 필요가 없다. 오히려 손대면
+    # flyway_schema_history 의 기록과 실제 스키마가 어긋나 나중에 validate 에서 걸린다.
+    if "flyway_schema_history" in tables:
+        print("     Flyway 가 관리하는 스키마입니다 (flyway_schema_history 발견)")
+        if missing:
+            print(NO, f"없는 테이블: {sorted(missing)}")
+            print("        b_gateway 를 한 번 실행해 마이그레이션을 적용하세요:")
+            print("          cd ..\\omecca_Project\\b_gateway")
+            print("          java -jar target\\omecca-backend-0.0.1-SNAPSHOT.jar")
+            print("        (여기서 --create 로 만들면 Flyway 이력과 어긋납니다)")
+            return 1
+        print(OK, f"테이블 {sorted(need)} 모두 존재")
+        if "event" in tables:
+            print("     violation → b_gateway 의 event 테이블 사용 (정상)")
+    elif not missing:
         print(OK, f"테이블 {sorted(need)} 모두 존재")
     elif a.create:
         sql = (BASE / "sql" / "schema.sql").read_text(encoding="utf-8")

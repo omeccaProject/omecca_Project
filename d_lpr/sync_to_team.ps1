@@ -14,12 +14,16 @@
       captures\ frames\      분석 중 뽑은 이미지
       .venv64\ __pycache__\  환경·캐시
 
+  **한 방향으로만 복사한다.** 팀원이 d_lpr 을 고쳐 놓았으면 그 파일은 건너뛰고
+  멈춘다 (덮어쓰면 그 사람 작업이 사라진다). 가져오려면 반대로 복사한 뒤 다시 돈다.
+
   사용
       .\sync_to_team.ps1            # 뭐가 바뀌는지만 보여준다 (복사 안 함)
       .\sync_to_team.ps1 -Apply     # 실제로 복사
+      .\sync_to_team.ps1 -Apply -Force   # 팀원 수정분까지 밀어버린다 (신중히)
 #>
 
-param([switch]$Apply)
+param([switch]$Apply, [switch]$Force)
 
 $ErrorActionPreference = "Stop"
 $OutputEncoding = [Console]::OutputEncoding = [Text.Encoding]::UTF8
@@ -92,6 +96,47 @@ if ($chg) {
 }
 Write-Host ""
 Write-Host "그대로인 파일 $same 개 (건너뜀)"
+
+# ------------------------------------------------- 남이 고친 파일 덮어쓰기 방지
+#
+#   이 스크립트는 **한 방향(omeca-lpr → d_lpr)** 으로만 복사한다. 그래서 팀원이
+#   d_lpr 안의 파일을 고쳐 놓으면 다음 -Apply 때 **말없이 원래대로 되돌린다.**
+#
+#   실제로 한 번 날아갈 뻔했다. Yongveloper 가 프로젝트 이름을 omeca → omecca 로
+#   통일하고 violation 테이블을 b_gateway 의 event 로 옮긴 커밋(9330103)이 있었는데,
+#   그대로 -Apply 를 돌렸으면 10개 파일이 전부 되돌아갔다.
+#
+#   그래서 덮어쓸 파일마다 **팀 저장소에서 마지막으로 손댄 사람**을 확인한다.
+#   내가 아니면 멈춘다. 가져오려면 그 파일을 d_lpr 에서 omeca-lpr 로 먼저 복사한다.
+$me = (git -C $REPO config user.name)
+$foreign = @()
+if ($chg) {
+    Push-Location $REPO
+    try {
+        foreach ($rel in $chg) {
+            $p = "d_lpr/" + ($rel -replace '\\', '/')
+            $who = (git log -1 --format='%an' -- $p 2>$null)
+            if ($who -and $who -ne $me) { $foreign += , @($rel, $who) }
+        }
+    } finally { Pop-Location }
+}
+
+if ($foreign) {
+    Write-Host ""
+    Write-Host "[주의] 팀원이 고쳐 놓은 파일을 덮어쓰려 합니다 ($($foreign.Count)개)" -ForegroundColor Red
+    foreach ($x in $foreign) { Write-Host ("  {0,-32} 마지막 수정: {1}" -f $x[0], $x[1]) -ForegroundColor Red }
+    Write-Host ""
+    Write-Host "  이대로 복사하면 그 사람 작업이 사라집니다." -ForegroundColor Yellow
+    Write-Host "  먼저 팀 저장소 쪽 내용을 내 폴더로 가져오세요:" -ForegroundColor Yellow
+    foreach ($x in $foreign) {
+        Write-Host ("    copy `"{0}`" `"{1}`"" -f (Join-Path $DST $x[0]), (Join-Path $SRC $x[0]))
+    }
+    Write-Host ""
+    Write-Host "  가져온 내용이 내 것보다 낫다고 판단되면 그대로 두고, 내 것을 밀어야" -ForegroundColor Yellow
+    Write-Host "  한다면 -Force 를 붙여 실행하세요." -ForegroundColor Yellow
+    if (-not $Force) { exit 1 }
+    Write-Host "  -Force 지정됨 — 그대로 덮어씁니다." -ForegroundColor Red
+}
 
 if (-not $Apply) {
     Write-Host ""
