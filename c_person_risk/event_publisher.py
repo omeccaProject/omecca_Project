@@ -47,7 +47,8 @@ class EventPublisher:
         }
 
         try:
-            res = requests.post(self.endpoint, json=payload, timeout=0.5)
+            headers = {'Content-Type': 'application/json', 'X-API-Key': 'omecca-dev-key-2026'}
+            res = requests.post(self.endpoint, json=payload, headers=headers, timeout=0.5)
             self.last_sent_times[event_type] = now
             success = res.status_code in (200, 201)
 
