@@ -28,11 +28,16 @@ public class CameraService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "이미 등록된 cam_id입니다: " + camId);
         }
 
+        // 실시간 영상 URL 없이 등록되는 카메라(아직 실제로 연결 안 된 카메라)는 기본값을
+        // INACTIVE로 시작한다 - "미연결"인데 "운영 중"으로 보이는 모순된 상태를 방지하기 위함.
+        // URL이 있으면(등록 즉시 실제로 연결 가능하다는 뜻) 기존처럼 ACTIVE로 시작한다.
+        boolean hasStream = StringUtils.hasText(request.getStreamUrl());
+
         Camera camera = Camera.builder()
                 .camId(camId)
                 .name(request.getName().trim())
-                .status(CameraStatus.ACTIVE)
-                .streamUrl(StringUtils.hasText(request.getStreamUrl()) ? request.getStreamUrl().trim() : null)
+                .status(hasStream ? CameraStatus.ACTIVE : CameraStatus.INACTIVE)
+                .streamUrl(hasStream ? request.getStreamUrl().trim() : null)
                 .streamFormat(StringUtils.hasText(request.getStreamFormat()) ? request.getStreamFormat().trim() : null)
                 .build();
 

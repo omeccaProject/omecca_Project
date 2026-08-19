@@ -15,6 +15,9 @@ export default function CameraManagerModal({ onClose, onChanged }) {
   const [formError, setFormError] = useState('')
   const [busyId, setBusyId] = useState(null)
 
+  // 등록된 카메라 목록 검색 - 이름/cam_id로 입력하는 즉시 필터링된다.
+  const [listQuery, setListQuery] = useState('')
+
   // UTIC 카메라 사전 등록 카탈로그 자동완성(고도화). cam_id나 이름 입력창에 타이핑하면
   // /api/camera-catalog를 debounce로 검색해서 후보를 보여주고, 하나를 고르면 streamUrl까지
   // 자동으로 채워준다 - 매번 URL을 직접 복사/붙여넣기 하지 않아도 되게 하는 게 목적.
@@ -143,6 +146,17 @@ export default function CameraManagerModal({ onClose, onChanged }) {
     }
   }
 
+  // 목록은 항상 이름 기준 가나다순(ㄱㄴㄷㄹ...)으로 정렬해서 보여주고, 검색어가 있으면
+  // 이름 또는 cam_id에 포함되는 것만 즉시 걸러서 보여준다 - 카메라가 많아질수록 원하는
+  // 카메라를 스크롤로 찾기 힘들어지는 문제를 해결하기 위함.
+  const visibleCameras = [...cameras]
+    .filter((cam) => {
+      const q = listQuery.trim().toLowerCase()
+      if (!q) return true
+      return cam.name.toLowerCase().includes(q) || cam.camId.toLowerCase().includes(q)
+    })
+    .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+
   const handleDelete = async (cam) => {
     if (!window.confirm(`"${cam.name}" (${cam.camId})을(를) 삭제할까요?`)) return
     setBusyId(cam.id)
@@ -235,13 +249,30 @@ export default function CameraManagerModal({ onClose, onChanged }) {
         </form>
         {formError && <div className="cam-mgr-form-error">{formError}</div>}
 
+        <div className="cam-mgr-list-search">
+          <input
+            type="text"
+            placeholder="이름 또는 cam_id로 검색..."
+            value={listQuery}
+            onChange={(e) => setListQuery(e.target.value)}
+          />
+          {listQuery && (
+            <button type="button" className="cam-mgr-list-search-clear" onClick={() => setListQuery('')}>
+              지우기
+            </button>
+          )}
+        </div>
+
         <div className="cam-mgr-list">
           {loading && <div className="cam-mgr-empty">불러오는 중...</div>}
           {!loading && loadError && <div className="cam-mgr-empty cam-mgr-error">{loadError}</div>}
           {!loading && !loadError && cameras.length === 0 && (
             <div className="cam-mgr-empty">등록된 카메라가 없습니다.</div>
           )}
-          {!loading && !loadError && cameras.map((cam) => (
+          {!loading && !loadError && cameras.length > 0 && visibleCameras.length === 0 && (
+            <div className="cam-mgr-empty">"{listQuery}"와 일치하는 카메라가 없습니다.</div>
+          )}
+          {!loading && !loadError && visibleCameras.map((cam) => (
             <div key={cam.id} className={`cam-mgr-row ${cam.status === 'INACTIVE' ? 'inactive' : ''}`}>
               <span className={`cam-mgr-live-badge ${cam.streamUrl ? 'on' : ''}`}>
                 {cam.streamUrl ? 'LIVE' : '미연결'}

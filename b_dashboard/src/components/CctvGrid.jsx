@@ -18,6 +18,19 @@ const FALLBACK_CAMS = [
 
 const CAM_COUNT_OPTIONS = [6, 9]
 const CAM_COUNT_STORAGE_KEY = 'omecca_cctv_cam_count'
+// 사용자가 특정 칸에 직접 지정한 카메라 배정 - { [전역 슬롯 인덱스]: camId }.
+// localStorage에 저장해서 새로고침해도 유지되고, 'storage' 이벤트로 다른 창(메인 대시보드 ↔
+// 분할화면 monitor2/3)끼리도 같은 배정이 즉시 동기화되게 한다.
+const MANUAL_SLOT_STORAGE_KEY = 'omecca_cctv_manual_slots'
+
+function loadManualSlots() {
+  try {
+    const raw = localStorage.getItem(MANUAL_SLOT_STORAGE_KEY)
+    return raw ? JSON.parse(raw) : {}
+  } catch {
+    return {}
+  }
+}
 
 function fmtTime(iso) {
   if (!iso) return '-'
@@ -49,15 +62,54 @@ export default function CctvGrid({ events, focusedEvent, onSelectCam, camOffset 
   // 비어있으면 realCameras.js를 폴백으로 써서 화면이 깨지지 않게 한다.
   const [liveCameras, setLiveCameras] = useState(FALLBACK_REAL_CAMERAS)
 
-  // "카메라 관리" API가 실제로 응답해서 진짜 등록된 카메라 목록을 알려준 적이 있다면,
-  // 그 camId들을 처음 등장한 순서 그대로 여기 누적 보관한다. camIds 그리드 계산에서
-  // 이 목록을 맨 앞에 고정해두면, 카메라를 삭제해도 그 칸의 "자리"는 그대로 유지되고
-  // (realCameraById에 더 이상 없으니 idle로만 바뀜) 뒤에 있던 다른 카메라가 그 자리로
-  // 당겨져 들어오는 현상(reflow)이 없어진다.
+  // "카메라 관리" API가 실제로 응답해서 알려준 실제 등록 카메라들이 그리드에서 어느 칸에
+  // 나올지를 정하는 슬롯 배정 목록(인덱스 = 칸 위치, 값 = 그 칸에 배정된 camId).
+  // 규칙:
+  //  1) 이미 슬롯을 가진 카메라가 계속 활성 상태면 그 자리 그대로 유지한다(다른 카메라가
+  //     밀고 들어오지 않음 - 삭제/비활성화 시 "다른 cctv가 자리를 채운다"는 문제 방지).
+  //  2) 어떤 슬롯의 카메라가 비활성화되면 그 슬롯은 "빈 자리"가 되고 idle로 표시된다.
+  //  3) 새로 활성화된 카메라는 먼저 빈 자리가 있으면 그 자리부터 채우고, 빈 자리가 하나도
+  //     없을 때만 새 슬롯을 맨 뒤에 추가한다 - 그래야 비활성화한 칸에 다른 카메라를 새로
+  //     활성화했을 때 바로 그 자리에서 보인다(화면 밖 슬롯으로 밀려나 안 보이는 문제 방지).
   // 주의: 초기값/폴백값(FALLBACK_REAL_CAMERAS)은 절대 여기 섞지 않는다 - 섞으면 아직 API가
   // 응답하기 전의 임시 목록이 "진짜 등록된 카메라"보다 먼저 자리를 선점해버려서, 실제로
   // 등록·활성화된 카메라가 뒤로 밀려나 그리드 화면 밖으로 벗어나는 회귀가 생긴다.
-  const [knownCamIds, setKnownCamIds] = useState([])
+  const [slots, setSlots] = useState([])
+
+  // 사용자가 "이 칸엔 이 카메라" 식으로 직접 고정한 배정. 자동 슬롯 배정(slots)보다 항상
+  // 우선한다 - 명시적으로 요청된 기능("cctv를 자기가 원하는 칸에 넣어서 볼 수 있게").
+  const [manualSlots, setManualSlots] = useState(loadManualSlots)
+
+  useEffect(() => {
+    localStorage.setItem(MANUAL_SLOT_STORAGE_KEY, JSON.stringify(manualSlots))
+  }, [manualSlots])
+
+  useEffect(() => {
+    function onStorage(e) {
+      if (e.key !== MANUAL_SLOT_STORAGE_KEY) return
+      setManualSlots(e.newValue ? JSON.parse(e.newValue) : {})
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
+
+  // 슬롯 index(전역 그리드 위치)에 camId를 고정하거나(값 있음) 자동 배정으로 되돌린다(null).
+  // 같은 카메라가 이미 다른 칸에 고정돼 있으면 그 칸의 고정은 풀어서 한 카메라가 두 칸에
+  // 동시에 나오는 걸 막는다.
+  function assignSlot(index, camId) {
+    setManualSlots((prev) => {
+      const next = { ...prev }
+      if (camId) {
+        Object.keys(next).forEach((key) => {
+          if (Number(key) !== index && next[key] === camId) delete next[key]
+        })
+        next[index] = camId
+      } else {
+        delete next[index]
+      }
+      return next
+    })
+  }
 
   const loadLiveCameras = useCallback(() => {
     fetchCameras()
@@ -67,18 +119,39 @@ export default function CctvGrid({ events, focusedEvent, onSelectCam, camOffset 
           .map((c) => ({ camId: c.camId, name: c.name, videoUrl: c.streamUrl }))
         setLiveCameras(withStream.length > 0 ? withStream : FALLBACK_REAL_CAMERAS)
 
-        // API가 실제로 응답했을 때만(설령 withStream이 아직 비어있더라도) 그 결과를
-        // knownCamIds에 반영한다 - 폴백 목록은 절대 반영하지 않는다.
-        setKnownCamIds((prev) => {
-          const currentRealIds = withStream.map((c) => c.camId)
-          const existing = new Set(prev)
-          const appended = currentRealIds.filter((id) => !existing.has(id))
-          return appended.length ? [...prev, ...appended] : prev
+        // API가 실제로 응답했을 때만(설령 withStream이 아직 비어있더라도) 슬롯을 갱신한다 -
+        // 폴백 목록은 절대 반영하지 않는다.
+        const liveIds = withStream.map((c) => c.camId)
+        setSlots((prev) => {
+          const liveSet = new Set(liveIds)
+          // 이미 슬롯이 있고 계속 활성 상태인 camId는 그대로 두고, 슬롯이 아직 없는
+          // (새로 활성화된) camId만 배정 대상으로 남긴다.
+          const alreadySlotted = new Set(prev.filter((id) => id && liveSet.has(id)))
+          const newcomers = liveIds.filter((id) => !alreadySlotted.has(id))
+          if (newcomers.length === 0) return prev
+
+          // 지금 슬롯 중 "더 이상 활성 상태가 아닌 camId가 남아있는" 빈 자리를 재사용 대상으로 수집.
+          const next = [...prev]
+          const idleSlotIndexes = []
+          next.forEach((id, idx) => {
+            if (id && !liveSet.has(id)) idleSlotIndexes.push(idx)
+          })
+
+          let idlePtr = 0
+          newcomers.forEach((id) => {
+            if (idlePtr < idleSlotIndexes.length) {
+              next[idleSlotIndexes[idlePtr]] = id
+              idlePtr += 1
+            } else {
+              next.push(id)
+            }
+          })
+          return next
         })
       })
       .catch(() => {
         // API 자체가 아직 없거나(구버전 서버) 실패하면 기존 하드코딩 목록을 그대로 유지.
-        // knownCamIds는 건드리지 않는다 - 아직 뭐가 진짜 등록된 카메라인지 알 수 없으므로.
+        // 슬롯은 건드리지 않는다 - 아직 뭐가 진짜 등록된 카메라인지 알 수 없으므로.
         setLiveCameras(FALLBACK_REAL_CAMERAS)
       })
   }, [])
@@ -118,16 +191,38 @@ export default function CctvGrid({ events, focusedEvent, onSelectCam, camOffset 
   // 실제로 실시간 영상이 연결된 카메라(liveCameras, DB "카메라 관리"에서 등록된 것)는
   // 항상 그리드 맨 앞에 고정 노출한다.
   const realCameraById = Object.fromEntries(liveCameras.map((c) => [c.camId, c]))
-  // knownCamIds(진짜 등록된 적 있는 카메라, 순서 고정)를 맨 앞에 둬서 삭제 시 뒤 카메라가
-  // 앞으로 당겨지지 않게 하고, 그 다음 liveCameras의 현재 camId(API 응답 전/실패 시의
-  // 폴백 목록을 화면에 그대로 보여주기 위함 - knownCamIds가 비어있는 그 순간에도 화면이
-  // 안 깨지게), seenCams, FALLBACK_CAMS 순서로 채운다.
-  const camIds = [...new Set([
-    ...knownCamIds,
+  // slots(진짜 등록된 적 있는 카메라의 칸 배정, 삭제/비활성화돼도 자리 유지 + 새로 활성화된
+  // 카메라는 빈 자리부터 채움)를 맨 앞에 둬서 다른 카메라가 밀고 들어오지 않게 하고, 그
+  // 다음 liveCameras의 현재 camId(API 응답 전/실패 시의 폴백 목록을 화면에 그대로 보여주기
+  // 위함 - slots가 비어있는 그 순간에도 화면이 안 깨지게), seenCams, FALLBACK_CAMS 순서로 채운다.
+  const autoCamIdPool = [...new Set([
+    ...slots.filter(Boolean),
     ...liveCameras.map((c) => c.camId),
     ...seenCams,
     ...FALLBACK_CAMS,
-  ])].slice(camOffset, camOffset + effectiveCount)
+  ])]
+
+  // manualSlots에 고정된 카메라는 자동 배정 후보 목록에서 빼서, 사용자가 지정한 칸 말고
+  // 다른 칸에 같은 카메라가 중복으로 나타나지 않게 한다.
+  const pinnedCamIds = new Set(Object.values(manualSlots).filter(Boolean))
+  const autoPool = autoCamIdPool.filter((id) => !pinnedCamIds.has(id))
+
+  const usedThisRender = new Set()
+  let autoPtr = 0
+  const camIds = []
+  for (let i = camOffset; i < camOffset + effectiveCount; i++) {
+    const pinned = manualSlots[i]
+    if (pinned) {
+      camIds.push(pinned)
+      usedThisRender.add(pinned)
+      continue
+    }
+    while (autoPtr < autoPool.length && usedThisRender.has(autoPool[autoPtr])) autoPtr += 1
+    const next = autoPool[autoPtr]
+    autoPtr += 1
+    if (next) usedThisRender.add(next)
+    camIds.push(next ?? `CAM-EMPTY-${i}`)
+  }
 
   const latestByCam = {}
   events.forEach((ev) => {
@@ -170,17 +265,31 @@ export default function CctvGrid({ events, focusedEvent, onSelectCam, camOffset 
       </div>
 
       <div className={`cctv-grid cctv-grid-${effectiveCount}`}>
-        {camIds.map((camId) => {
+        {camIds.map((camId, idx) => {
+          const slotIndex = camOffset + idx
           const latest = latestByCam[camId]
           const isFocused = focusedEvent?.camId === camId
           const realCam = realCameraById[camId]
 
           return (
             <div
-              key={camId}
+              key={slotIndex}
               className={`cctv-cell ${isFocused ? 'active' : ''} ${latest ? '' : 'idle'} ${realCam ? 'cctv-cell-live' : ''}`}
               onClick={() => handleCellClick(camId)}
             >
+              <div className="cctv-cell-pin" onClick={(e) => e.stopPropagation()}>
+                <select
+                  className="cctv-cell-pin-select"
+                  title="이 칸에 표시할 카메라를 직접 지정"
+                  value={manualSlots[slotIndex] || ''}
+                  onChange={(e) => assignSlot(slotIndex, e.target.value || null)}
+                >
+                  <option value="">자동 배정</option>
+                  {liveCameras.map((c) => (
+                    <option key={c.camId} value={c.camId}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
               {isFocused && focusedEvent ? (
                 <div className="cctv-cell-detail">
                   <div className="frames-mini">

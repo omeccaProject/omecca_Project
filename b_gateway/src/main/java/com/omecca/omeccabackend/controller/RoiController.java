@@ -2,6 +2,7 @@ package com.omecca.omeccabackend.controller;
 
 import com.omecca.omeccabackend.dto.RoiCreateRequest;
 import com.omecca.omeccabackend.dto.RoiResponse;
+import com.omecca.omeccabackend.dto.RoiUpdateRequest;
 import com.omecca.omeccabackend.service.RoiService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -41,5 +42,16 @@ public class RoiController {
     @GetMapping("/{id}")
     public RoiResponse get(@PathVariable Long id) {
         return roiService.findById(id);
+    }
+
+    @PutMapping("/{id}")
+    public RoiResponse update(@PathVariable Long id, @RequestBody RoiUpdateRequest request) {
+        return roiService.update(id, request);
+    }
+
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void delete(@PathVariable Long id) {
+        roiService.delete(id);
     }
 }

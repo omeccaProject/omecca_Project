@@ -57,6 +57,15 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
+        <!-- .env 파일을 자동으로 읽어서 환경변수처럼 써주는 라이브러리.
+             팀원이 매번 export/$env:로 GATEWAY_API_KEY, JWT_SECRET 등을 직접
+             등록하지 않아도, 프로젝트 루트(b_gateway/)에 .env 파일 하나만
+             놓으면 앱 시작 시 자동으로 로드된다. (OmeccaBackendApplication.java 참고) -->
+        <dependency>
+            <groupId>io.github.cdimascio</groupId>
+            <artifactId>dotenv-java</artifactId>
+            <version>3.0.2</version>
+        </dependency>
     </dependencies>
 
     <build>

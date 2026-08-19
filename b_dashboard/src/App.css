@@ -1030,6 +1030,42 @@ body {
 }
 .live-hls-status-error {
   color: var(--c-red);
+  flex-direction: column;
+  gap: 6px;
+}
+.live-hls-retry-btn {
+  font-size: 10px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--c-border2);
+  background: var(--c-bg3);
+  color: var(--c-text);
+  cursor: pointer;
+}
+.live-hls-retry-btn:hover {
+  border-color: var(--c-red);
+}
+
+/* 칸별 수동 카메라 배정 - "이 칸에 이 카메라를 고정"할 수 있는 작은 드롭다운.
+   칸의 상태(대기/실시간/상세보기)와 무관하게 항상 우상단에 떠 있는다. */
+.cctv-cell-pin {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 5;
+}
+.cctv-cell-pin-select {
+  max-width: 96px;
+  font-size: 10px;
+  padding: 2px 4px;
+  border-radius: 6px;
+  border: 1px solid var(--c-border2);
+  background: color-mix(in srgb, var(--c-bg3) 82%, transparent);
+  color: var(--c-text);
+  cursor: pointer;
+}
+.cctv-cell-pin-select:hover {
+  border-color: var(--c-red);
 }
 .cctv-cell-foot-live {
   gap: 6px;
@@ -1827,6 +1863,40 @@ body {
 .cam-mgr-form-error {
   font-size: 12px;
   color: var(--c-red);
+}
+.cam-mgr-list-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.cam-mgr-list-search input {
+  flex: 1;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--c-border);
+  background: var(--c-bg2);
+  color: var(--c-text);
+  font-size: 13px;
+  font-family: inherit;
+}
+.cam-mgr-list-search input:focus {
+  outline: none;
+  border-color: var(--c-accent);
+}
+.cam-mgr-list-search-clear {
+  flex-shrink: 0;
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--c-border2);
+  background: var(--c-bg3);
+  color: var(--c-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.cam-mgr-list-search-clear:hover {
+  border-color: var(--c-red);
+  color: var(--c-text);
 }
 .cam-mgr-list {
   flex: 1;

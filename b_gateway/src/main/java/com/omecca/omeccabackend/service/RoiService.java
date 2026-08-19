@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.omecca.omeccabackend.dto.RoiCreateRequest;
 import com.omecca.omeccabackend.dto.RoiResponse;
+import com.omecca.omeccabackend.dto.RoiUpdateRequest;
 import com.omecca.omeccabackend.entity.Roi;
 import com.omecca.omeccabackend.entity.enums.RoiType;
 import com.omecca.omeccabackend.repository.RoiRepository;
@@ -47,9 +48,40 @@ public class RoiService {
 
     @Transactional(readOnly = true)
     public RoiResponse findById(Long id) {
-        Roi roi = roiRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "roi not found"));
+        return RoiResponse.from(getRoi(id), objectMapper);
+    }
+
+    // CameraUpdateRequest/CameraService.update()와 동일한 부분 수정 패턴 — 보낸 필드만 갱신한다.
+    // save()를 따로 호출하지 않는 것도 CameraService와 동일: @Transactional 안에서 영속 상태인
+    // 엔티티 필드를 바꾸면 커밋 시점에 JPA dirty checking으로 자동 반영된다.
+    @Transactional
+    public RoiResponse update(Long id, RoiUpdateRequest request) {
+        Roi roi = getRoi(id);
+
+        if (StringUtils.hasText(request.getCamId())) {
+            roi.setCamId(request.getCamId());
+        }
+        if (StringUtils.hasText(request.getRoiType())) {
+            roi.setRoiType(parseEnum(RoiType.class, request.getRoiType(), "roiType"));
+        }
+        if (StringUtils.hasText(request.getName())) {
+            roi.setName(request.getName());
+        }
+        if (request.getGeometryJson() != null) {
+            roi.setGeometryJson(toJson(request.getGeometryJson()));
+        }
+
         return RoiResponse.from(roi, objectMapper);
+    }
+
+    @Transactional
+    public void delete(Long id) {
+        roiRepository.delete(getRoi(id));
+    }
+
+    private Roi getRoi(Long id) {
+        return roiRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "roi not found"));
     }
 
     private String toJson(JsonNode node) {
