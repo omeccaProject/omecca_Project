@@ -26,19 +26,50 @@ cd b_gateway
 mysql -u root -p < src/main/resources/schema.sql
 ```
 
-`omecca` 데이터베이스와 `target` / `roi` / `event` / `report` 4개 테이블이 생성됩니다.
-DB 비밀번호가 root 기본값이 아니면 실행 전에 환경변수로 지정:
+`omecca` 데이터베이스와 `camera` / `camera_catalog` / `target` / `roi` / `event` / `report` / `user`
+총 7개 테이블이 생성됩니다. `camera`/`camera_catalog`에는 실시간 CCTV 카메라 23개가,
+`user`에는 관리자 계정(`admin` / `admin1234` — 로그인 후 꼭 변경할 것)이 시드 데이터로 같이 들어갑니다.
+
+> 이미 예전 버전의 DB(4개 테이블만 있던 시절)를 갖고 있어서 `camera`/`camera_catalog`/`user`가
+> 없다면, `schema.sql`을 다시 실행하지 말고(기존 데이터가 전부 날아감) `DB_마이그레이션_가이드.md`를
+> 참고해서 없는 테이블만 개별 추가하세요.
+
+### 환경변수 설정 (`.env` 파일 방식 — 추천)
+
+`b_gateway/.env.example`을 복사해서 같은 폴더에 `.env`로 저장하고 값을 채우면, `./mvnw spring-boot:run`
+실행 시 자동으로 읽어들입니다(매번 `export` 칠 필요 없음):
+
+```bash
+cp .env.example .env
+```
+
+`.env` 안에 최소 아래 4개 값이 있어야 합니다.
+
+```
+GATEWAY_API_KEY=omecca-dev-key-2026
+JWT_SECRET=omecca-jwt-secret-change-this
+DB_USERNAME=root
+DB_PASSWORD=본인_로컬_MySQL_비밀번호
+```
+
+`GATEWAY_API_KEY`/`JWT_SECRET`은 기본값이 없어서 안 넣으면 게이트웨이가 아예 안 켜집니다.
+팀 전체가 같은 값을 써야 모듈→게이트웨이 인증(`X-API-Key`)이 맞으니 위 값 그대로 쓰세요.
+`.env`는 `.gitignore`에 등록돼 있어 git에는 올라가지 않습니다.
+
+> **주의 — 셸 환경변수가 `.env`보다 우선 적용됨**: `~/.zshrc`, `~/.bash_profile` 같은 셸 프로필에
+> 예전에 `export DB_USERNAME=...` 같은 줄을 추가해둔 적이 있다면, `.env` 파일 값을 아무리 바꿔도
+> 그 셸 값이 계속 우선 적용돼서 반영이 안 되는 것처럼 보입니다(dotenv 라이브러리가 이미 설정된
+> 시스템 환경변수를 덮어쓰지 않기 때문). 이런 증상이 생기면 `echo $DB_USERNAME`으로 셸에 값이
+> 남아있는지부터 확인하고, 남아있으면 프로필 파일에서 그 줄을 지우거나 `unset DB_USERNAME`으로
+> 임시 제거한 뒤 재실행하세요.
+
+### (대안) 터미널에서 직접 export 하는 방식
+
+`.env` 대신 매번 터미널에서 직접 지정하고 싶다면:
 
 ```bash
 export DB_USERNAME=root
 export DB_PASSWORD=Omecca\!2026 #비밀번호에 특수문자 있을 시 앞에 \넣기
-```
-
-`GATEWAY_API_KEY` / `JWT_SECRET`도 반드시 실행 전에 지정해야 합니다 (기본값 없음 — 안 넣으면
-게이트웨이가 아예 안 켜집니다). 팀 전체가 같은 값을 써야 모듈→게이트웨이 인증(`X-API-Key`)이
-맞으니, 아래 값을 그대로 쓰세요:
-
-```bash
 export GATEWAY_API_KEY=omecca-dev-key-2026
 export JWT_SECRET=omecca-jwt-secret-change-this
 ```
@@ -55,13 +86,9 @@ export JWT_SECRET=omecca-jwt-secret-change-this
 > $env:JWT_SECRET="omecca-jwt-secret-change-this"
 > ```
 >
-> 이 방식은 그 터미널 창을 닫으면 사라집니다. 매번 다시 치기 싫으면 `application.properties`
-> 맨 아래에 `gateway.api-key=omecca-dev-key-2026`, `app.auth.jwt-secret=omecca-jwt-secret-change-this`
-> 두 줄을 직접 추가해두는 게 더 편합니다 — 이러면 OS와 무관하게 항상 같은 값으로 고정됩니다.
-
-터미널을 새로 열 때마다 다시 실행해야 하면 `~/.zshrc` 맨 아래에 이 4줄을 추가해두면 편합니다.
-(실제 배포 시에는 이 값들을 `openssl rand -hex 32` 등으로 만든 진짜 랜덤 값으로 바꿔서 쓰세요 —
-지금은 팀 전체가 같은 값으로 맞춰야 병합 작업이 되니 이 기본값 그대로 씁니다.)
+> 이 방식은 그 터미널 창을 닫으면 사라집니다. 매번 다시 치기 싫으면 위의 `.env` 파일 방식을
+> 쓰는 걸 추천합니다 — 셸 프로필에 영구로 export를 박아두면 나중에 값을 바꿔야 할 때
+> (예: 카페24 같은 다른 DB로 테스트) 셸 값이 우선 적용돼서 헷갈리는 원인이 됩니다.
 
 `JWT_SECRET`은 길이 제한이 있는 값이 아닙니다 — 이 프로젝트는 jjwt 같은 외부 라이브러리 없이
 HMAC-SHA256을 직접 구현해서 쓰기 때문에(`JwtService.java`), 32바이트 미만이라고 `WeakKeyException`
@@ -69,6 +96,48 @@ HMAC-SHA256을 직접 구현해서 쓰기 때문에(`JwtService.java`), 32바이
 써야만** 합니다. JWT는 "발급한 서버"와 "검증하는 서버"가 같은 비밀키로 서명을 확인하는 구조라,
 한 글자라도 다르면 다른 사람이 로그인해서 받은 토큰이 내 서버에서 401로 거부됩니다 — 새로운
 값을 만들 필요는 없고, 위에 적힌 `omecca-jwt-secret-change-this`를 그대로 맞춰 쓰면 됩니다.
+
+### 1-1. 로컬 DB 대신 공용 DB(카페24) 쓰기
+
+지금은 팀원마다 로컬 DB가 따로 있어서(각자 `localhost:3306`) 회원가입/승인 같은 게 서로한테
+안 보이는 문제가 있어서, 카페24에 공용 MariaDB를 하나 띄워서 다 같이 그걸 보게 만들었습니다.
+**로컬 DB를 계속 써도 되고(개인 개발용), 공용 DB로 전환해서 써도 됩니다** — `application.yml`이
+`DB_HOST`/`DB_PORT`/`DB_NAME` 환경변수를 안 넣으면 기존처럼 로컬(`localhost:3306/omecca`)을
+그대로 쓰도록 기본값이 잡혀 있어서, 아무것도 안 바꾸면 지금까지 하던 대로 동작합니다.
+
+**공용 DB로 전환하려면** `.env`에서 로컬 DB 줄 4개(`DB_USERNAME`/`DB_PASSWORD`)를 주석 처리하고,
+아래 5개 줄의 주석을 풀고 비밀번호만 채워 넣으면 됩니다(두 세트를 동시에 켜두면 안 됨 — 마지막에
+읽히는 값으로 덮어써져서 꼬입니다).
+
+```
+# DB_USERNAME=root
+# DB_PASSWORD=본인_로컬_MySQL_비밀번호
+
+DB_HOST=thebrains27.cafe24.com
+DB_PORT=3306
+DB_NAME=thebrains27
+DB_USERNAME=thebrains27
+DB_PASSWORD=성혁님한테_받은_카페24_DB_비밀번호
+```
+
+> 공용 DB에는 이미 `schema.sql`에 해당하는 테이블 7개(camera/camera_catalog/target/roi/event/report/user)와
+> 카메라 23개, admin 계정이 다 들어가 있는 상태입니다 — **여기다 대고 `schema.sql`을 다시 실행하지
+> 마세요** (`DROP TABLE`부터 하는 스크립트라 다른 사람 데이터까지 다 날아갑니다). 위 1번 단계는
+> 로컬 DB를 쓸 때만 필요한 단계입니다.
+
+**접속하려면 카페24 IP 등록이 먼저 필요합니다.** 공용 DB는 카페24 "MySQL 외부 IP 접근설정"에
+등록된 IP에서만 접속을 허용합니다. 등록 안 된 곳에서 접속하면 타임아웃/연결 거부가 나는데,
+이건 코드나 `.env` 설정 문제가 아니라 IP 등록이 안 된 것이니 성혁님한테 본인 **공인(외부) IP**를
+알려주고 등록을 요청하세요 (구글에서 "내 IP" 검색해서 나오는 값 — `ipconfig`/시스템 설정에서 보이는
+`172.x`/`192.168.x` 같은 내부 IP를 알려주면 등록해도 소용없습니다). 와이파이를 옮기면 공인 IP가
+바뀌어서 다시 막힐 수 있다는 것도 알아두세요.
+
+HeidiSQL 같은 DB 클라이언트로 직접 접속해서 데이터 확인하고 싶으면 이 값을 쓰면 됩니다.
+
+- 호스트: `thebrains27.cafe24.com`
+- 포트: `3306`
+- 사용자: `thebrains27`
+- DB 종류: MariaDB
 
 ---
 
