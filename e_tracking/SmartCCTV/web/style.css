@@ -1617,9 +1617,6 @@ html[data-theme="light"] .leaflet-control-attribution {
 .is-embed-map .event-panel {
   display: none;
 }
-.is-embed-map .cctv-search-panel {
-  display: none;
-}
 .is-embed-map .ai-toast-container {
   display: none;
 }
