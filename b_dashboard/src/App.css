@@ -540,6 +540,64 @@ body {
   flex-shrink: 0;
 }
 
+/* "대시보드" 우측 패널 상단의 "이벤트"/"CCTV" 작은 탭. 대시보드 화면에서 CCTV 영상을 보려면
+   예전엔 "추적 차량"(다른 iframe)까지 나가야 했는데, 여기서 바로 전환되게 한다. */
+.control-panel-tabs {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.control-panel-tab {
+  flex: 1;
+  padding: 7px 0;
+  border-radius: 8px;
+  border: 1px solid var(--c-border);
+  background: var(--c-bg3);
+  color: var(--c-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.control-panel-tab:hover {
+  border-color: var(--c-accent);
+  color: var(--c-text);
+}
+.control-panel-tab.active {
+  background: color-mix(in srgb, var(--c-accent) 16%, transparent);
+  border-color: var(--c-accent);
+  color: var(--c-accent);
+}
+
+.dash-cctv-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+}
+.dash-cctv-select {
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--c-border);
+  background: var(--c-bg2);
+  color: var(--c-text);
+  font-size: 13px;
+  font-family: inherit;
+}
+.dash-cctv-video-wrap {
+  display: flex;
+  flex-direction: column;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--c-border);
+  aspect-ratio: 16 / 9;
+}
+.dash-cctv-name {
+  font-size: 13px;
+  color: var(--c-text);
+  font-weight: 600;
+  text-align: center;
+}
+
 .control-events-list {
   flex: 1;
   min-height: 0;
@@ -1766,6 +1824,14 @@ body {
   flex: 1;
   min-width: 140px;
 }
+.cam-mgr-form label.cam-mgr-checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+.cam-mgr-form label.cam-mgr-checkbox input {
+  width: auto;
+}
 .cam-mgr-form input,
 .cam-mgr-form select {
   padding: 8px 10px;
@@ -1956,6 +2022,13 @@ body {
   color: var(--c-muted2);
   font-family: var(--font-mono);
   font-weight: 400;
+}
+/* CCTV 이름 옆 "(낙하물)" 등 감지 태그. CameraManagerModal 목록/CctvGrid 셀·확대화면에서 공용. */
+.cam-tag-debris {
+  margin-left: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--c-amber);
 }
 .cam-mgr-row-sub {
   font-size: 11.5px;

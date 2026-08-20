@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { fetchCameras, createCamera, updateCamera, deleteCamera, fetchCameraCatalog } from '../api'
+import { fetchCameras, createCamera, updateCamera, deleteCamera, fetchCameraCatalog, uploadCameraVideo } from '../api'
 
-const EMPTY_FORM = { camId: '', name: '', streamUrl: '', streamFormat: 'HLS' }
+const EMPTY_FORM = { camId: '', name: '', streamUrl: '', streamFormat: 'HLS', debrisDetectionEnabled: false }
 
 // 카메라 마스터 데이터 관리 모달. CctvGrid 헤더의 "카메라 관리" 버튼으로 연다.
 // 실제 설치된 카메라 목록(cam_id/이름/실시간 영상 URL)을 여기서 등록·수정·삭제한다 —
@@ -24,6 +24,28 @@ export default function CameraManagerModal({ onClose, onChanged }) {
   const [suggestions, setSuggestions] = useState([])
   const [showSuggestions, setShowSuggestions] = useState(false)
   const searchTimerRef = useRef(null)
+
+  // 동영상 파일 업로드로 카메라 등록(실시간 URL 대신). 업로드가 끝나면 반환된 URL을
+  // streamUrl에 그대로 채워서, 아래 등록 로직은 URL을 직접 입력했을 때와 동일하게 탄다.
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState('')
+
+  const handleFileUpload = async (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = '' // 같은 파일을 다시 선택해도 onChange가 또 발생하게
+    if (!file) return
+
+    setUploadError('')
+    setUploading(true)
+    try {
+      const { url } = await uploadCameraVideo(file)
+      setForm((prev) => ({ ...prev, streamUrl: url, streamFormat: 'MP4' }))
+    } catch (err) {
+      setUploadError(err.message || '영상 업로드에 실패했습니다.')
+    } finally {
+      setUploading(false)
+    }
+  }
 
   useEffect(() => () => {
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
@@ -51,12 +73,13 @@ export default function CameraManagerModal({ onClose, onChanged }) {
   }
 
   const handlePickSuggestion = (item) => {
-    setForm({
+    setForm((prev) => ({
+      ...prev,
       camId: item.camId,
       name: item.name,
       streamUrl: item.streamUrl || '',
       streamFormat: item.streamFormat || 'HLS',
-    })
+    }))
     setShowSuggestions(false)
     setSuggestions([])
   }
@@ -98,6 +121,7 @@ export default function CameraManagerModal({ onClose, onChanged }) {
         name: form.name.trim(),
         streamUrl: form.streamUrl.trim() || undefined,
         streamFormat: form.streamUrl.trim() ? form.streamFormat : undefined,
+        debrisDetectionEnabled: form.debrisDetectionEnabled,
       })
       setForm(EMPTY_FORM)
       setSuggestions([])
@@ -108,6 +132,21 @@ export default function CameraManagerModal({ onClose, onChanged }) {
       setFormError(err.message || '등록에 실패했습니다.')
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  // 이미 등록된 카메라의 낙하물 감지 사용 여부를 토글한다(등록 폼의 체크박스와 별개로,
+  // 기존 카메라도 삭제/재등록 없이 켜고 끌 수 있어야 하므로).
+  const handleToggleDebris = async (cam) => {
+    setBusyId(cam.id)
+    try {
+      await updateCamera(cam.id, { debrisDetectionEnabled: !cam.debrisDetectionEnabled })
+      load()
+      onChanged?.()
+    } catch (err) {
+      alert(err.message || '낙하물 감지 설정 변경에 실패했습니다.')
+    } finally {
+      setBusyId(null)
     }
   }
 
@@ -243,10 +282,23 @@ export default function CameraManagerModal({ onClose, onChanged }) {
               <option value="MP4">MP4</option>
             </select>
           </label>
-          <button type="submit" className="cam-mgr-submit-btn" disabled={submitting}>
-            {submitting ? '등록 중...' : '등록'}
+          <label>
+            <span>또는 동영상 업로드</span>
+            <input type="file" accept="video/mp4,video/webm,video/quicktime" onChange={handleFileUpload} disabled={uploading} />
+          </label>
+          <label className="cam-mgr-checkbox">
+            <input
+              type="checkbox"
+              checked={form.debrisDetectionEnabled}
+              onChange={(e) => setForm((prev) => ({ ...prev, debrisDetectionEnabled: e.target.checked }))}
+            />
+            <span>낙하물 감지 사용</span>
+          </label>
+          <button type="submit" className="cam-mgr-submit-btn" disabled={submitting || uploading}>
+            {submitting ? '등록 중...' : uploading ? '영상 업로드 중...' : '등록'}
           </button>
         </form>
+        {uploadError && <div className="cam-mgr-form-error">{uploadError}</div>}
         {formError && <div className="cam-mgr-form-error">{formError}</div>}
 
         <div className="cam-mgr-list-search">
@@ -278,12 +330,23 @@ export default function CameraManagerModal({ onClose, onChanged }) {
                 {cam.streamUrl ? 'LIVE' : '미연결'}
               </span>
               <div className="cam-mgr-row-main">
-                <div className="cam-mgr-row-title">{cam.name} <span className="cam-mgr-row-camid">{cam.camId}</span></div>
+                <div className="cam-mgr-row-title">
+                  {cam.name} <span className="cam-mgr-row-camid">{cam.camId}</span>
+                  {cam.debrisDetectionEnabled && <span className="cam-tag-debris">(낙하물)</span>}
+                </div>
                 <div className="cam-mgr-row-sub">
                   {cam.status === 'ACTIVE' ? '운영 중' : '비활성'}
                   {cam.streamUrl ? ` · ${cam.streamFormat || '스트림'} 연결됨` : ' · 실시간 영상 없음'}
                 </div>
               </div>
+              <button
+                type="button"
+                className="cam-mgr-toggle-btn"
+                disabled={busyId === cam.id}
+                onClick={() => handleToggleDebris(cam)}
+              >
+                {cam.debrisDetectionEnabled ? '낙하물 끄기' : '낙하물 켜기'}
+              </button>
               <button
                 type="button"
                 className="cam-mgr-toggle-btn"

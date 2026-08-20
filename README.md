@@ -94,8 +94,13 @@ python -m venv venv
 venv\Scripts\activate
 pip install -r requirements.txt
 
-# 2. 각 모듈 실행 (예: 낙하물 감지)
-python a_core/yolo_infer.py
+# 2. 각 모듈 실행 (예: 낙하물 감지 - 영상 1개 수동 지정)
+python a_core/yolo_infer.py --video <파일 또는 URL>
+
+# 2-1. 또는: 대시보드에 등록된 카메라들을 자동으로 감지 (권장)
+#      "낙하물 감지 사용"이 켜진 카메라를 계속 감시하면서 위 yolo_infer.py를
+#      카메라별로 알아서 켜고 끈다. b_gateway를 먼저 띄워둔 상태여야 한다.
+python a_core/camera_watcher.py
 ```
 
 각 모듈별 세부 실행 방법은 담당자 폴더 내 README를 참고.

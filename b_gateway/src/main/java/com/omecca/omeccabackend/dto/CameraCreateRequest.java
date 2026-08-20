@@ -21,4 +21,7 @@ public class CameraCreateRequest {
 
     /** HLS / MP4 등. streamUrl이 없으면 같이 비워둠 */
     private String streamFormat;
+
+    /** 낙하물 자동 감지 사용 여부. 안 보내면 false로 시작 */
+    private Boolean debrisDetectionEnabled;
 }

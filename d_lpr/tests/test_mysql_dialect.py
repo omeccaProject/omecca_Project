@@ -165,55 +165,77 @@ class TestRuntimeSQL:
         repo.list_vehicles()
         repo.list_vehicles(status="wanted")
         repo.all_plates()
-        repo.recent_violations(limit=10)
-        repo.recent_violations(limit=10, violation_type="red_light",
-                               cam_id="CAM-001", risk_level="high")
-        assert len(conn.log) >= 7
+        assert len(conn.log) >= 5
 
     def test_all_aggregate_queries_valid(self, mysql_repo):
         repo, conn = mysql_repo
-        repo.count_by_type()
-        repo.count_by_cam()
-        repo.count_by_risk()
-        repo.count_by_hour()      # MySQL 전용 분기 (LPAD/HOUR)
-        repo.count_by_day(14)     # MySQL 전용 분기 (DATE)
         repo.plate_read_summary()
-        assert len(conn.log) == 6
-
-    def test_hour_query_uses_mysql_functions(self, mysql_repo):
-        repo, conn = mysql_repo
-        repo.count_by_hour()
-        sql = conn.log[-1][0].upper()
-        assert "HOUR(" in sql and "STRFTIME" not in sql
-
-    def test_day_query_uses_mysql_functions(self, mysql_repo):
-        repo, conn = mysql_repo
-        repo.count_by_day()
-        sql = conn.log[-1][0].upper()
-        assert "DATE(" in sql and "SUBSTR" not in sql
+        assert len(conn.log) == 1
 
     def test_write_queries_valid(self, mysql_repo):
         repo, conn = mysql_repo
-        repo.save_violation(make_event())
         repo.log_plate_read("CAM-001", 1, "12가3456", "12가3456",
                             0.9, True, "easyocr", time.time())
         repo.upsert(VehicleRecord(plate_no="99하9999", status=VehicleStatus.WANTED))
         repo.clear()
-        assert len(conn.log) >= 5
+        assert len(conn.log) >= 3
 
-    def test_violation_insert_param_count(self, mysql_repo):
+
+class TestViolationNotOnMysql:
+    """MySQL 에서는 violation 쿼리가 **한 줄도 나가면 안 된다.**
+
+    ERD v1.0 결정 2번으로 violation 은 b_gateway 의 event 로 흡수됐고
+    `sql/schema.sql` 에서도 빠졌다. 그런데 repository 는 계속 INSERT 를 하고
+    있었다 — SQLite 는 자체 스키마로 테이블을 만들어서 티가 안 났고, MySQL 로
+    붙여야만 "table doesn't exist" 가 이벤트마다 쌓인다. 예외를 삼키게 돼 있어
+    **죽지도 않고 로그만 조용히 못 쓰게 되는** 종류의 문제다.
+
+    아래 테스트가 그 회귀를 막는다. 전송은 GatewayClient 가 HTTP 로 한다
+    (`run_uturn.py --gateway http://localhost:8080`).
+    """
+
+    def test_save_emits_nothing(self, mysql_repo):
+        repo, conn = mysql_repo
+        before = len(conn.log)
+        repo.save_violation(make_event())
+        assert len(conn.log) == before
+
+    def test_reads_emit_nothing(self, mysql_repo):
+        repo, conn = mysql_repo
+        before = len(conn.log)
+        assert repo.recent_violations(limit=10) == []
+        assert repo.recent_violations(limit=5, violation_type="red_light",
+                                      cam_id="CAM-001") == []
+        assert repo.count_by_type() == {}
+        assert repo.count_by_cam() == {}
+        assert repo.count_by_risk() == {}
+        assert repo.count_by_hour() == {}
+        assert repo.count_by_day(14) == {}
+        assert len(conn.log) == before
+
+    def test_no_violation_sql_anywhere(self, mysql_repo):
+        """혹시라도 다른 경로로 새어 나가는지 전수 확인."""
         repo, conn = mysql_repo
         repo.save_violation(make_event())
-        sql, params = conn.log[-1]
-        assert sql.upper().startswith("INSERT INTO VIOLATION")
-        assert len(params) == 13
+        repo.recent_violations()
+        repo.count_by_type()
+        repo.plate_read_summary()
+        repo.find("12가3456")
+        leaked = [s for s, _ in conn.log if "violation" in s.lower()]
+        assert leaked == [], f"MySQL 로 violation 쿼리가 나갔습니다: {leaked}"
 
-    def test_filters_append_conditions(self, mysql_repo):
-        repo, conn = mysql_repo
-        repo.recent_violations(limit=5, violation_type="red_light", cam_id="CAM-001")
-        sql, params = conn.log[-1]
-        assert sql.count("%s") == 3        # type, cam_id, limit
-        assert params[-1] == 5
+
+class TestViolationStillLocalOnSqlite:
+    """반대로 SQLite 에서는 그대로 동작해야 한다 — 로컬 시연이 여기에 달려 있다."""
+
+    def test_sqlite_keeps_filters(self, tmp_path):
+        from app.vehicle.repository import VehicleRepository
+        repo = VehicleRepository(driver="sqlite", sqlite_path=str(tmp_path / "d.db"))
+        repo.save_violation(make_event())
+        assert len(repo.recent_violations()) == 1
+        assert repo.recent_violations(violation_type="illegal_uturn") == []
+        assert len(repo.recent_violations(violation_type="red_light")) == 1
+        assert repo.count_by_type()["red_light"] == 1
 
 
 class TestDriverFallback:
