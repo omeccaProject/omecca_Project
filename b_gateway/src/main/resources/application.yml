@@ -46,7 +46,7 @@ spring:
     #   붙인 이유(각자 SQL 돌리는 번거로움 제거)가 절반만 해결된다.
     #   MySQL 8 의 서버 기본 문자셋이 utf8mb4 라 한글도 그대로 들어간다
     #   (확인: d_lpr/check_mysql.py 6단계 한글 왕복 검사).
-    url: jdbc:mysql://localhost:3306/omecca?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=UTF-8
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:omecca}?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=UTF-8
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
