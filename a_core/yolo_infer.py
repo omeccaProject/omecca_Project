@@ -9,6 +9,13 @@ import cv2
 import requests
 from ultralytics import YOLO
 
+# Windows 콘솔 기본 코드페이지(cp949)는 🚨/🔪 같은 이모지를 못 그려서 UnicodeEncodeError로
+# 죽는다. camera_watcher.py가 실제 PowerShell 창에서 이 스크립트를 자식 프로세스로 띄울 때도
+# 안전하도록 UTF-8로 강제 전환한다.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+
 # ── 경로 기준점 (실행 위치와 무관하게 동작) ──────────────────────
 BASE_DIR = Path(__file__).resolve().parent          # a_core/
 PROJECT_ROOT = BASE_DIR.parent                       # omecca_Project/
@@ -160,8 +167,11 @@ def main():
                         help="화면 출력 없이 실행 (서버 연동용)")
     parser.add_argument("--save", action="store_true",
                     help="탐지 결과 영상을 a_core/outputs/ 에 저장")
+    parser.add_argument("--cam-id", default=CAM_ID,
+                    help="이벤트에 실릴 cam_id. camera_watcher.py가 카메라별로 넘겨준다")
     args = parser.parse_args()
 
+    cam_id = args.cam_id
     tracker = StationaryObjectTracker(threshold_sec=args.threshold)
 
     writer = None
@@ -175,7 +185,10 @@ def main():
         # 1. 낙하물(방치물) 이벤트
         debris_candidates = [d for d in detections if d["class"] in DEBRIS_CLASSES]
         for event in tracker.update(debris_candidates, now):
-            payload = build_event_payload(CAM_ID, event, roi_id="roi_sidewalk_01")
+            # roiId는 b_gateway에서 Long(실제 roi 테이블 FK)이라, 문자열 placeholder를 넣으면
+            # "Cannot deserialize value of type java.lang.Long"로 게이트웨이가 매번 400 거부한다.
+            # 카메라별 ROI 등록 연동이 아직 없으므로 스키마 기본값(null)을 그대로 쓴다.
+            payload = build_event_payload(cam_id, event)
 
             print("🚨 [DEBRIS] 이벤트 전송:")
             print(json.dumps(payload, ensure_ascii=False, indent=2))
@@ -184,7 +197,7 @@ def main():
         # 2. 흉기 이벤트
         for det in detections:
             if det["class"] in WEAPON_CLASSES:
-                payload = build_weapon_event_payload(CAM_ID, det)
+                payload = build_weapon_event_payload(cam_id, det)
                 print("🔪 [WEAPON] 이벤트 전송:")
                 print(json.dumps(payload, ensure_ascii=False, indent=2))
                 send_to_gateway(payload)

@@ -116,7 +116,13 @@ export default function CctvGrid({ events, focusedEvent, onSelectCam, camOffset 
       .then((list) => {
         const withStream = (Array.isArray(list) ? list : [])
           .filter((c) => c.status === 'ACTIVE' && c.streamUrl)
-          .map((c) => ({ camId: c.camId, name: c.name, videoUrl: c.streamUrl }))
+          .map((c) => ({
+            camId: c.camId,
+            name: c.name,
+            videoUrl: c.streamUrl,
+            streamFormat: c.streamFormat,
+            debrisDetectionEnabled: !!c.debrisDetectionEnabled,
+          }))
         setLiveCameras(withStream.length > 0 ? withStream : FALLBACK_REAL_CAMERAS)
 
         // API가 실제로 응답했을 때만(설령 withStream이 아직 비어있더라도) 슬롯을 갱신한다 -
@@ -270,6 +276,11 @@ export default function CctvGrid({ events, focusedEvent, onSelectCam, camOffset 
           const latest = latestByCam[camId]
           const isFocused = focusedEvent?.camId === camId
           const realCam = realCameraById[camId]
+          // 낙하물처럼 사건 전/후 캡처 이미지가 없는 이벤트(frameRefBefore/After가 둘 다 null)는
+          // "포커스"돼도 보여줄 캡처 이미지가 없다 - 그런데도 무조건 상세(캡처) 모드로 빠지면
+          // 실시간 영상이 있는 카메라인데 빈 회색 박스만 뜨는 것처럼 보인다. 캡처 이미지가
+          // 실제로 있을 때만 상세 모드를 쓰고, 없으면 실시간 영상을 그대로 보여준다.
+          const hasFocusedFrames = isFocused && (focusedEvent?.frameRefBefore || focusedEvent?.frameRefAfter)
 
           return (
             <div
@@ -290,7 +301,7 @@ export default function CctvGrid({ events, focusedEvent, onSelectCam, camOffset 
                   ))}
                 </select>
               </div>
-              {isFocused && focusedEvent ? (
+              {hasFocusedFrames ? (
                 <div className="cctv-cell-detail">
                   <div className="frames-mini">
                     {focusedEvent.frameRefBefore && <img src={focusedEvent.frameRefBefore} alt="before" />}
@@ -303,10 +314,12 @@ export default function CctvGrid({ events, focusedEvent, onSelectCam, camOffset 
                 </div>
               ) : realCam ? (
                 <div className="cctv-cell-live-wrap">
-                  <LiveHlsVideo videoUrl={realCam.videoUrl} className="cctv-cell-live-video" />
+                  <LiveHlsVideo videoUrl={realCam.videoUrl} format={realCam.streamFormat} className="cctv-cell-live-video" />
                   <div className="cctv-cell-foot cctv-cell-foot-live">
                     <span className="cctv-cell-live-dot" />
                     <span className="cctv-cell-cam">{realCam.name}</span>
+                    {realCam.debrisDetectionEnabled && <span className="cam-tag-debris">(낙하물)</span>}
+                    {isFocused && focusedEvent && <Badge eventType={focusedEvent.eventType} />}
                   </div>
                 </div>
               ) : (
@@ -328,16 +341,20 @@ export default function CctvGrid({ events, focusedEvent, onSelectCam, camOffset 
 
       {zoomedCamId && (() => {
         const zoomedRealCam = realCameraById[zoomedCamId]
+        // 그리드 셀과 동일한 이유 - 캡처 이미지가 없는 이벤트(낙하물 등)는 "캡쳐 이미지 없음"
+        // placeholder 두 개 대신, 실시간 영상이 있으면 그걸 그대로 보여준다.
+        const zoomedHasFrames = zoomedLatest && (zoomedLatest.frameRefBefore || zoomedLatest.frameRefAfter)
         return (
         <div className="cctv-zoom-overlay" onClick={() => setZoomedCamId(null)}>
           <div className="cctv-zoom-box" onClick={(e) => e.stopPropagation()}>
             <div className="cctv-zoom-head">
               <span className="cctv-zoom-cam">{zoomedRealCam ? zoomedRealCam.name : zoomedCamId}</span>
+              {zoomedRealCam?.debrisDetectionEnabled && <span className="cam-tag-debris">(낙하물)</span>}
               {zoomedLatest && <Badge eventType={zoomedLatest.eventType} />}
               <button className="cctv-zoom-close" onClick={() => setZoomedCamId(null)}>닫기 ✕</button>
             </div>
 
-            {zoomedLatest ? (
+            {zoomedHasFrames ? (
               <>
                 <div className="frames-zoom">
                   <FrameImage label="이전" url={zoomedLatest.frameRefBefore} />
@@ -348,7 +365,7 @@ export default function CctvGrid({ events, focusedEvent, onSelectCam, camOffset 
                 </div>
               </>
             ) : zoomedRealCam ? (
-              <LiveHlsVideo videoUrl={zoomedRealCam.videoUrl} className="cctv-zoom-live-video" />
+              <LiveHlsVideo videoUrl={zoomedRealCam.videoUrl} format={zoomedRealCam.streamFormat} className="cctv-zoom-live-video" />
             ) : (
               <div className="cctv-zoom-empty">신호 대기 중 — 아직 감지된 이벤트가 없습니다</div>
             )}

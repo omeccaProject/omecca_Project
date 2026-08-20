@@ -7,19 +7,33 @@ import com.omecca.omeccabackend.entity.Camera;
 import com.omecca.omeccabackend.entity.enums.CameraStatus;
 import com.omecca.omeccabackend.repository.CameraRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
+import java.util.Set;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
 public class CameraService {
 
+    private static final Set<String> ALLOWED_VIDEO_EXTENSIONS = Set.of("mp4", "webm", "mov");
+
     private final CameraRepository cameraRepository;
+
+    // 업로드된 동영상 파일을 저장할 디렉터리. "동영상을 CCTV로 등록"할 때 여기 저장하고
+    // StaticResourceConfig가 /media/videos/**로 그대로 서빙한다.
+    @Value("${app.upload-dir:uploads}")
+    private String uploadDir;
 
     @Transactional
     public CameraResponse create(CameraCreateRequest request) {
@@ -39,6 +53,7 @@ public class CameraService {
                 .status(hasStream ? CameraStatus.ACTIVE : CameraStatus.INACTIVE)
                 .streamUrl(hasStream ? request.getStreamUrl().trim() : null)
                 .streamFormat(StringUtils.hasText(request.getStreamFormat()) ? request.getStreamFormat().trim() : null)
+                .debrisDetectionEnabled(Boolean.TRUE.equals(request.getDebrisDetectionEnabled()))
                 .build();
 
         return CameraResponse.from(cameraRepository.save(camera));
@@ -66,8 +81,40 @@ public class CameraService {
         if (request.getStreamFormat() != null) {
             camera.setStreamFormat(StringUtils.hasText(request.getStreamFormat()) ? request.getStreamFormat().trim() : null);
         }
+        if (request.getDebrisDetectionEnabled() != null) {
+            camera.setDebrisDetectionEnabled(request.getDebrisDetectionEnabled());
+        }
 
         return CameraResponse.from(camera);
+    }
+
+    // 동영상 파일을 "카메라 등록용 영상 URL"로 쓸 수 있게 서버에 저장하고, StaticResourceConfig가
+    // 서빙하는 /media/videos/<파일명> 경로를 돌려준다. 프론트가 이 URL을 그대로 streamUrl에
+    // 넣어 카메라를 등록하므로, Camera 엔티티에 별도의 "업로드냐 스트림이냐" 구분 필드는 두지 않는다.
+    public String uploadVideo(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "업로드할 파일이 없습니다.");
+        }
+
+        String original = StringUtils.hasText(file.getOriginalFilename()) ? file.getOriginalFilename() : "video";
+        String ext = original.contains(".") ? original.substring(original.lastIndexOf('.') + 1).toLowerCase() : "";
+        if (!ALLOWED_VIDEO_EXTENSIONS.contains(ext)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "지원하지 않는 형식입니다. 허용: " + ALLOWED_VIDEO_EXTENSIONS);
+        }
+
+        try {
+            Path videosDir = Path.of(uploadDir, "videos").toAbsolutePath().normalize();
+            Files.createDirectories(videosDir);
+
+            String filename = UUID.randomUUID() + "." + ext;
+            Path target = videosDir.resolve(filename);
+            file.transferTo(target);
+
+            return "/media/videos/" + filename;
+        } catch (IOException e) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "영상 저장에 실패했습니다: " + e.getMessage());
+        }
     }
 
     @Transactional

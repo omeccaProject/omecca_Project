@@ -7,6 +7,9 @@ gateway:
   api-key: ${GATEWAY_API_KEY}
 
 app:
+  # 업로드된 동영상(카메라 등록용)을 저장할 디렉터리. b_gateway 실행 위치 기준 상대경로.
+  # StaticResourceConfig/CameraService.uploadVideo가 이 값을 그대로 공유한다.
+  upload-dir: ${UPLOAD_DIR:uploads}
   auth:
     jwt-secret: ${JWT_SECRET}
 
@@ -30,6 +33,12 @@ report:
 spring:
   application:
     name: omecca-backend
+  # 동영상을 "CCTV"로 업로드 등록하는 기능(CameraController.upload)용. 기본값(1MB)으론 영상이
+  # 바로 413으로 거부되므로 상향해둔다.
+  servlet:
+    multipart:
+      max-file-size: 500MB
+      max-request-size: 500MB
   datasource:
     # createDatabaseIfNotExist=true : omecca 데이터베이스가 없으면 만들고 붙는다.
     #   Flyway 는 DB '안의 테이블'을 관리할 뿐 DB 자체는 못 만든다. 이게 없으면

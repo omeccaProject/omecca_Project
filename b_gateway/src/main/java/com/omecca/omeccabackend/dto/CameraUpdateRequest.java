@@ -14,4 +14,5 @@ public class CameraUpdateRequest {
     private String status;
     private String streamUrl;
     private String streamFormat;
+    private Boolean debrisDetectionEnabled;
 }

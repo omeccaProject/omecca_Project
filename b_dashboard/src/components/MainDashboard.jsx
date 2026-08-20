@@ -5,6 +5,7 @@ import CctvGrid from './CctvGrid'
 import EventList from './EventList'
 import TargetsPanel from './TargetsPanel'
 import EventDetailModal from './EventDetailModal'
+import DashboardCctvPanel from './DashboardCctvPanel'
 
 function fmtTime(iso) {
   if (!iso) return '-'
@@ -208,6 +209,15 @@ export default function MainDashboard({
   useEffect(() => {
     localStorage.setItem('omecca_right_sidebar_collapsed', rightCollapsed ? '1' : '0')
   }, [rightCollapsed])
+  // "대시보드" 화면 오른쪽 패널 상단의 "이벤트"/"CCTV" 작은 탭. 예전엔 AI 관제 이벤트
+  // 목록만 볼 수 있었고, CCTV 영상은 "추적 차량" 화면(지도 iframe 내부, 다른 사람 소유
+  // 모듈)에서만 볼 수 있어서 서로 연결이 안 됐다 - 이제 이 패널 안에서 탭으로 바로 전환한다.
+  const [rightPanelTab, setRightPanelTab] = useState(
+    () => localStorage.getItem('omecca_right_panel_tab') || 'events',
+  )
+  useEffect(() => {
+    localStorage.setItem('omecca_right_panel_tab', rightPanelTab)
+  }, [rightPanelTab])
   const mapIframeRef = useRef(null)
   const mapReadyRef = useRef(false)
   // onMessage 핸들러는 darkMode가 바뀔 때만 재구독되므로, activeView를 직접 클로저로
@@ -480,8 +490,26 @@ export default function MainDashboard({
               <IconChevron flipped={!rightCollapsed} />
             </button>
             <aside className={`control-events-col ${rightCollapsed ? 'collapsed' : ''}`}>
-            <div className="control-events-head">AI 관제 이벤트</div>
+            <div className="control-panel-tabs">
+              <button
+                type="button"
+                className={`control-panel-tab ${rightPanelTab === 'events' ? 'active' : ''}`}
+                onClick={() => setRightPanelTab('events')}
+              >
+                이벤트
+              </button>
+              <button
+                type="button"
+                className={`control-panel-tab ${rightPanelTab === 'cctv' ? 'active' : ''}`}
+                onClick={() => setRightPanelTab('cctv')}
+              >
+                CCTV
+              </button>
+            </div>
 
+            {rightPanelTab === 'cctv' ? (
+              <DashboardCctvPanel focusedEvent={focusedEvent} />
+            ) : (
             <div className="control-events-list">
               {events.length === 0 && (
                 <div className="control-events-empty">감지된 이벤트가 없습니다</div>
@@ -531,6 +559,7 @@ export default function MainDashboard({
                 )
               })}
             </div>
+            )}
             </aside>
           </div>
         )}

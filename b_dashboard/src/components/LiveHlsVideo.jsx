@@ -15,7 +15,7 @@ const LOADING_TIMEOUT_MS = 8000 // 이 시간 안에 재생이 시작 안 되면
 const RETRY_DELAYS_MS = [2000, 4000, 8000, 8000, 8000] // 자동 재시도 간격(마지막 값 반복)
 const MAX_AUTO_RETRIES = RETRY_DELAYS_MS.length
 
-export default function LiveHlsVideo({ videoUrl, className = '' }) {
+export default function LiveHlsVideo({ videoUrl, className = '', format = 'HLS' }) {
   const videoRef = useRef(null)
   const hlsRef = useRef(null)
   const timersRef = useRef({ loadingTimeout: null, retryTimeout: null })
@@ -67,6 +67,27 @@ export default function LiveHlsVideo({ videoUrl, className = '' }) {
       scheduleRetry()
     }
 
+    if (format === 'MP4') {
+      // 업로드된 동영상 파일(카메라 관리에서 등록). hls.js는 m3u8 매니페스트 전용이라
+      // 여기서는 아예 안 타고 <video src>로 네이티브 재생한다. loop를 걸어서 영상이 끝나도
+      // 화면상으로는 CCTV처럼 계속 재생되는 것처럼 보이게 한다(실제 탐지 재시작은
+      // a_core/camera_watcher.py가 서버 쪽에서 별도로 처리).
+      videoEl.loop = true
+      videoEl.src = videoUrl
+      const onPlaying = () => {
+        clearTimers()
+        setStatus('live')
+      }
+      videoEl.addEventListener('playing', onPlaying)
+      videoEl.addEventListener('error', onFatalError)
+      videoEl.play().catch(() => {})
+      return () => {
+        videoEl.removeEventListener('playing', onPlaying)
+        videoEl.removeEventListener('error', onFatalError)
+        clearTimers()
+      }
+    }
+
     if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
       // Safari — hls.js 없이 네이티브 재생
       videoEl.src = videoUrl
@@ -109,7 +130,7 @@ export default function LiveHlsVideo({ videoUrl, className = '' }) {
       hlsRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [videoUrl, retryToken])
+  }, [videoUrl, retryToken, format])
 
   return (
     <div className={`live-hls-video ${className}`}>

@@ -15,3 +15,7 @@ build/
 
 application-local.yml
 .env
+
+# 업로드된 동영상(카메라 등록용, CameraService.uploadVideo). 실제 사람 얼굴/번호판이 찍힌
+# 영상일 수 있어 개인정보 - 커밋하지 않는다.
+/uploads/

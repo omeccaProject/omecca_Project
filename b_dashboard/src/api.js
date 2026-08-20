@@ -73,7 +73,22 @@ export async function fetchCameras() {
   return res.json()
 }
 
-// payload: { camId, name, streamUrl?, streamFormat? }
+// 동영상 파일을 업로드해서 카메라 등록용 URL을 발급받는다("실시간 URL" 대신 이 URL을
+// streamUrl에 넣어 createCamera를 호출하면 업로드 영상도 CCTV처럼 등록된다).
+// Content-Type은 지정하지 않는다 - 브라우저가 multipart 경계값을 포함해 자동으로 채운다.
+export async function uploadCameraVideo(file) {
+  const formData = new FormData()
+  formData.append('file', file)
+  const res = await fetch('/api/cameras/upload', {
+    method: 'POST',
+    headers: AUTH_HEADERS,
+    body: formData,
+  })
+  if (!res.ok) throw new Error(await parseErrorMessage(res, '영상 업로드에 실패했습니다.'))
+  return res.json() // { url }
+}
+
+// payload: { camId, name, streamUrl?, streamFormat?, debrisDetectionEnabled? }
 export async function createCamera(payload) {
   const res = await fetch('/api/cameras', {
     method: 'POST',
@@ -84,7 +99,7 @@ export async function createCamera(payload) {
   return res.json()
 }
 
-// payload: 바뀐 필드만 { name?, status?, streamUrl?, streamFormat? }
+// payload: 바뀐 필드만 { name?, status?, streamUrl?, streamFormat?, debrisDetectionEnabled? }
 export async function updateCamera(id, payload) {
   const res = await fetch(`/api/cameras/${id}`, {
     method: 'PATCH',
