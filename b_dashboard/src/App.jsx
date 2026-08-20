@@ -108,6 +108,18 @@ export default function App() {
     loadTargets().catch(() => {})
   }, [loadInitial, loadTargets])
 
+  // 웹소켓(/topic/events)은 "새로 생긴" 이벤트만 밀어준다 - 누군가 HeidiSQL 등에서
+  // DB 행을 직접 지워도 그 사실은 알려주지 않으므로, 지운 이벤트가 화면에서 안 사라지고
+  // 계속 남아있게 된다(낙하물 반복 테스트 중 발견됨). loadInitial()은 매번 서버 목록으로
+  // 통째로 교체(setEvents(sorted))하는 방식이라 그 자체로 "지금 DB에 있는 것만 남기기"가
+  // 되므로, 짧은 주기로 백그라운드에서 다시 불러와 화면을 DB 상태와 계속 맞춰준다.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      loadInitial().catch(() => {})
+    }, 5000)
+    return () => clearInterval(timer)
+  }, [loadInitial])
+
   const handleRefresh = useCallback(() => {
     if (refreshing) return
     setRefreshing(true)

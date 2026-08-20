@@ -153,10 +153,18 @@ class CameraWatcher:
         for cam_id, stream_url in targets.items():
             if cam_id in self.processes:
                 continue
+            fired_in_db = None
             if cam_id in self.fired_cams:
-                continue
+                # 캐시에 있어도 DB 쪽 이벤트가 지워졌을 수 있다(재테스트하려고 HeidiSQL 등에서
+                # 수동으로 지운 경우) - 그럴 때 워처를 껐다 켜야만 재개되는 게 불편하다는
+                # 피드백이 있어서, 캐시를 무조건 믿지 않고 DB를 다시 확인해 필요하면 재개한다.
+                fired_in_db = has_fired_debris(cam_id)
+                if fired_in_db:
+                    continue
+                self.fired_cams.discard(cam_id)
+                print(f"[WATCHER] 🔄 {cam_id} 낙하물 기록이 DB에서 사라짐 - 감지 재개")
             # 세션 캐시에 없어도(워처를 방금 재시작한 경우 등) 서버에 이미 기록이 있으면 존중한다.
-            if has_fired_debris(cam_id):
+            if fired_in_db is None and has_fired_debris(cam_id):
                 self.fired_cams.add(cam_id)
                 print(f"[WATCHER] ✅ {cam_id} 낙하물 이미 감지된 카메라 - 켜지 않음")
                 continue

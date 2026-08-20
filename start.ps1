@@ -95,6 +95,18 @@ Launch "omecca - gateway :8080" (Join-Path $ROOT "b_gateway") "java -jar '$($jar
 Start-Sleep -Seconds 12       # Flyway 마이그레이션 + 기동을 기다린다
 Launch "omecca - map :4000"      (Join-Path $ROOT "e_tracking\SmartCCTV\server") "node server.js"
 Launch "omecca - dashboard :5173" (Join-Path $ROOT "b_dashboard") "npm run dev"
+
+# 카메라 관리에서 "낙하물 감지 사용"을 켠 카메라를 등록하면 곧바로 감지가 붙도록,
+# 워처도 매번 손으로 켜지 않고 여기서 같이 띄운다. 간격을 2초로 짧게 줘서, 카메라
+# 등록 후 체감상 거의 즉시 감지가 시작되는 것처럼 보이게 한다 (여전히 폴링 방식이지만
+# 2초면 데모/실사용에서는 "바로 반영된다"로 느껴진다 - 진짜 이벤트 기반 트리거는 아님).
+$watcher = Join-Path $ROOT "a_core\camera_watcher.py"
+if (Test-Path $watcher) {
+    Launch "omecca - camera_watcher" (Join-Path $ROOT "a_core") "python camera_watcher.py --interval 2"
+} else {
+    Write-Host "  [건너뜀] a_core\camera_watcher.py 없음 - 낙하물 자동 감지는 수동 실행 필요" -ForegroundColor DarkGray
+}
+
 Start-Sleep -Seconds 6
 
 Write-Host ""

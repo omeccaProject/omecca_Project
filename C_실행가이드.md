@@ -217,6 +217,28 @@ node server.js
 
 ---
 
+## 3-2. 낙하물 자동 감지 워처(a_core) 실행
+
+카메라 관리에서 "낙하물 감지 사용"을 켠 카메라를 등록해도, 이 워처가 떠 있지 않으면
+실제 감지(YOLO 추론 + 이벤트 저장)는 전혀 일어나지 않습니다 — 영상이 CCTV 화면에
+재생되는 것과 낙하물이 실제로 감지되는 건 별개입니다.
+
+```bash
+cd a_core
+python camera_watcher.py --interval 2
+```
+
+- 2초마다 게이트웨이(`/api/cameras`)를 조회해서, "운영 중 + 낙하물 감지 사용 + 영상 URL 있음"
+  조건을 만족하는 카메라마다 자동으로 `yolo_infer.py`를 붙여서 돌립니다.
+- 콘솔에 `[WATCHER] 🟢 감지 시작: <cam_id> (...)`가 뜨면 정상 동작 중인 것.
+- 카메라 등록 → 최대 2초 안에 감지가 시작되므로, 한 번 켜두고 계속 띄워두면 됩니다
+  (카메라 등록할 때마다 이 스크립트를 껐다 켤 필요 없음).
+- 한 카메라가 낙하물 이벤트를 한 번 내면(`fired_cams`) 그 카메라는 재시작 안 됨(반복재생 영상이
+  같은 물체로 계속 새 이벤트를 만드는 걸 방지). DB에서 그 이벤트를 지우면 다음 폴링(최대 2초)에서
+  자동으로 재개됨 — 워처를 재시작할 필요 없음.
+
+---
+
 ## 4. Target / ROI 등록 API 테스트 (선택)
 
 > 이 아래 `/api/**` 요청들은 전부 `ApiKeyFilter`가 걸려 있어서 `X-API-Key` 헤더가 없으면
@@ -326,7 +348,8 @@ curl localhost:8080/api/reports
 2. `export GATEWAY_API_KEY=... JWT_SECRET=...` (1단계 참고) → `cd b_gateway && ./mvnw spring-boot:run`
 3. `cd b_dashboard && npm install && npm run dev` → 브라우저 `http://localhost:5173` 접속 확인
 4. `cd e_tracking/SmartCCTV/server && npm install && node server.js` → 지도가 안 뜨거나 404가 나면 이 서버가 꺼져있는 것
-5. (선택) `/api/targets`, `/api/rois` curl 테스트
-6. `python3 scripts/mock_events.py --count 10 --interval 1`
-7. `cd b_report && source .venv/bin/activate && python -m src.main ...`
-8. `curl localhost:8080/api/reports` 로 최종 확인
+5. `cd a_core && python camera_watcher.py --interval 2` → 낙하물 감지 켠 카메라 등록 시 자동 감지
+6. (선택) `/api/targets`, `/api/rois` curl 테스트
+7. `python3 scripts/mock_events.py --count 10 --interval 1`
+8. `cd b_report && source .venv/bin/activate && python -m src.main ...`
+9. `curl localhost:8080/api/reports` 로 최종 확인
