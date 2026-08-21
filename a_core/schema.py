@@ -11,7 +11,8 @@ def _now_iso():
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
-def build_event_payload(cam_id, event, roi_id=None, track_id=None):
+def build_event_payload(cam_id, event, roi_id=None, track_id=None,
+                         frame_ref_before=None, frame_ref_after=None):
     """낙하물(방치물) 이벤트 - 정지판별 거쳐서 생성"""
     return {
         "camId": cam_id,
@@ -31,11 +32,11 @@ def build_event_payload(cam_id, event, roi_id=None, track_id=None):
         "meta": {
             "stationaryDurationSec": event["duration_sec"]
         },
-        "frameRefBefore": None,
-        "frameRefAfter": None
+        "frameRefBefore": frame_ref_before,
+        "frameRefAfter": frame_ref_after
     }
 
-def build_weapon_event_payload(cam_id, detection):
+def build_weapon_event_payload(cam_id, detection, frame_ref_before=None, frame_ref_after=None):
     """흉기 이벤트 - 탐지 즉시 생성 (정지판별 불필요)"""
     return {
         "camId": cam_id,
@@ -56,6 +57,6 @@ def build_weapon_event_payload(cam_id, detection):
         "meta": {
             "weaponType": detection["class"]
         },
-        "frameRefBefore": None,
-        "frameRefAfter": None
+        "frameRefBefore": frame_ref_before,
+        "frameRefAfter": frame_ref_after
     }

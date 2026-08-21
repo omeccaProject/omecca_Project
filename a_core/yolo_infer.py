@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import json
+import uuid
 import argparse
 from pathlib import Path
 
@@ -45,6 +46,14 @@ ALL_MODELS = [general_model, hazard_model]
 
 OUTPUT_DIR = BASE_DIR / "outputs"          # a_core/outputs/
 OUTPUT_DIR.mkdir(exist_ok=True)
+
+# 사건 발생 전/후 캡처 이미지 저장 위치. b_gateway(ReportGenerationService)의
+# report.generation.frame-base-dir 기본값(../b_dashboard/public)과, b_dashboard Vite
+# 개발 서버가 public/을 사이트 루트로 서빙하는 것 둘 다를 동시에 만족시키려면 반드시
+# b_dashboard/public/captures/ 아래에 저장해야 한다 (frameRefBefore/After에는
+# "captures/<파일명>.jpg" 처럼 이 디렉토리 기준 상대경로만 실어 보낸다).
+CAPTURES_DIR = PROJECT_ROOT / "b_dashboard" / "public" / "captures"
+CAPTURES_DIR.mkdir(parents=True, exist_ok=True)
 
 DEFAULT_VIDEO = PROJECT_ROOT / "data" / "videos" / "cone.mp4"
 CAM_ID = "CCTV-014"
@@ -148,6 +157,30 @@ def draw_detections(frame, detections):
     return frame
 
 
+def save_capture(frame, cam_id, tag):
+    """frame(원본 BGR numpy 배열)을 CAPTURES_DIR에 JPEG로 저장하고, b_gateway/b_dashboard가
+    바로 쓸 수 있는 "/captures/<파일명>.jpg" 형태의 경로를 반환한다.
+    frame이 None이면(예: before_frame을 못 잡은 경우) 저장하지 않고 None을 반환한다.
+
+    맨 앞에 "/"를 붙여 사이트 루트 기준 절대경로로 만든다 - 프론트(EventDetailModal,
+    CctvGrid)가 지금 어떤 화면(라우트)에 떠 있든 상관없이 항상 같은 곳을 가리키게 하기
+    위함이다("captures/..."처럼 슬래시 없는 상대경로는 브라우저가 현재 페이지 URL 기준으로
+    풀어내기 때문에, 라우트 깊이에 따라 엉뚱한 위치를 가리킬 수 있었다).
+    b_gateway 쪽 ReportGenerationService.java가 Path.of(frameBaseDir, ref)로 합칠 때도
+    맨 앞 "/"는 그냥 무시되고 frameBaseDir 밑에 이어붙는 것으로 확인했다 - PDF 생성 경로는
+    안 깨진다.
+    실제로 저장이 실패하면(cv2.imwrite가 False를 반환) 존재하지 않는 파일을 가리키는
+    경로를 보내는 걸 막기 위해 이 경우도 None으로 반환한다."""
+    if frame is None:
+        return None
+    filename = f"{cam_id}_{tag}_{uuid.uuid4().hex[:8]}.jpg"
+    ok = cv2.imwrite(str(CAPTURES_DIR / filename), frame)
+    if not ok:
+        print(f"  ⚠️  캡처 이미지 저장 실패: {filename}")
+        return None
+    return f"/captures/{filename}"
+
+
 def resize_for_display(frame, max_width=960):
     """화면 표시용으로만 축소. 탐지는 이미 끝난 뒤라 정확도에 영향 없음."""
     h, w = frame.shape[:2]
@@ -174,6 +207,15 @@ def main():
     cam_id = args.cam_id
     tracker = StationaryObjectTracker(threshold_sec=args.threshold)
 
+    # 한 영상 안에 서로 다른 후보(bbox가 살짝씩 어긋나 IOU 매칭이 끊기면서 별개의
+    # candidate로 잡히는 경우 - 실제로 도로 위 물체가 여러 개거나, 흔들림/각도 때문에
+    # 같은 물체가 여러 후보로 쪼개지는 영상에서 자주 발생)가 각자 2초 임계값을 넘기면,
+    # tracker는 그때마다 별개의 이벤트를 계속 반환한다 - 카메라 하나에 낙하물 이벤트가
+    # 여러 건 연달아 쌓이는 원인이었다. "카메라 하나당 한 번이면 충분"이 이 프로젝트의
+    # 요구사항이므로(camera_watcher.py의 has_fired_debris 로직과 동일한 취지), 이 프로세스
+    # 실행 동안 낙하물 이벤트는 첫 건만 전송하고 이후 후보는 감지만 하고 전송은 건너뛴다.
+    debris_alerted_this_run = False
+
     writer = None
     if args.save:
         save_path = OUTPUT_DIR / f"{Path(args.video).stem}_detected.mp4"
@@ -184,20 +226,38 @@ def main():
 
         # 1. 낙하물(방치물) 이벤트
         debris_candidates = [d for d in detections if d["class"] in DEBRIS_CLASSES]
-        for event in tracker.update(debris_candidates, now):
+        for event in tracker.update(debris_candidates, now, frame):
+            if debris_alerted_this_run:
+                print(f"  ⏭️  낙하물 이미 이 실행에서 한 번 전송됨 - {event['class']} 후보는 건너뜀 (카메라당 1건 정책)")
+                continue
+            debris_alerted_this_run = True
             # roiId는 b_gateway에서 Long(실제 roi 테이블 FK)이라, 문자열 placeholder를 넣으면
             # "Cannot deserialize value of type java.lang.Long"로 게이트웨이가 매번 400 거부한다.
             # 카메라별 ROI 등록 연동이 아직 없으므로 스키마 기본값(null)을 그대로 쓴다.
-            payload = build_event_payload(cam_id, event)
+            # 사건 발생 전(before) = 후보가 처음 등록된 순간의 프레임(tracker가 저장해둠),
+            # 사건 발생 후(after) = 지금(임계값 넘어서 이벤트가 확정된) 순간의 프레임.
+            frame_ref_before = save_capture(event.get("before_frame"), cam_id, "before")
+            frame_ref_after = save_capture(frame.copy(), cam_id, "after")
+            payload = build_event_payload(
+                cam_id, event,
+                frame_ref_before=frame_ref_before,
+                frame_ref_after=frame_ref_after,
+            )
 
             print("🚨 [DEBRIS] 이벤트 전송:")
             print(json.dumps(payload, ensure_ascii=False, indent=2))
             send_to_gateway(payload)
 
-        # 2. 흉기 이벤트
+        # 2. 흉기 이벤트 - 정지판별 없이 탐지 즉시 발생하므로 "전/후"를 구분할 별도 프레임이
+        # 없다 - 탐지된 바로 그 프레임을 전/후 양쪽에 그대로 사용한다.
         for det in detections:
             if det["class"] in WEAPON_CLASSES:
-                payload = build_weapon_event_payload(cam_id, det)
+                weapon_frame_ref = save_capture(frame.copy(), cam_id, "weapon")
+                payload = build_weapon_event_payload(
+                    cam_id, det,
+                    frame_ref_before=weapon_frame_ref,
+                    frame_ref_after=weapon_frame_ref,
+                )
                 print("🔪 [WEAPON] 이벤트 전송:")
                 print(json.dumps(payload, ensure_ascii=False, indent=2))
                 send_to_gateway(payload)

@@ -37,3 +37,8 @@ _to_delete*/
 
 # GIS 지도 서버 실행 로그
 e_tracking/SmartCCTV/*.log
+
+# 사건 발생 전/후 캡처 이미지(a_core/yolo_infer.py가 낙하물 이벤트가 뜰 때마다 새로
+# 저장) - 감지 프로세스를 돌릴 때마다 파일명이 계속 새로 생겨서(uuid) 테스트할 때마다
+# 수십 개씩 쌓인다. 실제 증거 데이터라 커밋해서 공유할 이유가 없는 로컬 산출물이라 제외.
+b_dashboard/public/captures/

@@ -2,8 +2,10 @@ package com.omecca.omeccabackend.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.omecca.omeccabackend.entity.Camera;
 import com.omecca.omeccabackend.entity.Event;
 import com.omecca.omeccabackend.entity.Report;
+import com.omecca.omeccabackend.repository.CameraRepository;
 import com.omecca.omeccabackend.repository.EventRepository;
 import com.omecca.omeccabackend.repository.ReportRepository;
 import lombok.RequiredArgsConstructor;
@@ -43,6 +45,7 @@ public class ReportGenerationService {
 
     private final EventRepository eventRepository;
     private final ReportRepository reportRepository;
+    private final CameraRepository cameraRepository;
     private final ObjectMapper objectMapper;
 
     @Value("${report.generation.enabled:true}")
@@ -219,11 +222,22 @@ public class ReportGenerationService {
         return cmd;
     }
 
+    // 대시보드 상세화면(EventDetailModal.jsx)과 같은 이유로 같은 방식을 씀: a_core가
+    // 위경도(lat/lng)를 항상 null로 보내서(위치는 아직 e_tracking 미연동) PDF의
+    // "카메라 / 위치"란도 계속 "-"만 찍혔다. 위경도가 없으면 "카메라 관리"에 등록된
+    // 카메라 이름(예: "국립국악원")으로 대신 채운다 - 위경도가 실제로 들어오게 되면
+    // 그쪽이 그대로 우선된다.
     private String buildLocationLabel(Event event) {
         BigDecimal lat = event.getLat();
         BigDecimal lng = event.getLng();
         if (lat != null && lng != null) {
             return lat.toPlainString() + ", " + lng.toPlainString();
+        }
+        if (event.getCamId() != null) {
+            Optional<Camera> camera = cameraRepository.findByCamId(event.getCamId());
+            if (camera.isPresent() && camera.get().getName() != null && !camera.get().getName().isBlank()) {
+                return camera.get().getName();
+            }
         }
         return "-";
     }

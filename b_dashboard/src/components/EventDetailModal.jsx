@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { EVENT_LABEL } from '../constants'
-import { generateEventReport } from '../api'
+import { generateEventReport, fetchCameras } from '../api'
 
 // 대시보드 이벤트 카드/"남은 이벤트" 행을 클릭했을 때 뜨는 상세화면.
 // 사건 전/후 캡처 이미지와 위치 정보를 확인하고, 그 자리에서 "📄 PDF 리포트 생성" 버튼으로
@@ -34,8 +34,27 @@ function fmtLocationLabel(ev) {
 
 export default function EventDetailModal({ event, onClose }) {
   const [generating, setGenerating] = useState(false)
+  // "카메라 / 위치" 행의 위치는 event.location(lat/lng)이 a_core에서 항상 null로 오기
+  // 때문에(위치는 e_tracking 담당, 아직 미연동) 지금까지 계속 "-"로만 떴다. 대신 이미
+  // "카메라 관리"에 등록돼 있는 camId ↔ name 매핑을 가져와서, 최소한 그 카메라의 등록된
+  // 이름(예: "국립국악원")이라도 보여주도록 한다.
+  const [cameraNameById, setCameraNameById] = useState({})
+
+  useEffect(() => {
+    fetchCameras()
+      .then((list) => {
+        const map = {}
+        ;(Array.isArray(list) ? list : []).forEach((cam) => {
+          if (cam.camId) map[cam.camId] = cam.name
+        })
+        setCameraNameById(map)
+      })
+      .catch(() => {}) // 카메라 목록 조회가 실패해도 상세화면 자체는 그대로 봐야 하므로 조용히 무시
+  }, [])
 
   if (!event) return null
+
+  const cameraName = event.camId ? cameraNameById[event.camId] : null
 
   const handleGenerateReport = async () => {
     if (generating) return
@@ -69,7 +88,7 @@ export default function EventDetailModal({ event, onClose }) {
         <table className="event-detail-kv">
           <tbody>
             <tr><th>발생 시각</th><td>{fmtTime(event.occurredAt)}</td></tr>
-            <tr><th>카메라 / 위치</th><td>{event.camId || '-'} · {fmtLocationLabel(event)}</td></tr>
+            <tr><th>카메라 / 위치</th><td>{event.camId || '-'} · {cameraName || fmtLocationLabel(event)}</td></tr>
             <tr><th>추적 ID</th><td>{event.trackId || '-'}</td></tr>
             <tr><th>차량 번호판</th><td>{fmtPlate(event)}</td></tr>
             <tr><th>탐지 신뢰도</th><td>{event.confidence != null ? `${(event.confidence * 100).toFixed(1)}%` : '-'}</td></tr>

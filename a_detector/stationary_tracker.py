@@ -27,7 +27,11 @@ class StationaryObjectTracker:
         self.next_id = 0
         self.already_alerted = set()
 
-    def update(self, detections, now):
+    def update(self, detections, now, frame=None):
+        """frame(선택): 현재 프레임 원본. 넘겨주면 후보가 처음 등록되는 순간의 프레임을
+        "사건 발생 전" 이미지로 같이 저장해뒀다가, 이 후보가 실제 이벤트로 확정되는 시점에
+        이벤트 dict에 "before_frame"으로 실어 반환한다(호출부가 파일로 저장해 frameRefBefore로
+        쓸 수 있게) - 기존 호출부(frame 없이 부르던 코드)와도 그대로 호환된다."""
         events = []
         current_dets = [d for d in detections if d["class"] in DEBRIS_CLASSES]
 
@@ -61,14 +65,16 @@ class StationaryObjectTracker:
                         "class": det["class"],
                         "bbox": det["bbox"],
                         "duration_sec": round(duration, 1),
-                        "confidence": det["confidence"]
+                        "confidence": det["confidence"],
+                        "before_frame": self.candidates[best_match_id].get("first_frame"),
                     })
             else:
                 self.candidates[self.next_id] = {
                     "bbox": det["bbox"],
                     "class": det["class"],
                     "first_seen": now,
-                    "last_seen": now
+                    "last_seen": now,
+                    "first_frame": frame.copy() if frame is not None else None,
                 }
                 print(f"  🆕 낙하물 후보 등록: {det['class']} (conf={det['confidence']})")
                 matched_ids.add(self.next_id)
