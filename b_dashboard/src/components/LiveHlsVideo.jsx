@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import Hls from 'hls.js'
 
 // UTIC 실시간 HLS(.m3u8) 스트림 재생 전용 <video>.
@@ -15,9 +15,14 @@ const LOADING_TIMEOUT_MS = 8000 // 이 시간 안에 재생이 시작 안 되면
 const RETRY_DELAYS_MS = [2000, 4000, 8000, 8000, 8000] // 자동 재시도 간격(마지막 값 반복)
 const MAX_AUTO_RETRIES = RETRY_DELAYS_MS.length
 
-export default function LiveHlsVideo({ videoUrl, className = '', format = 'HLS' }) {
+// [추가] videoEl 참조를 밖으로 내보낸다 - CctvOverlayCanvas(YOLO bbox 오버레이)가
+// 이 <video>의 실제 렌더링 크기(getBoundingClientRect)와 원본 해상도(videoWidth/
+// videoHeight)를 읽어서 박스 좌표를 스케일링하는 데 필요하다. forwardRef를 안 쓰던
+// 기존 호출부는 ref를 안 넘기므로 전혀 영향받지 않는다(순수 추가).
+const LiveHlsVideo = forwardRef(function LiveHlsVideo({ videoUrl, className = '', format = 'HLS' }, forwardedRef) {
   const videoRef = useRef(null)
   const hlsRef = useRef(null)
+  useImperativeHandle(forwardedRef, () => videoRef.current, [])
   const timersRef = useRef({ loadingTimeout: null, retryTimeout: null })
   const retryCountRef = useRef(0)
   const [status, setStatus] = useState('loading') // loading | live | error
@@ -146,4 +151,6 @@ export default function LiveHlsVideo({ videoUrl, className = '', format = 'HLS' 
       )}
     </div>
   )
-}
+})
+
+export default LiveHlsVideo

@@ -19,22 +19,32 @@ app:
 report:
   generation:
     enabled: ${REPORT_GENERATION_ENABLED:true}
-    # b_gateway 실행 위치(보통 b_gateway/) 기준 상대경로. omecca_Project 하위에
-    # b_gateway/b_report/b_dashboard가 형제 폴더라는 구조를 그대로 가정한다.
+
+    # b_gateway 실행 위치(보통 b_gateway/) 기준 상대경로.
+    # omecca_Project 하위에 b_gateway/b_report/b_dashboard가 형제 폴더라는 구조를 그대로 가정한다.
     project-dir: ${REPORT_PROJECT_DIR:../b_report}
     frame-base-dir: ${REPORT_FRAME_BASE_DIR:../b_dashboard/public}
     gateway-url: ${REPORT_GATEWAY_URL:http://localhost:8080}
     python-executable: ${REPORT_PYTHON_EXECUTABLE:python3}
 
-
 spring:
   application:
     name: omecca-backend
+<<<<<<< Updated upstream
   datasource:
     url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:omecca}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=UTF-8
+=======
+
+  datasource:
+    url: jdbc:mysql://thebrains27.cafe24.com:3306/thebrains27?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=UTF-8
+>>>>>>> Stashed changes
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
+
+  flyway:
+    baseline-on-migrate: true
+
   jpa:
     hibernate:
       ddl-auto: validate

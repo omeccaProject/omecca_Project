@@ -23,7 +23,7 @@ const fs = require("fs");
 const path = require("path");
 const { WebSocketServer } = require("ws");
 const db = require("../db");
-const { forwardToGateway } = require("../gatewayForward");
+const { forwardToGateway, deleteExistingDemoEvent } = require("../gatewayForward");
 
 // realtime_anomaly.py의 EVENT_LOG_PATH(ai_map_events.log)와는 별개로,
 // "서버가 실제로 브로드캐스트한 이벤트"만 별도로 남겨서 디버깅에 쓴다.
@@ -100,6 +100,30 @@ function createMapEventsModule() {
 
   router.get("/events/health", (req, res) => {
     res.json({ ok: true, connectedClients: clients.size });
+  });
+
+  // [신규] "새로고침하는 순간 바로 0이 되어야 함" - web/map.js가 페이지 로드 직후(20초
+  // 대기 시작과 동시에) 이 endpoint를 호출해서, 이전 세션에서 게이트웨이에 저장해 둔
+  // Forza DEMO 이벤트를 즉시 지운다. 이렇게 해야 "새로고침 직후~20초" 구간에도
+  // 대시보드 이벤트 리스트가 0을 보여주고, 20초 뒤 알림이 뜰 때 비로소 1이 된다
+  // (지금까지처럼 "새 이벤트 보내기 직전에만" 지우면, 그 사이 구간엔 이전 세션의
+  // 이벤트가 여전히 남아있는 것처럼 보였다).
+  //
+  // body: { trackId: "DEMO-DRUNK-001" } - map.js의 CONFIG.DEMO_VEHICLE_ID를 그대로 보낸다.
+  router.post("/demo/reset", async (req, res) => {
+    const trackId = req.body && req.body.trackId;
+    if (!trackId) {
+      return res.status(400).json({ ok: false, error: "trackId가 필요합니다." });
+    }
+    try {
+      await deleteExistingDemoEvent(trackId);
+      res.json({ ok: true, trackId });
+    } catch (err) {
+      // 게이트웨이가 꺼져 있어도 데모 자체(지도 표시)는 계속 진행돼야 하므로 500을
+      // 주지 않고 그냥 "시도는 했다"는 의미로 200을 준다 - 실패 원인은 콘솔에만 남긴다.
+      console.warn("[MAP EVENT] /demo/reset 처리 중 오류:", err.message);
+      res.json({ ok: false, error: err.message });
+    }
   });
 
   router.get("/trajectory/:vehicleId", async (req, res) => {
