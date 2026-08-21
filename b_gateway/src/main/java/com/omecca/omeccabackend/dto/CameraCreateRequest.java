@@ -24,4 +24,7 @@ public class CameraCreateRequest {
 
     /** 낙하물 자동 감지 사용 여부. 안 보내면 false로 시작 */
     private Boolean debrisDetectionEnabled;
+
+    /** 위반감지(신호위반/불법유턴) 자동 감지 사용 여부. 안 보내면 false로 시작 */
+    private Boolean violationDetectionEnabled;
 }

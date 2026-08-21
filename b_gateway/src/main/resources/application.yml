@@ -7,9 +7,6 @@ gateway:
   api-key: ${GATEWAY_API_KEY}
 
 app:
-  # 업로드된 동영상(카메라 등록용)을 저장할 디렉터리. b_gateway 실행 위치 기준 상대경로.
-  # StaticResourceConfig/CameraService.uploadVideo가 이 값을 그대로 공유한다.
-  upload-dir: ${UPLOAD_DIR:uploads}
   auth:
     jwt-secret: ${JWT_SECRET}
 
@@ -33,27 +30,13 @@ report:
 spring:
   application:
     name: omecca-backend
-  # 동영상을 "CCTV"로 업로드 등록하는 기능(CameraController.upload)용. 기본값(1MB)으론 영상이
-  # 바로 413으로 거부되므로 상향해둔다.
-  servlet:
-    multipart:
-      max-file-size: 500MB
-      max-request-size: 500MB
   datasource:
-    # createDatabaseIfNotExist=true : omecca 데이터베이스가 없으면 만들고 붙는다.
-    #   Flyway 는 DB '안의 테이블'을 관리할 뿐 DB 자체는 못 만든다. 이게 없으면
-    #   새로 받은 사람마다 CREATE DATABASE 를 손으로 쳐야 하고, 그러면 Flyway 를
-    #   붙인 이유(각자 SQL 돌리는 번거로움 제거)가 절반만 해결된다.
-    #   MySQL 8 의 서버 기본 문자셋이 utf8mb4 라 한글도 그대로 들어간다
-    #   (확인: d_lpr/check_mysql.py 6단계 한글 왕복 검사).
-    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:omecca}?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=UTF-8
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:omecca}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=UTF-8
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
   jpa:
     hibernate:
-      # Flyway 가 테이블을 만들고 Hibernate 는 검증만 한다 (Spring Boot 가 순서를 보장).
-      # create 로 바꾸면 Hibernate 가 스키마를 덮어써서 Flyway 이력과 어긋난다.
       ddl-auto: validate
     open-in-view: false
     properties:
@@ -61,21 +44,6 @@ spring:
         format_sql: true
         dialect: org.hibernate.dialect.MySQLDialect
     show-sql: false
-
-  # DB 스키마 자동 적용.
-  #   db/migration/V1__baseline.sql    camera, camera_catalog, target, roi, event, report, user
-  #   db/migration/V2__lpr_tables.sql  vehicle, plate_read_log   (d_lpr)
-  #   db/migration/V3__lpr_seed.sql    시연용 차량 12대
-  #
-  # 앱을 켤 때마다 "아직 적용 안 된 것"만 순서대로 돌린다. 다 돼 있으면 아무 일도
-  # 일어나지 않는다. 기존 schema.sql / migration_*.sql 을 손으로 돌릴 필요가 없다.
-  flyway:
-    enabled: true
-    # 이미 테이블이 있는 DB 도 멈추지 않고 합류시킨다 (V1 은 적용된 것으로 간주).
-    baseline-on-migrate: true
-    baseline-version: 0
-    # flyway clean 은 스키마의 **모든 테이블**을 지운다. vehicle 까지 날아간다. 반드시 막는다.
-    clean-disabled: true
 
 logging:
   level:

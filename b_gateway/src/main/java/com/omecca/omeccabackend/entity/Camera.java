@@ -48,13 +48,21 @@ public class Camera {
 
     // 이 카메라에서 낙하물(DEBRIS) 자동 감지를 돌릴지 여부. true면 camera_watcher.py가
     // yolo_infer.py를 이 카메라의 streamUrl로 자동으로 붙여서 돌린다.
+    // 이 카메라에서 낙하물(DEBRIS) 자동 감지를 돌릴지 여부. true면 camera_watcher.py가
+    // yolo_infer.py를 이 카메라의 streamUrl로 자동으로 붙여서 돌린다.
     @Column(name = "debris_detection_enabled", nullable = false)
     @Builder.Default
     private Boolean debrisDetectionEnabled = Boolean.FALSE;
 
+    // 이 카메라에서 위반감지(신호위반/불법유턴, ⑦) 자동 감지를 돌릴지 여부. true면
+    // camera_watcher.py가 d_lpr/run_uturn.py를 이 카메라의 streamUrl로 자동으로 붙여서 돌린다.
+    @Column(name = "violation_detection_enabled", nullable = false)
+    @Builder.Default
+    private Boolean violationDetectionEnabled = Boolean.FALSE;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
-
+    
     @PrePersist
     protected void onCreate() {
         this.createdAt = LocalDateTime.now();

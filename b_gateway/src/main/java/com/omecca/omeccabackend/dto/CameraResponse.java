@@ -17,6 +17,7 @@ public class CameraResponse {
     private String streamUrl;
     private String streamFormat;
     private Boolean debrisDetectionEnabled;
+    private Boolean violationDetectionEnabled;
     private LocalDateTime createdAt;
 
     public static CameraResponse from(Camera camera) {
@@ -28,6 +29,7 @@ public class CameraResponse {
                 .streamUrl(camera.getStreamUrl())
                 .streamFormat(camera.getStreamFormat())
                 .debrisDetectionEnabled(camera.getDebrisDetectionEnabled())
+                .violationDetectionEnabled(camera.getViolationDetectionEnabled())
                 .createdAt(camera.getCreatedAt())
                 .build();
     }
