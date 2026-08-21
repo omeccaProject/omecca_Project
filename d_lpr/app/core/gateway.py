@@ -100,8 +100,11 @@ def to_gateway_payload(
         "objectClass": OBJECT_CLASS_VEHICLE,
         "bbox": box,
         "confidence": round(float(confidence if confidence is not None
-                                  else ev.plate_confidence), 3),
-        "occurredAt": datetime.fromtimestamp(ev.timestamp).strftime("%Y-%m-%dT%H:%M:%S"),
+                            else ev.plate_confidence), 3),
+        # ev.timestamp는 실시각이 아니라 영상 재생 경과 초(frame_no/fps)라서 그대로 쓰면
+        # 1970년대로 계산된다. 게이트웨이에 보내는 시점의 실제 시각을 대신 쓴다
+        # (a_core의 debris 이벤트도 동일하게 "전송 시점 = 발생 시점"으로 처리한다).
+        "occurredAt": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
         "location": ({"lat": lat, "lng": lng} if lat is not None else None),
         "isRegisteredTarget": bool(is_registered_target),
         "targetId": target_id,
@@ -272,7 +275,6 @@ def _payload_from_bus(p: dict[str, Any]) -> dict[str, Any]:
         "illegal_uturn": "UTURN_VIOLATION",
     }
     loc = p.get("location")
-    ts = p.get("timestamp") or 0
     return {
         "camId": p.get("cam_id"),
         "trackId": f"trk-{p.get('track_id')}" if p.get("track_id") is not None else None,
@@ -280,7 +282,8 @@ def _payload_from_bus(p: dict[str, Any]) -> dict[str, Any]:
         "objectClass": OBJECT_CLASS_VEHICLE,
         "bbox": [0, 0, 0, 0],
         "confidence": p.get("plate_confidence", 0.0),
-        "occurredAt": datetime.fromtimestamp(ts).strftime("%Y-%m-%dT%H:%M:%S"),
+        # p["timestamp"]는 영상 경과 초라 그대로 쓰면 1970년대로 찍힌다 — 전송 시점 실제 시각 사용
+        "occurredAt": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
         "location": ({"lat": loc[0], "lng": loc[1]} if loc else None),
         "isRegisteredTarget": False,
         "targetId": None,

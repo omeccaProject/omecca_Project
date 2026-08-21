@@ -54,6 +54,7 @@ public class CameraService {
                 .streamUrl(hasStream ? request.getStreamUrl().trim() : null)
                 .streamFormat(StringUtils.hasText(request.getStreamFormat()) ? request.getStreamFormat().trim() : null)
                 .debrisDetectionEnabled(Boolean.TRUE.equals(request.getDebrisDetectionEnabled()))
+                .violationDetectionEnabled(Boolean.TRUE.equals(request.getViolationDetectionEnabled()))
                 .build();
 
         return CameraResponse.from(cameraRepository.save(camera));
@@ -83,6 +84,9 @@ public class CameraService {
         }
         if (request.getDebrisDetectionEnabled() != null) {
             camera.setDebrisDetectionEnabled(request.getDebrisDetectionEnabled());
+        }
+        if (request.getViolationDetectionEnabled() != null) {
+            camera.setViolationDetectionEnabled(request.getViolationDetectionEnabled());
         }
 
         return CameraResponse.from(camera);

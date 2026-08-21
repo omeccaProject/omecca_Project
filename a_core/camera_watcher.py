@@ -15,6 +15,10 @@ yolo_infer.py를 켜지 않아도 이 스크립트가 대신 켜고 꺼준다.
 yolo_infer.py 자체 탐지 로직은 전혀 건드리지 않는다 - 이 스크립트는 그걸 "누가,
 언제 켜고 끌지"만 관리한다.
 
+불법유턴/신호위반(run_uturn.py, 박지원(D) 모듈)도 낙하물과 완전히 동일한 방식으로
+자동 연결한다 - 카메라별 violationDetectionEnabled + config_zones.json에 ROI(중앙선/
+정지선 등)가 등록돼 있는지를 보고 별도의 프로세스 풀로 켜고 끈다.
+
 또한 1시간마다 b_dashboard/public/captures/(사건 전/후 캡처 이미지)를 훑어서
 --capture-retention-days(기본 30일)보다 오래된 파일을 자동으로 지운다 - 이벤트가
 날 때마다 사진이 계속 쌓이기만 해서 디스크 용량이 끝없이 늘어나는 걸 막기 위함.
@@ -25,6 +29,7 @@ yolo_infer.py 자체 탐지 로직은 전혀 건드리지 않는다 - 이 스크
     python a_core/camera_watcher.py --capture-retention-days 7   # 캡처 이미지 7일만 보관
 """
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -41,8 +46,15 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8")
 
 BASE_DIR = Path(__file__).resolve().parent  # a_core/
-PROJECT_ROOT = BASE_DIR.parent
+PROJECT_ROOT = BASE_DIR.parent               # omecca_Project/
 YOLO_INFER_PATH = BASE_DIR / "yolo_infer.py"
+
+# 불법유턴/신호위반(⑦) — 박지원(D) 모듈. 낙하물과 동일한 방식(카메라 등록 상태를 보고
+# 자동으로 켜고 끔)으로 연결한다.
+D_LPR_DIR = PROJECT_ROOT / "d_lpr"
+RUN_UTURN_PATH = D_LPR_DIR / "run_uturn.py"
+ZONES_PATH = D_LPR_DIR / "config_zones.json"
+VIOLATION_EVENT_TYPES = ("SIGNAL_VIOLATION", "UTURN_VIOLATION")
 
 # yolo_infer.py의 CAPTURES_DIR과 반드시 같은 경로여야 한다(사건 전/후 캡처 이미지 저장 위치).
 CAPTURES_DIR = PROJECT_ROOT / "b_dashboard" / "public" / "captures"
@@ -101,6 +113,39 @@ def has_fired_debris(cam_id):
         return False
 
 
+def has_fired_violation(cam_id):
+    """이 카메라가 신호위반/불법유턴 이벤트를 한 번이라도 낸 적 있는지 게이트웨이에 물어본다.
+    has_fired_debris와 이유가 같다 - 짧은 테스트 영상이 반복재생되면 같은 차량의 같은 위반이
+    루프마다 다시 판정되어 DB에 중복으로 쌓이는 것을 막기 위함(ByteTrack 결과가 영상 기준으로
+    결정적이라, 같은 영상을 처음부터 다시 돌리면 완전히 동일한 위반 이벤트가 또 나온다).
+    두 이벤트 타입(SIGNAL_VIOLATION/UTURN_VIOLATION) 중 하나라도 이미 있으면 True."""
+    for event_type in VIOLATION_EVENT_TYPES:
+        try:
+            resp = requests.get(
+                EVENTS_URL,
+                params={"camId": cam_id, "eventType": event_type, "size": 1},
+                headers={"X-API-Key": API_KEY},
+                timeout=5,
+            )
+            resp.raise_for_status()
+            if resp.json().get("totalElements", 0) > 0:
+                return True
+        except requests.exceptions.RequestException:
+            continue
+    return False
+
+
+def zone_configured_cam_ids():
+    """config_zones.json에 ROI(중앙선/정지선 등)가 등록된 cam_id 집합.
+    등록 안 된 cam_id로 run_uturn.py를 띄우면 곧바로 sys.exit()로 종료돼버리는데, 그 상태로
+    두면 폴링 주기(기본 10초)마다 계속 재시작을 시도하며 크래시를 반복하게 된다. 미리 걸러낸다."""
+    try:
+        data = json.loads(ZONES_PATH.read_text(encoding="utf-8"))
+        return {cam["cam_id"] for cam in data.get("cameras", [])}
+    except (OSError, json.JSONDecodeError):
+        return set()
+
+
 def cleanup_old_captures(retention_days):
     """CAPTURES_DIR 안의 사건 전/후 캡처 이미지 중, 마지막 수정시각(=거의 곧 캡처된
     시각) 기준으로 retention_days보다 오래된 파일을 지운다.
@@ -152,6 +197,27 @@ def qualifying_cameras(cameras):
     return result
 
 
+def qualifying_violation_cameras(cameras):
+    """자동 위반감지 대상: 운영 중 + 위반감지 사용 + 실제 영상 URL + ROI 설정이 있는 카메라."""
+    zoned = zone_configured_cam_ids()
+    result = {}
+    for cam in cameras:
+        if cam.get("status") != "ACTIVE":
+            continue
+        if not cam.get("violationDetectionEnabled"):
+            continue
+        stream_url = cam.get("streamUrl")
+        if not stream_url:
+            continue
+        cam_id = cam["camId"]
+        if cam_id not in zoned:
+            print(f"[WATCHER] ⚠ {cam_id}: config_zones.json에 ROI 설정이 없어 위반감지를 건너뜁니다 "
+                  f"(draw_roi.py로 먼저 중앙선/정지선을 그려주세요)")
+            continue
+        result[cam_id] = resolve_stream_url(stream_url)
+    return result
+
+
 class CameraWatcher:
     def __init__(self, interval, max_concurrent, threshold=None, capture_retention_days=30):
         self.interval = interval
@@ -161,6 +227,11 @@ class CameraWatcher:
         self.fired_cams = set()  # 이미 낙하물 이벤트를 한 번 낸 camId - 더 이상 재시작하지 않는다
         self.capture_retention_days = capture_retention_days
         self.last_cleanup_at = 0  # time.time() 기준 - 아직 한 번도 안 돌았으면 0이라 시작하자마자 1회 실행됨
+
+        # 불법유턴/신호위반(run_uturn.py)용 - 낙하물과 완전히 독립된 프로세스 풀로 관리한다.
+        # (카메라 한 대가 낙하물 감지와 위반감지를 동시에 켤 수도 있어야 하므로 별도 dict/set)
+        self.violation_processes = {}
+        self.fired_violation_cams = set()
 
     def _start(self, cam_id, stream_url):
         print(f"[WATCHER] 🟢 감지 시작: {cam_id} ({stream_url})")
@@ -176,6 +247,26 @@ class CameraWatcher:
         if proc is None:
             return
         print(f"[WATCHER] 🔴 감지 중단: {cam_id} ({reason})")
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+    def _start_violation(self, cam_id, stream_url):
+        print(f"[WATCHER] 🟢 위반감지 시작: {cam_id} ({stream_url})")
+        cmd = [sys.executable, str(RUN_UTURN_PATH),
+               "--video", stream_url, "--cam", cam_id,
+               "--zones", str(ZONES_PATH),
+               "--gateway", GATEWAY_ORIGIN]
+        proc = subprocess.Popen(cmd, cwd=str(D_LPR_DIR))
+        self.violation_processes[cam_id] = proc
+
+    def _stop_violation(self, cam_id, reason):
+        proc = self.violation_processes.pop(cam_id, None)
+        if proc is None:
+            return
+        print(f"[WATCHER] 🔴 위반감지 중단: {cam_id} ({reason})")
         proc.terminate()
         try:
             proc.wait(timeout=5)
@@ -226,6 +317,41 @@ class CameraWatcher:
                 continue
             self._start(cam_id, stream_url)
 
+    def sync_violations(self, targets):
+        """sync()와 완전히 동일한 로직을 위반감지(run_uturn.py) 프로세스 풀에 적용한다."""
+        for cam_id in list(self.violation_processes.keys()):
+            if cam_id not in targets:
+                self._stop_violation(cam_id, "카메라 비활성화/삭제/URL 제거됨")
+
+        for cam_id, proc in list(self.violation_processes.items()):
+            if proc.poll() is not None:
+                del self.violation_processes[cam_id]
+                if cam_id not in self.fired_violation_cams and has_fired_violation(cam_id):
+                    self.fired_violation_cams.add(cam_id)
+                if cam_id in self.fired_violation_cams:
+                    print(f"[WATCHER] ✅ {cam_id} 위반 이벤트 이미 감지됨 - 더 이상 재시작하지 않음")
+                else:
+                    print(f"[WATCHER] ⏹ {cam_id} 영상이 끝나 위반감지 프로세스 종료됨 - 재시작 예정")
+
+        for cam_id, stream_url in targets.items():
+            if cam_id in self.violation_processes:
+                continue
+            fired_in_db = None
+            if cam_id in self.fired_violation_cams:
+                fired_in_db = has_fired_violation(cam_id)
+                if fired_in_db:
+                    continue
+                self.fired_violation_cams.discard(cam_id)
+                print(f"[WATCHER] 🔄 {cam_id} 위반 기록이 DB에서 사라짐 - 감지 재개")
+            if fired_in_db is None and has_fired_violation(cam_id):
+                self.fired_violation_cams.add(cam_id)
+                print(f"[WATCHER] ✅ {cam_id} 위반 이미 감지된 카메라 - 켜지 않음")
+                continue
+            if len(self.violation_processes) >= self.max_concurrent:
+                print(f"[WATCHER] ⚠ 위반감지 동시 실행 한도({self.max_concurrent}) 도달 - {cam_id} 대기")
+                continue
+            self._start_violation(cam_id, stream_url)
+
     def run(self):
         print(f"[WATCHER] 시작. {self.interval}초 간격으로 {GATEWAY_URL} 폴링, "
               f"동시 실행 최대 {self.max_concurrent}개, "
@@ -237,6 +363,8 @@ class CameraWatcher:
                 if cameras is not None:
                     targets = qualifying_cameras(cameras)
                     self.sync(targets)
+                    violation_targets = qualifying_violation_cameras(cameras)
+                    self.sync_violations(violation_targets)
 
                 # 캡처 이미지 정리는 매 폴링(--interval, 보통 2~10초)마다 돌 필요는 없으니
                 # CLEANUP_INTERVAL_SEC(1시간)마다 한 번씩만 - 워처가 켜져 있는 한 계속 도니
@@ -251,10 +379,12 @@ class CameraWatcher:
             print("\n[WATCHER] 종료 신호 - 실행 중인 감지 프로세스를 모두 정리한다.")
             for cam_id in list(self.processes.keys()):
                 self._stop(cam_id, "워처 종료")
+            for cam_id in list(self.violation_processes.keys()):
+                self._stop_violation(cam_id, "워처 종료")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="카메라 등록 상태를 보고 낙하물 감지를 자동으로 켜고 끄는 워처")
+    parser = argparse.ArgumentParser(description="카메라 등록 상태를 보고 낙하물/위반 감지를 자동으로 켜고 끄는 워처")
     parser.add_argument("--interval", type=int, default=10, help="폴링 간격(초)")
     parser.add_argument("--max-concurrent", type=int, default=5, help="동시 실행 가능한 감지 프로세스 수")
     parser.add_argument("--threshold", type=int, default=2,
