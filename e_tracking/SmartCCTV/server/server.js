@@ -28,7 +28,10 @@ db.init(); // PostGIS 연결 시도 (실패해도 서버는 계속 뜸)
 
 // 로컬 테스트 단계이므로 CORS를 열어둔다. 실제 운영 배포 시에는 프론트엔드 origin으로 제한할 것.
 app.use(cors());
-app.use(express.json()); // realtime_anomaly.py가 POST하는 JSON 이벤트 바디를 파싱하기 위해 필요
+// limit을 늘린 이유: map.js가 "CCTV 영상 보기"로 연결된 영상에서 캡쳐한 사전/사후
+// JPEG 이미지를 base64 data URL로 POST /api/map/captures에 담아 보낸다(기본 100kb로는
+// 이미지 두 장이 쉽게 넘침). realtime_anomaly.py가 보내는 일반 이벤트 JSON은 원래도 작다.
+app.use(express.json({ limit: "8mb" })); // realtime_anomaly.py가 POST하는 JSON 이벤트 바디를 파싱하기 위해 필요
 
 app.get("/api/health", (req, res) => {
   res.json({ ok: true, hasApiKey: !!process.env.UTIC_API_KEY });

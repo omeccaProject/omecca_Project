@@ -21,9 +21,43 @@
 const express = require("express");
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const { WebSocketServer } = require("ws");
 const db = require("../db");
-const { forwardToGateway, deleteExistingDemoEvent } = require("../gatewayForward");
+const { forwardToGateway, deleteExistingDemoEvent, updateGatewayCaptures } = require("../gatewayForward");
+
+// [신규] map.js가 "CCTV 영상 보기"로 연결한 <video>에서 캡쳐한 사전/사후 프레임을 저장하는
+// 폴더 - a_core/yolo_infer.py(낙하물 캡쳐), realtime_anomaly.py와 동일한 관례를 그대로
+// 따른다: b_dashboard/public/captures/에 JPEG로 저장하고, DB/이벤트에는 b_dashboard가
+// 정적으로 서빙하는 "/captures/<uuid>.jpg" 경로만 넘긴다. 이 파일은
+// e_tracking/SmartCCTV/server/routes/ 안에 있으므로 프로젝트 루트까지 네 단계 위로
+// 올라가야 한다.
+const CAPTURES_DIR = path.resolve(__dirname, "../../../../b_dashboard/public/captures");
+try {
+  fs.mkdirSync(CAPTURES_DIR, { recursive: true });
+} catch (err) {
+  console.warn("[CAPTURE] captures 폴더 생성 실패:", err.message);
+}
+
+// data:image/jpeg;base64,... 형태의 dataURL을 받아 JPEG 파일로 저장하고, b_dashboard가
+// 그대로 서빙할 수 있는 루트-절대 경로를 돌려준다. 형식이 이상하거나 저장에 실패하면
+// null을 돌려준다(호출부는 예외 없이 그냥 "캡쳐 없음"으로 넘어간다).
+function saveDataUrlAsJpeg(dataUrl) {
+  if (!dataUrl || typeof dataUrl !== "string") return null;
+  const match = /^data:image\/[a-zA-Z+.-]+;base64,(.+)$/.exec(dataUrl);
+  if (!match) {
+    console.warn("[CAPTURE] 알 수 없는 이미지 데이터 형식 - 저장하지 않습니다.");
+    return null;
+  }
+  const filename = `${crypto.randomUUID()}.jpg`;
+  try {
+    fs.writeFileSync(path.join(CAPTURES_DIR, filename), Buffer.from(match[1], "base64"));
+  } catch (err) {
+    console.warn("[CAPTURE] 캡쳐 이미지 저장 실패:", err.message);
+    return null;
+  }
+  return `/captures/${filename}`;
+}
 
 // realtime_anomaly.py의 EVENT_LOG_PATH(ai_map_events.log)와는 별개로,
 // "서버가 실제로 브로드캐스트한 이벤트"만 별도로 남겨서 디버깅에 쓴다.
@@ -100,6 +134,30 @@ function createMapEventsModule() {
 
   router.get("/events/health", (req, res) => {
     res.json({ ok: true, connectedClients: clients.size });
+  });
+
+  // [신규] map.js가 "CCTV 영상 보기"로 영상을 연결한 시점에 이미 화면에 떠 있는 그
+  // <video>를 캔버스로 캡쳐해서 보내는 endpoint. 낙하물 캡쳐(a_core)/realtime_anomaly.py의
+  // 사전·사후 캡쳐와 저장 방식(JPEG → b_dashboard/public/captures/)은 동일하지만, 소스가
+  // "백엔드가 별도로 연 스트림"이 아니라 "프론트엔드에 이미 재생 중인 영상"이라는 점이
+  // 다르다 - 그래서 새 영상 창/연결을 따로 열지 않는다.
+  //
+  // body: { trackId, beforeImage?, afterImage? } - beforeImage/afterImage는
+  // "data:image/jpeg;base64,..." 형태의 canvas.toDataURL() 결과. 저장에 성공한 경로만
+  // b_gateway로 반영한다(둘 다 실패하면 아무것도 하지 않고 400).
+  router.post("/captures", (req, res) => {
+    const { trackId, beforeImage, afterImage } = req.body || {};
+    if (!trackId) {
+      return res.status(400).json({ ok: false, error: "trackId가 필요합니다." });
+    }
+    const frameRefBefore = saveDataUrlAsJpeg(beforeImage);
+    const frameRefAfter = saveDataUrlAsJpeg(afterImage);
+    if (!frameRefBefore && !frameRefAfter) {
+      return res.status(400).json({ ok: false, error: "저장할 수 있는 이미지가 없습니다." });
+    }
+    updateGatewayCaptures(trackId, frameRefBefore, frameRefAfter).catch(() => {});
+    console.log(`[CAPTURE] trackId=${trackId} 캡쳐 저장: before=${frameRefBefore} after=${frameRefAfter}`);
+    res.json({ ok: true, frameRefBefore, frameRefAfter });
   });
 
   // [신규] "새로고침하는 순간 바로 0이 되어야 함" - web/map.js가 페이지 로드 직후(20초

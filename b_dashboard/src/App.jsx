@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Header from './components/Header'
 import CctvGrid from './components/CctvGrid'
 import EventList from './components/EventList'
@@ -42,6 +42,12 @@ export default function App() {
   // 실시간으로 새 차량 이벤트가 들어왔을 때 화면 중앙에 띄우는 알림 팝업 대상(없으면 null).
   // 어느 화면을 보고 있든 이 상태 하나로 MainDashboard가 팝업을 그린다.
   const [vehicleAlert, setVehicleAlert] = useState(null)
+  // [버그 수정: "알림 팝업이 계속 반복해서 뜸"] 데모 루프(예: DEMO-DRUNK-001)는 같은
+  // 차량에 대해 event id만 다른 "새 이벤트"를 주기적으로 다시 보낸다 - trackId는 그대로다.
+  // 예전에는 event id 기준으로만 판단해서 그때마다 팝업이 또 떴다. 이제 trackId(없으면
+  // event id)별로 "이미 한 번 띄웠는지"를 기억해서, 같은 차량/트랙에 대해서는 딱 한
+  // 번만 중앙 알림 팝업을 띄운다. 새로고침하면(세션이 새로 시작하면) 다시 초기화된다.
+  const alertedTrackIdsRef = useRef(new Set())
   const { pathname, navigate } = useRouter()
 
   useEffect(() => {
@@ -63,9 +69,14 @@ export default function App() {
         return current
       })
       // 실시간으로 새로 들어온 차량 이벤트는 리스트에 조용히 쌓이는 대신, 어느 화면을
-      // 보고 있든 바로 알아챌 수 있게 화면 중앙 알림 팝업을 띄운다(가장 최신 것 하나만 유지).
+      // 보고 있든 바로 알아챌 수 있게 화면 중앙 알림 팝업을 띄운다 - 단, 같은 차량/트랙에
+      // 대해서는 처음 한 번만(데모 루프가 같은 트랙으로 이벤트를 반복 전송해도 다시 안 띄움).
       if (VEHICLE_TRACK_EVENT_TYPES.has(ev.eventType)) {
-        setVehicleAlert(ev)
+        const alertKey = ev.trackId || ev.id
+        if (!alertedTrackIdsRef.current.has(alertKey)) {
+          alertedTrackIdsRef.current.add(alertKey)
+          setVehicleAlert(ev)
+        }
       }
     }
   }, [])

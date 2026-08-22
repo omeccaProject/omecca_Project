@@ -74,7 +74,7 @@ const CONFIG = {
   SEOUL_CENTER: { lat: 37.5665, lng: 126.978 }, // 서울시청 - 특정 데모 지점이 아닌 서울 전체를 보여주기 위한 중심점
   DEFAULT_ZOOM: 11,
   FOCUS_ZOOM: 17, // 카메라 선택 시 확대할 줌 레벨
-  DEFAULT_BASEMAP: "dark",
+  DEFAULT_BASEMAP: "osm", // 대시보드 진입/새로고침 시 항상 "일반지도"로 고정
   DEFAULT_THEME: "dark",
   // realtime_anomaly.py가 실제로 처리하는 실제 UTIC CCTV 4개 (이수역/사당역/경남아파트/까치고개).
   // 그 외 cam_id로 들어오는 UTIC 이벤트는 무시한다 (Forza 데모는 아래 DEMO_CAMERA_ID_MAP으로 별도 처리).
@@ -135,6 +135,13 @@ const CONFIG = {
   // 새 서버 엔드포인트를 만드는 게 아니라 이미 있는 POST /api/map/events를 그대로 쓴다
   // (그 핸들러 안에서 server/gatewayForward.js가 이미 b_gateway로 전달해주고 있음).
   MAP_EVENTS_POST_URL: "http://localhost:4000/api/map/events",
+  // [신규] "CCTV 영상 보기"로 연결된(=이미 화면에 떠 있는) <video>에서 캡쳐한 사전/사후
+  // 프레임을 올리는 경로 - server/routes/mapEvents.js가 JPEG로 저장한 뒤
+  // gatewayForward.js를 통해 b_gateway의 해당 trackId 이벤트에 반영한다.
+  MAP_CAPTURES_POST_URL: "http://localhost:4000/api/map/captures",
+  // 영상이 연결된 뒤 "사전" 캡쳐 → 이 시간(ms) 뒤 "사후" 캡쳐 - 새 영상 창을 열지 않고
+  // 이미 재생 중인 그 영상 하나에서 시간차를 두고 두 프레임만 뽑는다.
+  CAPTURE_AFTER_DELAY_MS: 1500,
 };
 
 // 영상이 연결된 CCTV만 여기에 등록한다. (key: 무인교통단속카메라관리번호 cam_id)
@@ -352,6 +359,10 @@ class MapManager {
     this.currentBaseKey = null;
     this._buttons = {};
 
+    // panFollow() 관련 상태 - 사용자가 지도를 직접 드래그하면 자동 추적을 멈춘다.
+    this._followPaused = false;
+    this.map.on("dragstart", () => this.pauseFollow());
+
     this._renderBaseMapControl();
     this.switchBaseMap(CONFIG.DEFAULT_BASEMAP);
 
@@ -397,6 +408,29 @@ class MapManager {
 
   focus(lat, lng, zoom = CONFIG.FOCUS_ZOOM) {
     this.map.flyTo([lat, lng], zoom, { duration: 0.6 });
+  }
+
+  // [신규] "추적 차량 자동 포커싱이 잘 안 따라감" 버그 수정 - 예전에는 카메라(CCTV) 지점이
+  // 바뀔 때(focus())만 지도가 이동했고, 그 두 지점 사이를 차량이 실제로 움직이는 동안
+  // (VehicleManager._animateAlongPath)에는 지도가 가만히 있어서 차량이 화면 밖으로
+  // 벗어나 버렸다. panFollow()는 그 이동 애니메이션 중간중간(throttle) 호출되어 지도
+  // 중심을 차량의 "지금 위치"로 계속 살짝씩 옮겨준다 - focus()와 달리 줌 레벨은 그대로
+  // 유지하고(flyTo 애니메이션을 새로 시작하지 않아 겹쳐서 끊기는 느낌도 없음), 사용자가
+  // 직접 지도를 드래그해서 다른 곳을 보고 있을 때는(아래 dragstart) 방해하지 않도록 잠시 멈춘다.
+  panFollow(lat, lng) {
+    if (this._followPaused) return;
+    this.map.panTo([lat, lng], { animate: false });
+  }
+
+  // 사용자가 지도를 손으로 드래그하면(다른 곳을 보고 싶다는 의도) 자동 추적을 잠시 멈춘다.
+  pauseFollow() {
+    this._followPaused = true;
+  }
+
+  // "지도에서 실시간으로 보기" / "CCTV 영상 보기" 등 사용자가 다시 이 차량을 보겠다고
+  // 명시적으로 클릭했을 때 자동 추적을 재개한다.
+  resumeFollow() {
+    this._followPaused = false;
   }
 
   getMap() {
@@ -1847,11 +1881,17 @@ class VehicleManager {
   // 대시보드("추적 차량" 사이드바 버튼)에서 postMessage로 호출한다.
   // 지금 지도에 떠 있는 추적 차량 마커로 지도를 이동시키고 상세 팝업을 연다.
   // 아직 추적 중인 차량이 없으면(마커 미생성) false를 반환한다.
-  focusCurrent(mapManager) {
+  // [수정] options.openPopup(기본 true) - 대시보드 첫 알림 팝업("🚗 새 차량 이벤트 감지")을
+  // 눌러서 들어온 흐름(omecca-track-vehicle-event)에서는 이미 그 팝업에서 필요한 정보를
+  // 다 보여줬고 캡쳐도 이미 트리거했으므로, 지도 위 두 번째 팝업(마커 팝업)까지 자동으로
+  // 또 열 필요가 없다 - openPopup:false로 호출해서 지도 이동/줌만 하고 팝업은 띄우지 않는다.
+  // "추적 차량" 사이드바 버튼(omecca-focus-tracked-vehicle)은 기존처럼 팝업을 계속 연다.
+  focusCurrent(mapManager, options = {}) {
     if (!this.marker) return false;
+    const openPopup = options.openPopup !== false;
     const { lat, lng } = this.marker.getLatLng();
     mapManager.focus(lat, lng);
-    this.marker.openPopup();
+    if (openPopup) this.marker.openPopup();
     return true;
   }
 
@@ -1972,11 +2012,15 @@ class VehicleManager {
         const lng = from[1] + (to[1] - from[1]) * t;
         this.marker.setLatLng([lat, lng]);
 
-        // 매 프레임 추가하면 점이 지나치게 많아지므로 ~100ms 간격으로만 trajectory에 반영한다
+        // 매 프레임 추가하면 점이 지나치게 많아지므로 ~100ms 간격으로만 trajectory에 반영한다.
+        // [신규] 같은 주기로 지도 중심도 차량의 "지금 위치"로 계속 따라가게(panFollow) 한다 -
+        // 이전에는 A→B 등 카메라 지점이 바뀔 때만 지도가 이동해서, 그 사이 이동 애니메이션
+        // 동안(약 2.7초) 차량이 화면 밖으로 벗어나 버리는 문제가 있었다.
         const elapsedTotal = now - overallStart;
         if (elapsedTotal - lastPointElapsedTotal > 100 || t === 1) {
           routeManager.addTrajectoryPoint([lat, lng]);
           lastPointElapsedTotal = elapsedTotal;
+          this.mapManager.panFollow(lat, lng);
         }
 
         if (t < 1) {
@@ -2054,6 +2098,14 @@ class VehicleManager {
       this.marker.setLatLng([lat, lng]);
       this.marker.setPopupContent(this.popupManager.buildVehiclePopup(this.state));
     }
+
+    // [버그 수정: "추적 차량 자동 포커싱이 잘 안 따라감"] Forza 데모 차량은 travelAlongRoad/
+    // _animateAlongPath가 아니라 이 setPositionForDemo()로 매 100ms(EventManager.
+    // updateDemoStageProgress)마다 위치가 갱신된다 - 그런데 여기엔 지도를 따라 움직이는
+    // 코드가 전혀 없어서, panFollow()를 _animateAlongPath 쪽에만 넣었던 이전 수정이 이
+    // 데모 차량에는 적용되지 않았다. 실제로 화면에 보이는 이 차량은 항상 이 메서드로
+    // 움직이므로, 지도 추적도 여기서 처리해야 한다.
+    this.mapManager.panFollow(lat, lng);
   }
 
   // 데모 리허설 리셋용 - 마커 자체를 지도에서 제거하고 처음 상태로 되돌린다.
@@ -3341,6 +3393,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // "추적 차량" 사이드바 버튼 클릭 시: 현재 지도에 떠 있는 추적 차량으로 포커스 이동 + 팝업 오픈.
     // 아직 추적 중인 차량이 없으면(마커 없음) 안내 토스트만 띄운다.
     if (data && data.type === "omecca-focus-tracked-vehicle") {
+      mapManager.resumeFollow(); // 사용자가 지도를 드래그해서 자동추적이 멈춰 있었어도 다시 켠다
       const focused = vehicleManager.focusCurrent(mapManager);
       if (!focused) {
         toastManager.showMessage("🚗 현재 추적 중인 차량이 없습니다");
@@ -3351,6 +3404,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // 그 이벤트가 가리키는 차량을 지도 위에 즉시 표시하고(마커+이동경로), 가능하면
     // 해당 카메라의 실시간 CCTV 영상까지 함께 바로 연결한다.
     if (data && data.type === "omecca-track-vehicle-event") {
+      mapManager.resumeFollow(); // 사용자가 지도를 드래그해서 자동추적이 멈춰 있었어도 다시 켠다
       const payload = data.vehicle || {};
       const record = payload.camId ? uticCameraManager.getRecordById(payload.camId) : null;
       const eventData = {
@@ -3372,6 +3426,12 @@ document.addEventListener("DOMContentLoaded", () => {
         // 끝나므로, 뒤에서 selectById를 또 한 번 호출하면 두 로드가 겹쳐 오히려 영상이
         // 깨진다 - triggerAiEvent(record, eventData, { force: true }) 안에서만 처리할 것.)
         eventManager.triggerAiEvent(record, eventData, { force: true });
+        // [신규] 처음 뜨는 중앙 알림 팝업("🚗 새 차량 이벤트 감지")의 "지도에서 실시간으로
+        // 보기" 버튼을 누른 이 시점에 이미 영상이 연결됐으므로(위 triggerAiEvent가
+        // switchVideo:true로 처리), 사건 전/후 캡쳐도 바로 여기서 예약한다. 예전에는 이
+        // 시점엔 캡쳐를 하지 않고, 지도 위 두 번째 팝업의 "CCTV 영상 보기" 버튼
+        // (window.__appSelectCamera)을 또 눌러야만 캡쳐가 이뤄졌다.
+        scheduleBeforeAfterCapture(eventData.trackId);
       } else if (payload.lat != null && payload.lng != null) {
         // camId가 UTIC 303건 목록에 없는 경우(다른 모듈의 mock 카메라 ID 등) -
         // 좌표는 있으므로 지도 위 위치/이동경로는 그대로 보여주고, 영상 연동만 생략한다.
@@ -3387,9 +3447,12 @@ document.addEventListener("DOMContentLoaded", () => {
         toastManager.showMessage("🚗 위치 정보가 없어 지도에 표시할 수 없습니다");
       }
 
-      // 위 두 경로 모두 끝난 뒤, 최종적으로 차량 마커 자체로 포커스를 옮기고
-      // "TRACK ... 🚗 추적 차량" 상세 팝업(+CCTV 영상 보기 버튼)을 연다.
-      vehicleManager.focusCurrent(mapManager);
+      // 위 두 경로 모두 끝난 뒤, 최종적으로 차량 마커 자체로 지도 포커스만 옮긴다.
+      // [수정] 예전엔 여기서 팝업까지 무조건 열어서("TRACK ... 🚗 추적 차량" 상세 팝업)
+      // 대시보드의 첫 알림 팝업 → 이 두 번째 팝업으로 이어지는 이중 팝업 문제가 있었다.
+      // 이제 캡쳐는 위 triggerAiEvent 분기에서 이미 예약됐고, 두 번째 팝업은 사용자가
+      // 원치 않으므로 openPopup:false로 지도 이동/줌만 한다.
+      vehicleManager.focusCurrent(mapManager, { openPopup: false });
     }
   });
   if (window.parent && window.parent !== window) {
@@ -3511,6 +3574,99 @@ document.addEventListener("DOMContentLoaded", () => {
   // 카메라가 (숨겨진 패널 뒤에서 한동안) "선택된" 상태로 남아 있었더라도 무조건 새로
   // 연결한다. force가 없으면 VideoManager가 "이미 같은 카메라"로 보고 아무것도 하지 않아서
   // 버튼을 눌러도 반응이 없거나(끊긴 채로 멈춘 영상이 그대로 보임) 하는 문제가 있었다.
+  /* ----------------------------------------------------------------
+     [신규] 사건 전/후 캡쳐 - "CCTV 영상 보기"로 연결한(이미 화면에 재생 중인) 그
+     <video>(videoManager.videoEl) 하나를 canvas로 캡쳐한다. 낙하물 캡쳐처럼 백엔드가
+     별도로 스트림을 다시 여는 방식이 아니라, 지금 화면에 떠 있는 그 영상 자체를 그대로
+     쓰기 때문에 새 영상 창/연결이 따로 생기지 않는다.
+
+     "이벤트가 실제로 감지된 순간"의 프레임을 캡쳐하는 게 아니다(그 순간엔 재생 중인
+     영상이 아예 없다 - ForzaDemoTimeline은 실제 영상 없이 가상 시계로만 이벤트를 판정한다).
+     대신 "영상 연결 시점 → 그로부터 CAPTURE_AFTER_DELAY_MS 뒤" 두 장을 사전/사후로 쓴다.
+  ==================================================================== */
+  function captureVideoFrame(videoEl) {
+    if (!videoEl || videoEl.readyState < 2 || !videoEl.videoWidth || !videoEl.videoHeight) return null;
+    const canvas = document.createElement("canvas");
+    canvas.width = videoEl.videoWidth;
+    canvas.height = videoEl.videoHeight;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+
+    // [신규] 화면에 실시간으로 보이는 빨간 바운딩 박스(VideoManager._renderBoxOverlay가
+    // 그리는 것)를 캡쳐 이미지에도 그대로 찍는다. 화면 오버레이 캔버스(videoManager.canvasEl)는
+    // object-fit:cover로 잘린 CSS 표시 영역 기준 좌표라서 그대로 겹쳐 그리면 어긋난다 - 대신
+    // 같은 원본 트랙로그(videoManager.trackLogCache)에서 같은 시각의 프레임을 다시 찾아,
+    // 이 캡쳐 캔버스와 같은 "원본(잘리지 않은) 해상도" 좌표계로 직접 다시 그린다.
+    try {
+      const log = videoManager.trackLogCache;
+      const frame = log && log.frames ? videoManager._findNearestFrame(log.frames, videoEl.currentTime) : null;
+      if (log && log.width && log.height && frame && frame.boxes) {
+        const scaleX = canvas.width / log.width;
+        const scaleY = canvas.height / log.height;
+        frame.boxes.forEach((b) => {
+          const x = b.x1 * scaleX;
+          const y = b.y1 * scaleY;
+          const w = (b.x2 - b.x1) * scaleX;
+          const h = (b.y2 - b.y1) * scaleY;
+          ctx.lineWidth = b.alert ? 4 : 2;
+          ctx.strokeStyle = b.alert ? "#ff3b3b" : "rgba(56, 189, 248, 0.6)";
+          ctx.strokeRect(x, y, w, h);
+          if (b.alert) {
+            ctx.fillStyle = "#ff3b3b";
+            ctx.font = "bold 22px sans-serif";
+            ctx.fillText("이상 주행 감지", x, Math.max(y - 10, 24));
+          }
+        });
+      }
+    } catch (err) {
+      // 박스 합성이 실패해도 캡쳐 자체(원본 프레임)는 그대로 진행한다.
+      console.warn("[CAPTURE] 바운딩 박스 합성 실패:", err.message);
+    }
+
+    try {
+      return canvas.toDataURL("image/jpeg", 0.85);
+    } catch (err) {
+      // 드물게 캔버스가 "오염"돼서(cross-origin 등) toDataURL이 막히는 경우 - 캡쳐만
+      // 조용히 포기하고 나머지 화면 동작에는 영향을 주지 않는다.
+      console.warn("[CAPTURE] 프레임 캡쳐 실패:", err.message);
+      return null;
+    }
+  }
+
+  function uploadCaptures(trackId, beforeImage, afterImage) {
+    if (!trackId || (!beforeImage && !afterImage)) return;
+    fetch(CONFIG.MAP_CAPTURES_POST_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ trackId, beforeImage, afterImage }),
+    })
+      .then((res) => {
+        if (!res.ok) console.warn(`[CAPTURE] 업로드 실패 (HTTP ${res.status})`);
+      })
+      .catch((err) => {
+        console.warn("[CAPTURE] 업로드 실패(서버 미기동 등) - 영상 표시에는 영향 없음:", err.message);
+      });
+  }
+
+  // videoManager.videoEl이 이미 프레임을 갖고 있으면(같은 카메라를 다시 연결) 바로 "사전"을
+  // 찍고, 아직이면(방금 switchVideo로 src가 막 바뀐 직후) loadeddata를 한 번 기다린다.
+  function scheduleBeforeAfterCapture(trackId) {
+    if (!trackId) return;
+    const grabBefore = () => {
+      const beforeImage = captureVideoFrame(videoManager.videoEl);
+      setTimeout(() => {
+        const afterImage = captureVideoFrame(videoManager.videoEl);
+        uploadCaptures(trackId, beforeImage, afterImage);
+      }, CONFIG.CAPTURE_AFTER_DELAY_MS);
+    };
+    const el = videoManager.videoEl;
+    if (el.readyState >= 2 && el.videoWidth) {
+      grabBefore();
+    } else {
+      el.addEventListener("loadeddata", grabBefore, { once: true });
+    }
+  }
+
   window.__appSelectCamera = (cameraId) => {
     // [버그 수정] 대시보드(부모 창)에 iframe으로 임베드된 상태에서는, "대시보드"
     // 화면(미니 지도 + 이벤트 목록 레이아웃)에는 실시간 CCTV 영상 패널 자체가 CSS로
@@ -3523,6 +3679,8 @@ document.addEventListener("DOMContentLoaded", () => {
     if (window.parent && window.parent !== window) {
       window.parent.postMessage({ type: "omecca-request-tracking-view" }, "*");
     }
+
+    mapManager.resumeFollow(); // 사용자가 지도를 드래그해서 자동추적이 멈춰 있었어도 다시 켠다
 
     // [버그 수정: "A→B 넘어갈 때 영상이 안 바뀌고 C를 지나야 바뀜"의 원인 중 하나] 이동
     // 애니메이션 도중에는 팝업의 "현재 위치"(state.currentCameraId, 즉 이 함수의 인자로
@@ -3538,6 +3696,15 @@ document.addEventListener("DOMContentLoaded", () => {
     eventManager.demoVideoFollowActive = true;
 
     uticCameraManager.selectById(targetCameraId, { openPopup: true, zoom: true, switchVideo: true, force: true });
+
+    // [신규] 사건 전/후 캡쳐 - 지금 막 연결한 이 영상에서 사전/사후 두 장을 캡쳐해
+    // b_gateway 이벤트에 반영한다. vehicleManager.state.trackId가 b_gateway Event의
+    // trackId와 같은 값이어야 매칭되는데, 지금은 Forza DEMO 차량(trackId===DEMO_VEHICLE_ID)만
+    // 그 값이 실제로 gatewayForward.js가 쓰는 trackId와 일치한다(실제 UTIC 감지는 아직
+    // global_vehicle_id가 없어 b_gateway trackId가 비어있으므로, 그 경우는 매칭 대상이
+    // 없어 서버가 404로 조용히 무시한다 - 화면 동작에는 영향 없음).
+    const trackId = vehicleManager.state ? vehicleManager.state.trackId : null;
+    scheduleBeforeAfterCapture(trackId);
   };
 
   // 서울 UTIC CCTV 303건 로드 + 영상 공급원 로드를 "둘 다 끝난 뒤에" render()한다.
