@@ -30,14 +30,14 @@ report:
 spring:
   application:
     name: omecca-backend
-<<<<<<< Updated upstream
-  datasource:
-    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:omecca}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=UTF-8
-=======
+    
+  servlet:
+    multipart:
+      max-file-size: 500MB
+      max-request-size: 500MB
 
   datasource:
     url: jdbc:mysql://thebrains27.cafe24.com:3306/thebrains27?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=UTF-8
->>>>>>> Stashed changes
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
