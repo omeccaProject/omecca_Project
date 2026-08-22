@@ -18,6 +18,10 @@ const cors = require("cors");
 const uticRouter = require("./routes/utic");
 const { createMapEventsModule } = require("./routes/mapEvents");
 const db = require("./db");
+const { deleteExistingDemoEvent } = require("./gatewayForward");
+
+// web/map.js의 CONFIG.DEMO_VEHICLE_ID와 반드시 동일한 문자열이어야 한다.
+const DEMO_VEHICLE_ID = "DEMO-DRUNK-001";
 
 const app = express();
 db.init(); // PostGIS 연결 시도 (실패해도 서버는 계속 뜸)
@@ -60,3 +64,24 @@ server.listen(PORT, () => {
   console.log(`AI 지도 이벤트 WS:   ws://localhost:${PORT}/events`);
   console.log(`Forza 데모 영상:     http://localhost:${PORT}/videos/forza_A.mp4 (B/C/D 동일)`);
 });
+
+// [신규] "서버를 끄면 그 순간 DB에 있던 데모 이상운전 데이터가 지워져야 함"
+// Ctrl+C(SIGINT)나 프로세스 종료 신호(SIGTERM)를 받으면, 종료하기 전에 게이트웨이에
+// 저장돼 있던 이 데모 차량의 이벤트를 먼저 지우고 나서 실제로 종료한다. 이렇게 하면
+// "서버가 꺼져 있는 동안(=데모가 실제로 진행 중이 아닌 동안)에는 대시보드에 가짜
+// 활성 알림이 남아있지 않는다"가 보장된다. (다음에 켜서 새로고침할 때도 페이지 로드
+// 시점의 /api/map/demo/reset이 한 번 더 지워주므로 이중 안전장치가 된다.)
+async function shutdown(signal) {
+  console.log(`\n[서버 종료] ${signal} 수신 - 게이트웨이의 데모 이벤트를 정리하고 종료합니다...`);
+  try {
+    await deleteExistingDemoEvent(DEMO_VEHICLE_ID);
+  } catch (err) {
+    console.warn("[서버 종료] 데모 이벤트 정리 실패(그대로 종료):", err.message);
+  }
+  server.close(() => process.exit(0));
+  // server.close()가 진행 중인 연결 때문에 지연될 수 있으므로, 3초 안에 안 끝나면 강제 종료한다.
+  setTimeout(() => process.exit(0), 3000).unref();
+}
+
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));

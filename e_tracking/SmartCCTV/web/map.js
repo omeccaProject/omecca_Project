@@ -130,6 +130,11 @@ const CONFIG = {
   // 서버가 꺼져 있으면 AiWebSocketListener가 자동 재연결을 계속 시도할 뿐,
   // 지도의 나머지 기능(카메라 목록/검색/영상 재생 등)에는 영향이 없다.
   MAP_EVENTS_WS_URL: "ws://localhost:4000/events",
+  // [신규] Forza DEMO 알림을 게이트웨이(b_gateway, 8080)에도 보내기 위해 쓰는 로컬 서버
+  // POST 경로. MAP_EVENTS_WS_URL과 같은 서버(server.js)의 반대 방향(받기 대신 보내기)이다 -
+  // 새 서버 엔드포인트를 만드는 게 아니라 이미 있는 POST /api/map/events를 그대로 쓴다
+  // (그 핸들러 안에서 server/gatewayForward.js가 이미 b_gateway로 전달해주고 있음).
+  MAP_EVENTS_POST_URL: "http://localhost:4000/api/map/events",
 };
 
 // 영상이 연결된 CCTV만 여기에 등록한다. (key: 무인교통단속카메라관리번호 cam_id)
@@ -2649,8 +2654,12 @@ class EventManager {
     this.vehicleManager.spawnAtEvent(cameraViewModel, eventData);
     this.trackedVehicleCount = 1;
 
-    // ⑦ 이동 경로(Line) 생성
-    this.routeManager.showPath(buildApproachPath(cameraViewModel.lat, cameraViewModel.lng, cameraViewModel.id));
+    // [삭제됨: "짧고 엉뚱한 방향으로 뻗는 점선" 문제] 예전엔 여기서
+    // this.routeManager.showPath(buildApproachPath(...))를 호출해서, 실제 GPS 이력이
+    // 없다는 이유로 카메라 id를 해시한 임의의 각도로 600~700m짜리 가짜 "진입 경로"를
+    // 매번 그렸다. 실제 이동 방향과 무관한 장식용 선이라 실제 누적 궤적(도로 기반)과
+    // 전혀 다른 방향으로 삐죽 튀어나와 보이는 원인이었다. buildApproachPath() 함수
+    // 자체는 남겨뒀지만(다른 곳에서 더 이상 호출하지 않음), 더 이상 그리지 않는다.
 
     // ⑧ 상단 통계: 누적 감지는 항상 +1, "활성 차량"은 track_id 기준으로 관리
     this.alertDetectionCount += 1;
@@ -2774,6 +2783,57 @@ class EventManager {
     this.uiManager.setLastUpdate(eventData.time);
     this.updateStats();
     this.renderPanel();
+
+    // ---- [신규] Forza DEMO 알림을 팀 공통 게이트웨이(b_gateway)에도 전달 ----
+    // Forza DEMO는 지금까지 클라이언트(map.js) 안에서만 재생되는 시뮬레이션이라
+    // POST /api/map/events를 전혀 거치지 않았고, 그래서 server/gatewayForward.js가
+    // b_gateway로 넘겨줄 기회 자체가 없었다 - 지도(iframe)엔 차량이 보이는데
+    // 대시보드 "이벤트 리스트"엔 안 뜨던 이유가 이거다.
+    //
+    // 이미 있는 파이프라인(POST /api/map/events → gatewayForward.js → b_gateway →
+    // /topic/events → 대시보드)을 그대로 재사용한다 - 새 서버 코드 없음. source_type을
+    // "DEMO"로 보내면 server/routes/mapEvents.js가 검증 통과시키고(REQUIRED_FIELDS +
+    // DEMO는 global_vehicle_id 필수 - 이미 있음), 로컬 WebSocket(같은 화면)에도
+    // 다시 브로드캐스트되지만 demoEpisodes에 이미 기록되어 있어 카드가 중복 생성되지
+    // 않는다(이 함수 맨 위 isNewEpisode 가드가 이미 막아준다).
+    this._forwardDemoEventToGateway(demoRealCamId, cameraViewModel, eventData, globalVehicleId);
+  }
+
+  // Forza DEMO의 "최초(이자 유일한)" 알림 카드가 생성된 바로 그 순간에만 1번 호출된다
+  // (triggerDemoEvent 위쪽에서 isNewEpisode일 때만 여기까지 온다). 실패해도(게이트웨이가
+  // 꺼져 있어도) 지도/이벤트 카드 표시 자체에는 전혀 영향이 없다 - 실패를 조용히 삼킨다.
+  _forwardDemoEventToGateway(demoRealCamId, cameraViewModel, eventData, globalVehicleId) {
+    const payload = {
+      source_type: "DEMO",
+      source_id: demoRealCamId,
+      latitude: cameraViewModel.lat,
+      longitude: cameraViewModel.lng,
+      anomaly: true,
+      global_vehicle_id: globalVehicleId,
+      track_id: eventData.trackId,
+      plate: eventData.plate || null,
+      reason: eventData.reason || null,
+      confidence: eventData.confidence,
+      location_name: cameraViewModel.location,
+      time: eventData.time,
+      timestamp: Date.now() / 1000,
+    };
+
+    fetch(CONFIG.MAP_EVENTS_POST_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+      .then((res) => {
+        if (!res.ok) {
+          console.warn(`[DEMO→GATEWAY] POST ${CONFIG.MAP_EVENTS_POST_URL} 실패 (HTTP ${res.status})`);
+        } else {
+          console.log("[DEMO→GATEWAY] Forza DEMO 알림을 게이트웨이로 전달했습니다.", payload);
+        }
+      })
+      .catch((err) => {
+        console.warn(`[DEMO→GATEWAY] 전달 실패(서버 미기동 등) - 지도 표시에는 영향 없음:`, err.message);
+      });
   }
 
   /* ==================================================================
@@ -3428,6 +3488,20 @@ document.addEventListener("DOMContentLoaded", () => {
   forzaDemoTimeline.onFinished = () => {
     console.log("[DEMO] 발표용 Forza DEMO 시나리오가 모두 끝났습니다. 차량은 D(한강대교남단)에 고정된 상태로 유지됩니다.");
   };
+
+  // [신규] "새로고침하면 즉시 0이 되어야 함" - 20초 대기가 시작되는 것과 동시에(페이지
+  // 로드 직후), 이전 세션에서 게이트웨이에 저장돼 있던 이 데모 차량의 이벤트를 먼저
+  // 지운다. 그래야 20초 대기 구간에도 대시보드(b_dashboard) 이벤트 리스트가 0을 보여주고,
+  // 실제 알림이 뜨는 순간(20초+α 후) 비로소 1이 된다. 실패해도(게이트웨이가 꺼져있어도)
+  // 콘솔 경고만 남기고 데모 자체(지도 표시)는 그대로 진행된다.
+  fetch("http://localhost:4000/api/map/demo/reset", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ trackId: CONFIG.DEMO_VEHICLE_ID }),
+  })
+    .then((res) => res.json())
+    .then((body) => console.log("[DEMO→GATEWAY] 페이지 로드 시 이전 데모 이벤트 초기화:", body))
+    .catch((err) => console.warn("[DEMO→GATEWAY] 초기화 요청 실패(서버 미기동 등) - 데모는 그대로 진행:", err.message));
 
   forzaDemoTimeline.start();
   window.forzaDemoTimeline = forzaDemoTimeline;

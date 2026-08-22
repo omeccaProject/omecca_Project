@@ -70,7 +70,18 @@ export default function App() {
     }
   }, [])
 
-  const connected = useEventSocket((ev) => upsertEvent(ev, true))
+  // [버그 수정: "새로고침해도 이벤트가 안 사라지는 문제"] 게이트웨이가 이벤트를 지울 때
+  // /topic/events/deleted로 실시간 방송해주면, 그 trackId와 일치하는 항목을 화면에서
+  // 바로 제거한다. 이전에는 지워졌다는 신호를 받을 방법이 없어서, 페이지 로드 시점에
+  // GET으로 가져온 옛날 항목이 실제로는 DB에서 지워졌어도 화면엔 계속 남아있었다
+  // (그 GET이 삭제보다 먼저 끝났는지에 따라 결과가 매번 달라지던 원인).
+  const removeEventsByTrackId = useCallback((payload) => {
+    const trackId = payload && payload.trackId
+    if (!trackId) return
+    setEvents((prev) => prev.filter((e) => e.trackId !== trackId))
+  }, [])
+
+  const connected = useEventSocket((ev) => upsertEvent(ev, true), removeEventsByTrackId)
 
   // 새로고침 버튼(Header "⟳") 클릭 시 스피너를 돌려서 "눌러도 아무 반응이 없어 보이는"
   // 문제를 없앤다. 원래도 loadInitial/loadTargets 자체는 정상 동작했지만(재조회는 됨),

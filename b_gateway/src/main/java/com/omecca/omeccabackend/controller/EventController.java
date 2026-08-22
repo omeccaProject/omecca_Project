@@ -48,6 +48,15 @@ public class EventController {
         return eventService.findById(id);
     }
 
+    // [추가] Forza DEMO 같은 "반복 재생 시나리오" 차량의 이전 기록을 지우고 새로 1건만
+    // 남기기 위한 endpoint. e_tracking/gatewayForward.js가 새 이벤트를 POST하기 직전에
+    // 이 endpoint를 먼저 호출한다. X-API-Key 필요(ApiKeyFilter가 /api/events/** 전체를 검사).
+    @DeleteMapping("/by-track/{trackId}")
+    public java.util.Map<String, Object> deleteByTrackId(@PathVariable String trackId) {
+        long deletedCount = eventService.deleteByTrackId(trackId);
+        return java.util.Map.of("trackId", trackId, "deletedCount", deletedCount);
+    }
+
     // 대시보드 "📄 PDF 리포트 생성" 버튼이 호출하는 엔드포인트. b_report를 그 자리에서
     // 실행해 실제 PDF를 만들고(이미 만들어진 적 있으면 그걸 재사용), 완성된 PDF 바이너리를
     // 바로 응답으로 돌려준다 - 프론트는 이 응답 하나로 즉시 다운로드를 트리거하면 된다.

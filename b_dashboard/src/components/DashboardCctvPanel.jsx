@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { fetchCameras } from '../api'
-import LiveHlsVideo from './LiveHlsVideo'
+import LiveHlsVideoWithDetections from './LiveHlsVideoWithDetections'
 
 // 대시보드 오른쪽 패널의 "CCTV" 탭. CctvGrid(여러 칸 그리드)는 380px짜리 좁은 패널에
 // 넣기엔 너무 빽빽해지므로, 여기서는 카메라 하나를 크게 보여주고 드롭다운으로 바꾸는
@@ -69,7 +69,7 @@ export default function DashboardCctvPanel({ focusedEvent }) {
       {selected && (
         <>
           <div className="dash-cctv-video-wrap">
-            <LiveHlsVideo videoUrl={selected.streamUrl} format={selected.streamFormat} className="dash-cctv-video" />
+            <LiveHlsVideoWithDetections camId={selected.camId} videoUrl={selected.streamUrl} format={selected.streamFormat} className="dash-cctv-video" />
           </div>
           <div className="dash-cctv-name">
             {selected.name}

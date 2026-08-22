@@ -4,7 +4,7 @@ import { REAL_CAMERAS as FALLBACK_REAL_CAMERAS } from '../realCameras'
 import { fetchCameras } from '../api'
 import Badge from './Badge'
 import FrameImage from './FrameImage'
-import LiveHlsVideo from './LiveHlsVideo'
+import LiveHlsVideoWithDetections from './LiveHlsVideoWithDetections'
 import CameraManagerModal from './CameraManagerModal'
 
 // 아직 이벤트가 안 들어온 카메라도 그리드에 자리를 채워두기 위한 기본 목록.
@@ -116,7 +116,13 @@ export default function CctvGrid({ events, focusedEvent, onSelectCam, camOffset 
       .then((list) => {
         const withStream = (Array.isArray(list) ? list : [])
           .filter((c) => c.status === 'ACTIVE' && c.streamUrl)
-          .map((c) => ({ camId: c.camId, name: c.name, videoUrl: c.streamUrl }))
+          .map((c) => ({
+            camId: c.camId,
+            name: c.name,
+            videoUrl: c.streamUrl,
+            streamFormat: c.streamFormat,
+            debrisDetectionEnabled: !!c.debrisDetectionEnabled,
+          }))
         setLiveCameras(withStream.length > 0 ? withStream : FALLBACK_REAL_CAMERAS)
 
         // API가 실제로 응답했을 때만(설령 withStream이 아직 비어있더라도) 슬롯을 갱신한다 -
@@ -292,16 +298,19 @@ export default function CctvGrid({ events, focusedEvent, onSelectCam, camOffset 
               </div>
               {realCam ? (
                 // 실제 영상이 등록된 카메라는 이벤트가 떠서 focus된 상태여도 영상이
-                // 멈추면 안 되므로(사용자 요청) 항상 LiveHlsVideo를 계속 재생하고,
+                // 멈추면 안 되므로(GitHub 최신 변경사항) 항상 실시간 영상을 계속 재생하고,
                 // 이벤트 뱃지는 그 위에 오버레이로만 표시한다. 사건 전/후 캡처 사진은
                 // 셀 클릭 시 뜨는 확대(zoomed) 모달에서 계속 확인 가능하다.
+                // [병합: YOLO bbox 오버레이] LiveHlsVideo -> LiveHlsVideoWithDetections로 교체
+                // (camId/format을 넘겨서 실시간 차량 검출 박스를 영상 위에 그린다).
                 <div className="cctv-cell-live-wrap">
-                  <LiveHlsVideo videoUrl={realCam.videoUrl} className="cctv-cell-live-video" />
+                  <LiveHlsVideoWithDetections camId={realCam.camId} videoUrl={realCam.videoUrl} format={realCam.streamFormat} className="cctv-cell-live-video" />
                   <div className="cctv-cell-foot cctv-cell-foot-live">
                     {isFocused && focusedEvent
                       ? <Badge eventType={focusedEvent.eventType} />
                       : <span className="cctv-cell-live-dot" />}
                     <span className="cctv-cell-cam">{realCam.name}</span>
+                    {realCam.debrisDetectionEnabled && <span className="cam-tag-debris">(낙하물)</span>}
                   </div>
                 </div>
               ) : isFocused && focusedEvent ? (
@@ -354,7 +363,7 @@ export default function CctvGrid({ events, focusedEvent, onSelectCam, camOffset 
                 </div>
               </>
             ) : zoomedRealCam ? (
-              <LiveHlsVideo videoUrl={zoomedRealCam.videoUrl} className="cctv-zoom-live-video" />
+              <LiveHlsVideoWithDetections camId={zoomedRealCam.camId} videoUrl={zoomedRealCam.videoUrl} format={zoomedRealCam.streamFormat} className="cctv-zoom-live-video" />
             ) : (
               <div className="cctv-zoom-empty">신호 대기 중 — 아직 감지된 이벤트가 없습니다</div>
             )}
