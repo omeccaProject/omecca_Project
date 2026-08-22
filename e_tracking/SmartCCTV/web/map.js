@@ -107,10 +107,10 @@ const CONFIG = {
   // (web/data/utic-video-sources.json에는 L010263/L010117/L010018/L010055만 있음)
   // 실제 라이브 영상과 충돌하지 않는다.
   FORZA_DEMO_SOURCES: {
-    L010111: { demoId: "A", videoUrl: "http://localhost:4000/videos/forza_A.mp4", trackLogUrl: "data/forza-track-log-L010111.json" },
-    L010271: { demoId: "B", videoUrl: "http://localhost:4000/videos/forza_B.mp4", trackLogUrl: "data/forza-track-log-L010271.json" },
-    L010128: { demoId: "C", videoUrl: "http://localhost:4000/videos/forza_C.mp4", trackLogUrl: "data/forza-track-log-L010128.json" },
-    L010481: { demoId: "D", videoUrl: "http://localhost:4000/videos/forza_D.mp4", trackLogUrl: "data/forza-track-log-L010481.json" },
+    L010111: { demoId: "A", videoUrl: "http://localhost:4000/videos/음주운전1.mp4", trackLogUrl: "data/forza-track-log-L010111.json" },
+    L010271: { demoId: "B", videoUrl: "http://localhost:4000/videos/음주운전2.mp4", trackLogUrl: "data/forza-track-log-L010271.json" },
+    L010128: { demoId: "C", videoUrl: "http://localhost:4000/videos/음주운전3.mp4", trackLogUrl: "data/forza-track-log-L010128.json" },
+    L010481: { demoId: "D", videoUrl: "http://localhost:4000/videos/음주운전4.mp4", trackLogUrl: "data/forza-track-log-L010481.json" },
     L010043: { demoId: "KICK", videoUrl: "http://localhost:4000/videos/kickboard_h264.mp4", trackLogUrl: "data/debris-track-log-L010043.json" },
     L010146: { demoId: "BOX",  videoUrl: "http://localhost:4000/videos/box_h264.mp4",       trackLogUrl: "data/debris-track-log-L010146.json" },
     L010140: { demoId: "CONE", videoUrl: "http://localhost:4000/videos/cone_h264.mp4",      trackLogUrl: "data/debris-track-log-L010140.json" },
