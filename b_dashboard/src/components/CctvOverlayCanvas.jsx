@@ -62,13 +62,24 @@ export default function CctvOverlayCanvas({ videoRef, tracks, frameSize }) {
         const w = (b.x2 - b.x1) * scale
         const h = (b.y2 - b.y1) * scale
 
-        ctx.lineWidth = 2
-        ctx.strokeStyle = '#00ff00' // 요구사항: Python 화면과 동일한 초록색, coasted 여부와 무관하게 항상 초록
+        // [신규] 음주운전(지그재그 주행 등) 의심으로 확정된 차량은 test_suspicious_driving.py의
+        // 로컬 cv2 창과 동일하게 빨간 박스 + "SUSPICIOUS" 라벨로 표시한다. alert 필드가
+        // 없는(구버전 Python 스크립트) 경우 info.alert는 그냥 undefined/false로 취급된다.
+        const isAlert = !!info.alert
+        const color = isAlert ? '#ff3b3b' : '#00ff00'
+
+        ctx.lineWidth = isAlert ? 3 : 2
+        ctx.strokeStyle = color
         ctx.strokeRect(x, y, w, h)
 
-        ctx.fillStyle = '#00ff00'
+        ctx.fillStyle = color
         ctx.font = 'bold 13px sans-serif'
         ctx.fillText(`Vehicle #${trackId}`, x, Math.max(y - 6, 12))
+
+        if (isAlert) {
+          ctx.font = 'bold 12px sans-serif'
+          ctx.fillText('SUSPICIOUS', x, y + h + 14)
+        }
       })
     }
 
