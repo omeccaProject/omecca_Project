@@ -1,4 +1,4 @@
-# 오메카3 (OMECCA³)
+# Vigilog
 
 **AI 기반 지능형 CCTV 통합 관제 시스템**
 
