@@ -16,19 +16,18 @@ require("dotenv").config({ path: path.resolve(__dirname, "../.env") });
 const express = require("express");
 const cors = require("cors");
 const uticRouter = require("./routes/utic");
-const { createMapEventsModule } = require("./routes/mapEvents");
 const db = require("./db");
-const { deleteExistingDemoEvent } = require("./gatewayForward");
 
-// web/map.js의 CONFIG.DEMO_VEHICLE_ID와 반드시 동일한 문자열이어야 한다.
-const DEMO_VEHICLE_ID = "DEMO-DRUNK-001";
 
 const app = express();
 db.init(); // PostGIS 연결 시도 (실패해도 서버는 계속 뜸)
 
 // 로컬 테스트 단계이므로 CORS를 열어둔다. 실제 운영 배포 시에는 프론트엔드 origin으로 제한할 것.
 app.use(cors());
-app.use(express.json()); // realtime_anomaly.py가 POST하는 JSON 이벤트 바디를 파싱하기 위해 필요
+// limit을 늘린 이유: map.js가 "CCTV 영상 보기"로 연결된 영상에서 캡쳐한 사전/사후
+// JPEG 이미지를 base64 data URL로 POST /api/map/captures에 담아 보낸다(기본 100kb로는
+// 이미지 두 장이 쉽게 넘침). realtime_anomaly.py가 보내는 일반 이벤트 JSON은 원래도 작다.
+app.use(express.json({ limit: "8mb" })); // realtime_anomaly.py가 POST하는 JSON 이벤트 바디를 파싱하기 위해 필요
 
 app.get("/api/health", (req, res) => {
   res.json({ ok: true, hasApiKey: !!process.env.UTIC_API_KEY });
@@ -41,18 +40,12 @@ app.use("/api/utic", uticRouter);
 // 영상을 가져오면 항상 동일하게 동작한다 - web/map.js의 CONFIG.FORZA_DEMO_SOURCES가
 // "http://localhost:<PORT>/videos/forza_A.mp4" 형태의 절대 URL로 이 경로를 참조한다.
 
-app.use("/videos", express.static(path.resolve(__dirname, "../videos")));
 app.use(express.static(path.resolve(__dirname, "../web")));   // ← 추가: web/index.html을 "/"에서 서빙
 
-// realtime_anomaly.py(AI) → /api/map/events(POST) → WebSocket(/events) → web/map.js
-// 새 통신 방식이 아니라, 이 파일이 이미 쓰고 있는 Express REST 구조를 그대로 확장한 것이다.
-const mapEvents = createMapEventsModule();
-app.use("/api/map", mapEvents.router);
 
 // WebSocket은 express의 app.listen이 아니라 http.Server가 필요하므로,
 // app을 감싸는 http.Server를 직접 만들고 그 서버로 listen한다 (동작은 기존과 동일).
 const server = http.createServer(app);
-mapEvents.attach(server, "/events");
 
 const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => {
@@ -62,7 +55,7 @@ server.listen(PORT, () => {
   console.log(`테스트(J7878 지정):  http://localhost:${PORT}/api/utic/cctv/test?camId=J7878`);
   console.log(`AI 지도 이벤트 수신: POST http://localhost:${PORT}/api/map/events`);
   console.log(`AI 지도 이벤트 WS:   ws://localhost:${PORT}/events`);
-  console.log(`Forza 데모 영상:     http://localhost:${PORT}/videos/forza_A.mp4 (B/C/D 동일)`);
+
 });
 
 // [신규] "서버를 끄면 그 순간 DB에 있던 데모 이상운전 데이터가 지워져야 함"
@@ -71,15 +64,12 @@ server.listen(PORT, () => {
 // "서버가 꺼져 있는 동안(=데모가 실제로 진행 중이 아닌 동안)에는 대시보드에 가짜
 // 활성 알림이 남아있지 않는다"가 보장된다. (다음에 켜서 새로고침할 때도 페이지 로드
 // 시점의 /api/map/demo/reset이 한 번 더 지워주므로 이중 안전장치가 된다.)
-async function shutdown(signal) {
-  console.log(`\n[서버 종료] ${signal} 수신 - 게이트웨이의 데모 이벤트를 정리하고 종료합니다...`);
-  try {
-    await deleteExistingDemoEvent(DEMO_VEHICLE_ID);
-  } catch (err) {
-    console.warn("[서버 종료] 데모 이벤트 정리 실패(그대로 종료):", err.message);
-  }
+function shutdown(signal) {
+  console.log(`\n[서버 종료] ${signal} 수신 - 서버를 종료합니다.`);
+
   server.close(() => process.exit(0));
-  // server.close()가 진행 중인 연결 때문에 지연될 수 있으므로, 3초 안에 안 끝나면 강제 종료한다.
+
+  // 3초 안에 종료되지 않으면 강제 종료
   setTimeout(() => process.exit(0), 3000).unref();
 }
 

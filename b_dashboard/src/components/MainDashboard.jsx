@@ -398,18 +398,18 @@ export default function MainDashboard({
           <div className="control-sidebar-section">
             <div className="control-sidebar-label">OVERVIEW</div>
             <SidebarRow
-              icon={<IconGrid />}
-              label="대시보드"
-              count={1}
-              active={activeView === 'dashboard'}
-              onClick={() => onChangeView('dashboard')}
-            />
-            <SidebarRow
               icon={<IconCamera />}
               label="CCTV"
               count={camIds.length}
               active={activeView === 'cctv'}
               onClick={() => onChangeView('cctv')}
+            />
+            <SidebarRow
+              icon={<IconGrid />}
+              label="관제 화면"
+              count={1}
+              active={activeView === 'dashboard'}
+              onClick={() => onChangeView('dashboard')}
             />
             <SidebarRow
               icon={<IconClock />}

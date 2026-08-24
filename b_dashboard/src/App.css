@@ -489,10 +489,16 @@ body {
   z-index: 2;
   padding: 9px 16px;
   border-radius: 999px;
-  border: 1px solid var(--c-border2);
+  /* [버그 수정: "라이트 모드에서 글씨가 안 보임"] 이 버튼은 지도(일반지도/위성지도 등
+     밝은 타일도 있음) 위에 항상 떠 있는 오버레이라서, 배경은 테마와 무관하게 항상
+     어두운 반투명으로 고정한다 - 문제는 글자 색이 var(--c-text)를 따라가고 있었던
+     것이다. 라이트 모드에서 --c-text가 거의 검정(#12151a)이 되면서, 어두운 배경 위에
+     어두운 글씨가 겹쳐 거의 안 보였다. 배경이 테마와 무관하게 항상 어두우므로 글자색도
+     테마와 무관하게 항상 밝은 색으로 고정해야 두 모드 모두에서 또렷하게 보인다. */
+  border: 1px solid rgba(255, 255, 255, .16);
   background: rgba(13, 15, 19, .78);
   backdrop-filter: blur(8px);
-  color: var(--c-text);
+  color: #f5f6f8;
   font-size: 12.5px;
   cursor: pointer;
 }
@@ -1090,6 +1096,35 @@ body {
   color: var(--c-red);
   flex-direction: column;
   gap: 6px;
+}
+
+/* [바운딩박스 오버레이] LiveHlsVideoWithDetections.jsx의 wrapper. 그리드 셀/확대
+   모달/대시보드 패널 세 군데에서 쓰이는데 레이아웃 요구사항이 서로 달라서(그리드
+   셀은 flex:1로 footer와 공간 분배, 확대 모달/대시보드 패널은 aspect-ratio로 이미
+   크기가 정해진 박스를 그냥 채우기만 하면 됨), 실제 크기는 각 호출부가 넘긴
+   className(.cctv-cell-live-video / .cctv-zoom-live-video / .dash-cctv-video, 아래
+   참고)이 정하고, 여기서는 "안쪽 video/canvas가 이 박스를 무조건 꽉 채운다"만 강제한다.
+   (전에 이 wrapper에 flex:1을 하드코딩했다가 확대 모달이 무한정 늘어나 화면 중앙에
+   안 뜨고 잘려 보이는 버그가 났었다 - 컨텍스트별 크기 결정을 wrapper가 가로채면 안 됨.) */
+.cctv-live-detections-wrap {
+  position: relative;
+}
+.cctv-live-detections-wrap .live-hls-video {
+  position: absolute;
+  inset: 0;
+}
+
+/* 그리드 셀 안에서는 .cctv-cell-live-wrap(세로 flex 컨테이너)의 형제인 footer
+   (카메라 이름 표시줄)와 공간을 나눠 가져야 하므로 flex:1 + min-height:0 필요. */
+.cctv-cell-live-video {
+  flex: 1;
+  min-height: 0;
+}
+/* 대시보드 CCTV 패널: .dash-cctv-video-wrap이 aspect-ratio로 이미 박스 크기를
+   정해두므로, 이 wrapper는 그 박스를 그냥 꽉 채우기만 하면 된다. */
+.dash-cctv-video {
+  width: 100%;
+  height: 100%;
 }
 .live-hls-retry-btn {
   font-size: 10px;

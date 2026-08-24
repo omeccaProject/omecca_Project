@@ -66,8 +66,12 @@ function toGatewayPayload(mapEvent) {
       locationName: mapEvent.location_name || null,
       plate: mapEvent.plate || null,
     },
-    frameRefBefore: null,
-    frameRefAfter: null,
+    // realtime_anomaly.py의 map_event_handler가 사전/사후 캡쳐를 저장하고
+    // frame_ref_before/frame_ref_after(둘 다 "/captures/<uuid>.jpg" 또는 실패 시 null)로
+    // 채워 보낸다. mapEvents.js는 이 필드들을 건드리지 않고 그대로 통과시키므로
+    // 여기서 그 값을 그대로 읽으면 된다(과거처럼 항상 null로 하드코딩하지 않는다).
+    frameRefBefore: mapEvent.frame_ref_before || null,
+    frameRefAfter: mapEvent.frame_ref_after || null,
   };
 }
 
@@ -90,6 +94,33 @@ async function deleteExistingDemoEvent(trackId) {
     }
   } catch (err) {
     console.warn("[GATEWAY] 기존 데모 이벤트 삭제 중 오류(그대로 진행):", err.message);
+  }
+}
+
+// [신규] map.js가 "CCTV 영상 보기"로 연결된(=이미 화면에 떠 있는) 영상에서 사전/사후
+// 프레임을 캡쳐해 server/routes/mapEvents.js(POST /api/map/captures)로 올리면, 그걸
+// JPEG로 저장한 뒤 이 함수가 호출된다. b_gateway에 새로 추가한
+// PATCH /api/events/by-track/{trackId}/captures를 호출해서, 이미 생성되어 있는 그
+// trackId의 가장 최근 이벤트에 frameRefBefore/frameRefAfter만 채워 넣는다(이벤트를
+// 새로 만들지 않는다 - 이벤트 생성은 이미 forwardToGateway가 별도 시점에 처리함).
+// 실패해도(게이트웨이가 꺼져 있거나 아직 그 trackId 이벤트가 없어도) 조용히 넘어간다 -
+// 캡쳐 반영 실패가 지도/이벤트 표시 자체에 영향을 주면 안 된다.
+async function updateGatewayCaptures(trackId, frameRefBefore, frameRefAfter) {
+  try {
+    const res = await fetch(`${GATEWAY_URL}/api/events/by-track/${encodeURIComponent(trackId)}/captures`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", "X-API-Key": GATEWAY_API_KEY },
+      body: JSON.stringify({ frameRefBefore, frameRefAfter }),
+    });
+    if (!res.ok) {
+      console.warn(`[GATEWAY] 캡쳐 이미지 반영 실패 (HTTP ${res.status}): ${await res.text().catch(() => "")}`);
+      return false;
+    }
+    console.log(`[GATEWAY] trackId=${trackId} 이벤트에 캡쳐 이미지를 반영했습니다.`);
+    return true;
+  } catch (err) {
+    console.warn("[GATEWAY] 캡쳐 이미지 반영 중 오류:", err.message);
+    return false;
   }
 }
 
@@ -127,4 +158,4 @@ async function forwardToGateway(mapEvent) {
   }
 }
 
-module.exports = { forwardToGateway, deleteExistingDemoEvent };
+module.exports = { forwardToGateway, deleteExistingDemoEvent, updateGatewayCaptures };
