@@ -14,10 +14,10 @@ const CONFIG = {
   DEMO_VEHICLE_ID: "DEMO-DRUNK-001",
   MAP_SERVER_ORIGIN: "http://localhost:4000",
   FORZA_DEMO_SOURCES: {
-    L010111: { demoId: "A", videoUrl: "http://localhost:4000/videos/음주운전1.mp4", trackLogUrl: "data/forza-track-log-L010111.json" },
-    L010271: { demoId: "B", videoUrl: "http://localhost:4000/videos/음주운전2.mp4", trackLogUrl: "data/forza-track-log-L010271.json" },
-    L010128: { demoId: "C", videoUrl: "http://localhost:4000/videos/음주운전3.mp4", trackLogUrl: "data/forza-track-log-L010128.json" },
-    L010481: { demoId: "D", videoUrl: "http://localhost:4000/videos/음주운전4.mp4", trackLogUrl: "data/forza-track-log-L010481.json" },
+    L010111: { demoId: "A", videoUrl: "http://localhost:4000/videos/음주운전1.mp4" },
+    L010271: { demoId: "B", videoUrl: "http://localhost:4000/videos/음주운전2.mp4" },
+    L010128: { demoId: "C", videoUrl: "http://localhost:4000/videos/음주운전3.mp4" },
+    L010481: { demoId: "D", videoUrl: "http://localhost:4000/videos/음주운전4.mp4" },
     L010043: { demoId: "KICK", videoUrl: "http://localhost:4000/videos/kickboard_h264.mp4", trackLogUrl: "data/debris-track-log-L010043.json" },
     L010146: { demoId: "BOX",  videoUrl: "http://localhost:4000/videos/box_h264.mp4",       trackLogUrl: "data/debris-track-log-L010146.json" },
     L010140: { demoId: "CONE", videoUrl: "http://localhost:4000/videos/cone_h264.mp4",      trackLogUrl: "data/debris-track-log-L010140.json" },
@@ -496,18 +496,6 @@ class VideoManager {
     if (this.hls) {
       this.hls.destroy();
       this.hls = null;
-    }
-    // [버그 수정: "FORZA(mp4) 영상만 재생 안 됨"]
-    // hls.js가 이 <video>에 srcObject(MediaSource)를 연결해 둔 상태였다면, destroy()를
-    // 호출해도 videoEl.srcObject가 그 즉시(동기적으로) 비워진다는 보장이 없다. HTML
-    // 스펙상 srcObject가 남아있으면 그 뒤에 설정하는 src 속성보다 항상 우선시되므로,
-    // switchVideo()가 곧바로 videoEl.src를 mp4 경로로 새로 설정해도 브라우저가 그걸
-    // 무시하고 이미 죽은 MediaSource를 계속 참조하려다 실패한다 - "UTIC(HLS) 카메라를
-    // 보다가 FORZA(mp4) 데모로 전환할 때만" 재현되는 것과 정확히 일치한다(반대로
-    // Dashboard 쪽 <video>는 hls.js를 붙인 적이 없는 완전히 별도의 엘리먼트라 이
-    // 문제 자체가 없다). 명시적으로 비워서 다음 src 할당이 확실히 적용되게 한다.
-    if (this.videoEl.srcObject) {
-      this.videoEl.srcObject = null;
     }
   }
 
