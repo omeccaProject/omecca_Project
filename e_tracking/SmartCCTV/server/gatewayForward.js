@@ -64,7 +64,13 @@ function toGatewayPayload(mapEvent) {
       sourceType: mapEvent.source_type,
       reason: mapEvent.reason || null,
       locationName: mapEvent.location_name || null,
+      // plateNumber가 공통 이벤트 스키마 규격서(shared/schemas/이벤트_스키마_규격서.md
+      // 3.6)가 정한 이름이고, 대시보드의 "차량 번호판" 항목도 이 이름을 먼저 본다.
+      // 기존 plate는 지우지 않고 그대로 둔다 - 지도(map.js) 쪽이 이미 그 이름으로
+      // 읽고 있어서 이름을 바꾸면 그쪽이 조용히 깨진다.
+      plateNumber: mapEvent.plate || null,
       plate: mapEvent.plate || null,
+      plateConfidence: mapEvent.plate_confidence ?? null,
     },
     // realtime_anomaly.py의 map_event_handler가 사전/사후 캡쳐를 저장하고
     // frame_ref_before/frame_ref_after(둘 다 "/captures/<uuid>.jpg" 또는 실패 시 null)로

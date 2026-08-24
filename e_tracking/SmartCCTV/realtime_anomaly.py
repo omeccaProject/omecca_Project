@@ -246,6 +246,23 @@ os.makedirs(CAPTURES_DIR, exist_ok=True)
 # 기준으로 "최근 BEFORE_CAPTURE_SECONDS초 전" 프레임을 사전 캡쳐로 대신 사용한다.
 BEFORE_CAPTURE_SECONDS = 2.0
 
+# ================================================================
+# 3C) 번호판 인식(d_lpr 연동)
+#    이 파이프라인이 이미 뽑아 놓은 차량 박스를 그대로 d_lpr 의 LPR 파이프라인에
+#    넘겨 번호판을 읽는다(lpr_bridge.py). 읽은 번호판은 지도 이벤트 payload 의
+#    "plate" 로 실려 나가고, server/gatewayForward.js 가 b_gateway 이벤트의
+#    meta.plateNumber 로 옮겨 담는다 → 대시보드 이벤트 리포트의 "차량 번호판".
+#
+#    anomaly_detection.py 는 여전히 한 줄도 건드리지 않는다 - 이 기능은
+#    "이미 나온 박스" 를 옆에서 한 번 더 읽는 것뿐이다.
+#
+#    OMECCA_ENABLE_LPR=0 으로 끌 수 있다(CPU가 부족해 프레임 처리가 밀릴 때).
+#    끄면 예전과 똑같이 plate=None 으로 나간다.
+# ================================================================
+ENABLE_PLATE_RECOGNITION = os.environ.get("OMECCA_ENABLE_LPR", "1") not in ("0", "false", "False")
+PLATE_LPR_MOCK = os.environ.get("OMECCA_LPR_MOCK", "0") in ("1", "true", "True")
+PLATE_READ_INTERVAL = int(os.environ.get("OMECCA_LPR_INTERVAL", "5"))  # track당 몇 프레임마다 읽을지
+
 
 def save_capture(frame, source_id, tag):
     """a_core/yolo_infer.py의 save_capture()와 동일한 패턴. JPEG로 저장하고
@@ -472,6 +489,20 @@ def run_source_loop(
         os.path.join(_THIS_DIR, config["path"])
     )
 
+    # 번호판 인식기 - 이 소스(=이 프로세스) 전용. d_lpr 이 없거나 모델/EasyOCR 이
+    # 빠져 있으면 available=False 로 조용히 꺼진 채 동작한다(탐지에는 영향 없음).
+    plate_reader = None
+    if ENABLE_PLATE_RECOGNITION:
+        from lpr_bridge import PlateReader
+
+        plate_reader = PlateReader(
+            mock=PLATE_LPR_MOCK,
+            interval=PLATE_READ_INTERVAL,
+            log_prefix=f"[LPR {source_id}]",
+        )
+        if not plate_reader.available:
+            plate_reader = None
+
     def map_event_handler(event):
         now = time.time()
         vehicle_id = DEMO_VEHICLE_ID if is_demo else f"{source_id}-{event.track_id}"
@@ -502,7 +533,14 @@ def run_source_loop(
             "event_type": "ABNORMAL_DRIVING",
             "track_id": event.track_id,
             "reason": event.message,
-            "plate": None,  # 이 파이프라인은 번호판을 인식하지 않는다 (D 모듈 담당) - 값을 지어내지 않는다
+            # 번호판: d_lpr(D 모듈) 의 LPR 파이프라인이 이 track 에서 확정한 값.
+            # 아직 확정 전(프레임 다수결 미달)이거나 인식기가 꺼져 있으면 None -
+            # 예전과 동일하게 값을 지어내지 않는다. gatewayForward.js 가 이 값을
+            # b_gateway 이벤트의 meta.plateNumber 로 옮겨 담는다.
+            "plate": (plate_reader.plate_of(source_id, event.track_id)
+                      if plate_reader is not None else None),
+            "plate_confidence": (plate_reader.confidence_of(source_id, event.track_id)
+                                 if plate_reader is not None else None),
             "confidence": None,  # detect_weaving()은 규칙 기반 판정이라 수치형 신뢰도가 없다
             "video_position_px": {"x": event.position[0], "y": event.position[1]},
             "frame_ref_before": frame_ref_before,
@@ -592,6 +630,15 @@ def run_source_loop(
                         ad.update_track(track_id, center, frame_idx)  # 원본 그대로
                         ad.handle_anomaly(annotated, (x1, y1, x2, y2), track_id, frame_idx, src_fps)  # 원본 그대로
 
+                        # 번호판 읽기 - 위에서 이미 나온 박스를 그대로 넘긴다(차량
+                        # 검출을 다시 하지 않는다). 내부에서 track 당 호출 간격을
+                        # 두고, 확정된 track 은 건너뛴다. 예외는 밖으로 안 나온다.
+                        if plate_reader is not None:
+                            plate_reader.update(
+                                source_id, track_id, (x1, y1, x2, y2),
+                                frame, frame_no=frame_idx,
+                            )
+
                         if ad.is_abnormal_active(track_id, frame_idx):
                             anomaly_count_seen = len(
                                 [tid for tid, st in ad.track_states.items() if ad.is_abnormal_active(tid, frame_idx)]
@@ -609,6 +656,9 @@ def run_source_loop(
                     break
     finally:
         grabber.stop()
+        if plate_reader is not None:
+            print(f"{log_prefix} 번호판 인식 결과: {plate_reader.stats}")
+            plate_reader.prune(ttl_sec=0.0)
         ad._event_handlers.remove(map_event_handler)  # 이 소스 전용 핸들러만 제거 (console_event_handler 등은 유지)
         print(f"{log_prefix} {name} 종료 ({status})")
 

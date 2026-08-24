@@ -12,7 +12,7 @@ db:
 
 lpr:
   # true 이면 YOLO 가중치·EasyOCR·영상 없이도 전체 파이프라인이 동작한다
-  mock: true
+  mock: false
   gpu: false
   min_plate_conf: 0.40      # 최소 인식 신뢰도 (실측: 통과율 82%, 통과분 정확도 0.957)
   min_plate_area: 400       # 번호판 후보 최소 면적(px)

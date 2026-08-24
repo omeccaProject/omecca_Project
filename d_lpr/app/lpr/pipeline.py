@@ -118,7 +118,7 @@ class LPRPipeline:
         - 신뢰도를 가중치로 사용
         - 같은 track에서 이미 확정된 값과 같으면 재발행하지 않는다
         """
-        if len(track.votes) < min(self.vote_window, 2):
+        if len(track.votes) < self.vote_window:
             return None
 
         recent = list(track.votes)[-self.vote_window:]
@@ -143,9 +143,9 @@ class LPRPipeline:
         ratio = score / total if total else 0.0
 
         # 과반 지지 + 최소 득표 가중치를 넘어야 확정
-        if ratio < 0.5 or score < self.min_conf * 2:
+        if ratio < 0.8 or score < self.min_conf * self.vote_window:
             return None
-        if track.confirmed == winner:
+        if track.confirmed is not None:
             return None
 
         # 확정 신뢰도 = 승자 표들의 평균 OCR 신뢰도 × 득표 비율

@@ -219,10 +219,14 @@ def qualifying_violation_cameras(cameras):
 
 
 class CameraWatcher:
-    def __init__(self, interval, max_concurrent, threshold=None, capture_retention_days=30):
+    def __init__(self, interval, max_concurrent, threshold=None, capture_retention_days=30,
+                 lpr=True):
         self.interval = interval
         self.max_concurrent = max_concurrent
         self.threshold = threshold  # None이면 yolo_infer.py 기본값(10초) 그대로 사용
+        # 위반감지(run_uturn.py)를 띄울 때 번호판 인식도 같이 켤지. 켜야 이벤트의
+        # meta.plateNumber가 채워져 대시보드 이벤트 리포트의 "차량 번호판"에 뜬다.
+        self.lpr = lpr
         self.processes = {}  # camId -> subprocess.Popen
         self.fired_cams = set()  # 이미 낙하물 이벤트를 한 번 낸 camId - 더 이상 재시작하지 않는다
         self.capture_retention_days = capture_retention_days
@@ -259,6 +263,13 @@ class CameraWatcher:
                "--video", stream_url, "--cam", cam_id,
                "--zones", str(ZONES_PATH),
                "--gateway", GATEWAY_ORIGIN]
+        # 번호판 인식(d_lpr LPR 파이프라인). 이 플래그가 없으면 run_uturn.py가
+        # 프레임을 LPR로 넘기지 않아서, 위반 이벤트의 meta.plateNumber가 항상
+        # 비어 있고 관제 화면 "차량 번호판"이 "-"로만 떴다. 판정 로직은 그대로이고
+        # 번호판을 읽어 이벤트에 실어 주는 부분만 켜는 것이다.
+        # 무거워서 꺼야 할 때는 워처를 --no-lpr 로 띄운다.
+        if self.lpr:
+            cmd.append("--lpr")
         proc = subprocess.Popen(cmd, cwd=str(D_LPR_DIR))
         self.violation_processes[cam_id] = proc
 
@@ -356,7 +367,8 @@ class CameraWatcher:
         print(f"[WATCHER] 시작. {self.interval}초 간격으로 {GATEWAY_URL} 폴링, "
               f"동시 실행 최대 {self.max_concurrent}개, "
               f"캡처 이미지 보관기간 {self.capture_retention_days}일"
-              + ("(정리 안 함)" if self.capture_retention_days <= 0 else ""))
+              + ("(정리 안 함)" if self.capture_retention_days <= 0 else "")
+              + f", 번호판 인식 {'ON' if self.lpr else 'OFF'}")
         try:
             while True:
                 cameras = fetch_cameras()
@@ -392,6 +404,10 @@ def main():
                              "짧고, IoU 추적이 프레임 사이에 잠깐씩 끊겼다 다시 잡히는 경우가 있어 "
                              "3초는 애매하게 못 넘는 경우가 있었다(2초는 여유 있게 넘어감). "
                              "원래 10초로 되돌리려면 --threshold 10 으로 지정한다.")
+    parser.add_argument("--no-lpr", action="store_true",
+                        help="위반감지 프로세스에서 번호판 인식을 끈다. 기본은 켜져 있고, "
+                             "켜져 있어야 이벤트에 차량 번호판이 실린다. CPU가 부족해 "
+                             "프레임 처리가 밀릴 때만 끄면 된다(판정 자체는 영향 없음).")
     parser.add_argument("--capture-retention-days", type=int, default=30,
                         help="사건 전/후 캡처 이미지(b_dashboard/public/captures/)를 며칠까지 "
                              "보관할지. 이보다 오래된 파일은 1시간마다 자동으로 삭제된다. "
@@ -403,6 +419,7 @@ def main():
         max_concurrent=args.max_concurrent,
         threshold=args.threshold,
         capture_retention_days=args.capture_retention_days,
+        lpr=not args.no_lpr,
     ).run()
 
 

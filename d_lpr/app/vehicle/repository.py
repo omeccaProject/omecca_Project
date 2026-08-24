@@ -293,7 +293,22 @@ class VehicleRepository:
     def save_violation(self, ev: ViolationEvent) -> None:
         if not self._violation_is_local():
             return
-        occurred = datetime.fromtimestamp(ev.timestamp).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+        occurred_dt = datetime.fromtimestamp(ev.timestamp)
+        occurred = occurred_dt.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+        # Prevent duplicate inserts: if a violation with same cam_id, track_id,
+        # violation_type was recorded within the last 5 seconds, skip inserting.
+        try:
+            window_start = (occurred_dt - timedelta(seconds=5)).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+            rows = self._rows(
+                "SELECT COUNT(*) c FROM violation WHERE cam_id = ? AND track_id = ? AND violation_type = ? AND occurred_at >= ?",
+                (ev.cam_id, ev.track_id, ev.violation_type.value, window_start),
+            )
+            if rows and int(rows[0].get("c", 0)) > 0:
+                log.info("중복 위반 감지로 저장 생략: cam=%s track=%s type=%s", ev.cam_id, ev.track_id, ev.violation_type)
+                return
+        except Exception:
+            # If duplicate check fails for any reason, fall back to normal insert
+            log.debug("중복 검사 실패 — 계속 진행", exc_info=True)
         lat, lon = (ev.location or (None, None))
         self._exec(
             "INSERT INTO violation (event_id, violation_type, cam_id, track_id, plate_no, "
@@ -394,6 +409,17 @@ class VehicleRepository:
             "valid_rate": round(valid / total, 4) if total else 0.0,
             "avg_confidence": round(float(r.get("avg_conf") or 0.0), 4),
         }
+
+    def recent_plate_reads_since(self, cam_id: str, track_id: int, since_iso: str) -> list[tuple[str, float]]:
+        """Return recent plate reads (plate_no, confidence) for a cam+track since the given ISO datetime string.
+
+        The caller should format `since_iso` as the same string format used in `log_plate_read` ("YYYY-MM-DD HH:MM:SS.sss").
+        """
+        rows = self._rows(
+            "SELECT plate_no, confidence, read_at FROM plate_read_log WHERE cam_id = ? AND track_id = ? AND read_at >= ?",
+            (cam_id, track_id, since_iso),
+        )
+        return [(r.get("plate_no") or "", float(r.get("confidence") or 0.0)) for r in rows]
 
     # ------------------------------------------------------------------
     def clear(self) -> None:

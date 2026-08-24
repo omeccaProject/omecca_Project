@@ -212,6 +212,24 @@ class GatewayClient:
             log.warning("게이트웨이 큐가 가득 참 — 이벤트 폐기 (%s)", ev.event_id)
             return False
 
+    def enqueue(self, payload: dict[str, Any]) -> bool:
+        """이미 규격 변환이 끝난 payload 를 전송 큐에 넣는다.
+
+        `send()` 는 `ViolationEvent` 를 받아 여기서 변환하지만, 번호판 확정을
+        기다렸다 보내는 중계기(`plate_hold.PlateHoldForwarder`)는 버스에서 온
+        dict 를 이미 `payload_from_bus()` 로 변환해 두고 넘긴다. 그 경로가
+        큐 내부(`_q`)를 직접 만지지 않도록 열어 둔 입구다.
+        """
+        if not self.enabled:
+            return False
+        try:
+            self._q.put_nowait(payload)
+            return True
+        except Exception:
+            self.stats["dropped"] += 1
+            log.warning("게이트웨이 큐가 가득 참 — 이벤트 폐기")
+            return False
+
     def send_now(self, payload: dict[str, Any]) -> bool:
         """즉시 전송 (테스트·수동 재전송용)."""
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -312,3 +330,13 @@ def _payload_from_bus(p: dict[str, Any]) -> dict[str, Any]:
         "frameRefBefore": None,
         "frameRefAfter": None,
     }
+
+
+def payload_from_bus(p: dict[str, Any]) -> dict[str, Any]:
+    """`_payload_from_bus` 의 공개 이름.
+
+    버스 payload 를 게이트웨이 규격으로 바꾸는 변환은 이 파일 한 곳에만 둔다.
+    다른 모듈(예: `plate_hold`)이 밑줄 붙은 내부 함수를 직접 부르지 않도록
+    이름만 열어 준 것이고, 동작은 완전히 같다.
+    """
+    return _payload_from_bus(p)
