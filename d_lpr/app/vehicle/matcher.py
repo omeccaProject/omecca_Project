@@ -52,7 +52,7 @@ class VehicleMatcher:
         self.min_conf_for_alert = min_conf_for_alert
         self.alert_cooldown_sec = alert_cooldown_sec
         self.log_reads = log_reads
-        self._last_alert: dict[tuple[str, str], float] = {}
+        self._last_alert: dict[tuple[str, int, str], float] = {}
         self.stats = {"matched": 0, "fuzzy": 0, "unregistered": 0, "alerts": 0}
 
     # ------------------------------------------------------------------
@@ -145,6 +145,11 @@ class VehicleMatcher:
         """대조 후 고위험이면 경보 이벤트를 생성·발행한다."""
         m = self.match(plate)
 
+        # DB 미등록만으로는 별도 이벤트를 만들지 않는다.
+        # 실제 위반(유턴/신호위반) 이벤트에서만 번호판을 함께 기록한다.
+        if m.status == VehicleStatus.UNREGISTERED:
+            return None
+
         if m.status not in HIGH_RISK_STATUS:
             return None
 
@@ -191,7 +196,7 @@ class VehicleMatcher:
     # ------------------------------------------------------------------
     def _cooldown_ok(self, m: VehicleMatch) -> bool:
         """같은 카메라에서 같은 차량이 연속 감지될 때 경보 폭주를 막는다."""
-        key = (m.cam_id, m.matched_plate or m.plate_no)
+        key = (m.cam_id, m.track_id, ViolationType.HIGH_RISK_VEHICLE.value)
         now = m.timestamp or time.time()
         last = self._last_alert.get(key)
         if last is not None and now - last < self.alert_cooldown_sec:

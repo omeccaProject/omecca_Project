@@ -340,6 +340,30 @@
           "signal_id": "SIG-SIG2"
         }
       ]
+    },
+    {
+      "cam_id": "L010263-TEST",
+      "name": "L010263-TEST",
+      "lines": [
+        {
+          "line_id": "center_1",
+          "name": "중앙선 · 유턴 금지",
+          "p1": [
+            643,
+            138
+          ],
+          "p2": [
+            630,
+            715
+          ],
+          "direction": "both",
+          "line_type": "center",
+          "uturn_allowed": false,
+          "signal_id": "SIG-1"
+        }
+      ],
+      "zones": [],
+      "intersections": []
     }
   ]
 }
