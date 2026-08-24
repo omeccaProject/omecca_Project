@@ -1,6 +1,8 @@
 import os
 import cv2
 import time
+import math
+import threading
 import requests
 
 from collections import deque
@@ -11,6 +13,7 @@ import numpy as np
 import torch
 from dotenv import load_dotenv
 from ultralytics import YOLO
+from PIL import Image, ImageDraw, ImageFont
 
 
 # ============================================================
@@ -32,13 +35,6 @@ TRACKER_CONFIG = BASE_DIR / "bytetrack_custom.yaml"
 
 load_dotenv(BASE_DIR / ".env")
 
-# [버그 수정: "HTTP 404 No static resource ."] .env.example(e_tracking/SmartCCTV)에는
-# GATEWAY_URL=http://localhost:8080 처럼 "경로 없이 호스트만" 적혀 있다(다른 스크립트들이
-# 그 뒤에 자기 endpoint를 붙여쓰는 공용 관례) - 그런데 이 os.getenv 기본값은
-# "/api/cctv/detections"까지 포함된 완전한 URL이라, .env에 값이 있으면 그 값이
-# 그대로 GATEWAY_URL이 되어 fallback의 경로 부분이 통째로 사라졌다(→ POST가 그냥
-# "http://localhost:8080/"로 나가서 404). .env에 경로가 있든 없든 항상 올바른
-# endpoint로 붙게 정규화한다.
 _GATEWAY_URL_RAW = os.getenv(
     "GATEWAY_URL",
     "http://localhost:8080"
@@ -48,8 +44,12 @@ _GATEWAY_BASE_URL = _GATEWAY_URL_RAW.rstrip("/")
 
 if _GATEWAY_BASE_URL.endswith("/api/cctv/detections"):
     GATEWAY_URL = _GATEWAY_BASE_URL
+    _GATEWAY_HOST_ONLY = _GATEWAY_BASE_URL[: -len("/api/cctv/detections")]
 else:
     GATEWAY_URL = _GATEWAY_BASE_URL + "/api/cctv/detections"
+    _GATEWAY_HOST_ONLY = _GATEWAY_BASE_URL
+
+JOURNEY_URL = _GATEWAY_HOST_ONLY + "/api/cctv/journey"
 
 GATEWAY_API_KEY = os.getenv(
     "GATEWAY_API_KEY"
@@ -66,10 +66,6 @@ if not GATEWAY_API_KEY:
 # ============================================================
 # 3. GPU / CPU 설정
 # ============================================================
-
-# GPU 컴퓨터에서 실행할 때
-# True  → GPU 0번
-# False → CPU
 
 USE_GPU = False
 
@@ -118,7 +114,7 @@ CCTV_CONFIG = {
 
     "CCTV-D": {
 
-        "camId": "L010480",
+        "camId": "L010481",
 
         "video":
             VIDEO_DIR / "음주운전4.mp4",
@@ -137,13 +133,6 @@ CONF_THRESH = 0.30
 IMG_SIZE = 640
 
 
-# COCO
-#
-# 2 = car
-# 3 = motorcycle
-# 5 = bus
-# 7 = truck
-
 VEHICLE_CLASSES = [
 
     2,
@@ -160,10 +149,6 @@ VEHICLE_CLASSES = [
 
 HISTORY_MAXLEN = 25
 
-# [민감화] 빨간 박스가 더 빨리 뜨도록 임계값을 낮췄다(요청: "빨간색 바운딩박스 씌우는거
-# 더 빠르게 할 수 없을까"). 원래 값은 각각 6 / 18 / 35 / 2 였음 - 너무 오래 지켜봐야
-# "지그재그"로 판정돼서 화면에 빨간 박스가 늦게 떴다. 값을 낮출수록 더 작은 움직임에도
-# 민감하게 반응하니, 오탐(진짜 정상 주행인데 빨간색)이 너무 잦아지면 다시 살짝 올릴 것.
 MIN_HISTORY_FOR_ANALYSIS = 4
 
 NOISE_DX_PX = 2.0
@@ -176,9 +161,6 @@ MIN_DIRECTION_REVERSALS = 1
 
 SUSTAIN_FRAMES = 1
 
-# [신규] 지그재그 패턴이 안 잡히더라도, 차량이 화면에 처음 등장한 뒤 이 시간(초)이
-# 지나면 무조건 관심차량(빨간 박스)으로 강제 전환한다 - 데모 시연용 안전장치.
-# 실제 지그재그가 먼저 잡히면 그 즉시 빨간색이 되고, 이 타이머는 트리거되지 않는다.
 FORCE_ALERT_AFTER_SECONDS = 3.0
 
 
@@ -187,6 +169,100 @@ FORCE_ALERT_AFTER_SECONDS = 3.0
 # ============================================================
 
 DETECTION_SEND_INTERVAL = 0.10
+
+
+# ============================================================
+# 7-1. 관제 UI 설정 (신규 - 화면 표시 전용, AI/Journey 로직과 무관)
+# ============================================================
+# 이 섹션의 값을 바꿔도 YOLO/ByteTrack/이상운전 판정/Journey/Spring Boot 전송
+# 결과는 전혀 달라지지 않는다 - 순수하게 "화면에 어떻게 그릴지"만 다룬다.
+
+# [중요] 다른 팀원의 번호판 인식(LPR) 모듈이 아직 연결되지 않았다 - 그래서 번호판
+# 값을 여기서 지어내지 않는다. main()의 plate_by_camera[camera_name] 딕셔너리에
+# { track_id: "12가5680" } 형태로 값이 채워지면 그 값을 그대로 표시하고, 없으면
+# 아래 문구를 그대로 표시한다.
+PLATE_UNKNOWN_LABEL = "차량번호 확인 중"
+
+# 한글이 렌더링 가능한 시스템 폰트를 순서대로 찾아본다(요구사항: 맑은 고딕 → 나눔고딕
+# → 기타 순). 하나도 없으면 PIL 기본 폰트로 대체되며, 이 경우에도 프로그램 자체는
+# 계속 실행된다 - 한글 렌더링 실패가 YOLO/영상 처리에 영향을 주지 않는다.
+KOREAN_FONT_CANDIDATES = [
+    "malgun.ttf",  # Windows 기본 한글 폰트(맑은 고딕)
+    "C:/Windows/Fonts/malgun.ttf",
+    "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",  # 나눔고딕
+    "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf",
+    "/System/Library/Fonts/Supplemental/AppleGothic.ttf",  # macOS
+]
+
+_korean_font_cache = {}
+
+
+def _get_korean_font(size):
+    """지정한 크기의 한글 폰트를 캐싱해서 반환한다(매 프레임 새로 로드하면 느려짐).
+    폰트를 하나도 못 찾아도 예외를 던지지 않고 PIL 기본 폰트로 대체한다."""
+    if size in _korean_font_cache:
+        return _korean_font_cache[size]
+
+    font = None
+    for path in KOREAN_FONT_CANDIDATES:
+        try:
+            font = ImageFont.truetype(path, size)
+            break
+        except OSError:
+            continue
+
+    if font is None:
+        print("[경고] 한글 폰트를 찾지 못해 기본 폰트로 대체합니다 - 한글이 깨져 보일 수 있습니다.")
+        font = ImageFont.load_default()
+
+    _korean_font_cache[size] = font
+    return font
+
+
+def draw_korean_texts(frame_bgr, texts):
+    """
+    cv2.putText는 한글을 렌더링하지 못하므로(각모/물음표로 깨짐), 프레임 전체를
+    PIL 이미지로 한 번만 변환해서 요청된 텍스트를 전부 그린 뒤 다시 OpenCV(BGR)
+    배열로 변환해서 반환한다.
+
+    texts: [{"text": str, "org": (x,y), "size": int, "color_bgr": (b,g,r)}, ...]
+    한 프레임당 이 변환을 여러 번 하면(텍스트마다 한 번씩) 느려지므로, 한 프레임에
+    그릴 한글 텍스트를 전부 모아서 "한 번만" 변환한다(요구사항: 성능 유지).
+    """
+    if not texts:
+        return frame_bgr
+
+    img_pil = Image.fromarray(cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB))
+    draw = ImageDraw.Draw(img_pil)
+
+    for t in texts:
+        font = _get_korean_font(t.get("size", 18))
+        b, g, r = t.get("color_bgr", (255, 255, 255))
+        draw.text(t["org"], t["text"], font=font, fill=(r, g, b))
+
+    return cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
+
+
+def _draw_corner_accents(frame, x1, y1, x2, y2, color, length=14, thickness=3):
+    """bbox 네 모서리에 'ㄴ'자 형태의 강조선을 그린다 - 관제 시스템의 Detection Box
+    느낌을 준다. 사각형 전체를 두껍게 그리는 것보다 차량을 덜 가린다."""
+    for (cx, cy, dx, dy) in [
+        (x1, y1, 1, 1), (x2, y1, -1, 1), (x1, y2, 1, -1), (x2, y2, -1, -1),
+    ]:
+        cv2.line(frame, (cx, cy), (cx + dx * length, cy), color, thickness)
+        cv2.line(frame, (cx, cy), (cx, cy + dy * length), color, thickness)
+
+
+def _draw_glow_rect(frame, x1, y1, x2, y2, color, pulse_phase, pad=6, alpha_base=0.25, alpha_amp=0.15):
+    """이상운전 차량 bbox 바깥쪽에 은은하게 번지는 느낌의 사각형을 얹어서 Glow
+    효과를 흉내낸다(실제 가우시안 블러는 매 프레임 비용이 커서 쓰지 않는다 - 요구사항:
+    FPS 저하 방지). pulse_phase(0~2π)로 알파값을 아주 약하게 출렁이게 해서 옅은
+    Pulse 느낌만 준다 - 차량을 가릴 정도로 과하게는 하지 않는다(요구사항: 차량을
+    가리는 수준의 Glow 금지)."""
+    alpha = alpha_base + alpha_amp * (0.5 + 0.5 * np.sin(pulse_phase))
+    overlay = frame.copy()
+    cv2.rectangle(overlay, (x1 - pad, y1 - pad), (x2 + pad, y2 + pad), color, thickness=pad)
+    cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
 
 
 # ============================================================
@@ -209,10 +285,6 @@ def check_device():
         "CUDA available :",
         torch.cuda.is_available()
     )
-
-    # --------------------------------------------------------
-    # GPU
-    # --------------------------------------------------------
 
     if USE_GPU:
 
@@ -248,10 +320,6 @@ def check_device():
         print(
             "Device : GPU 0"
         )
-
-    # --------------------------------------------------------
-    # CPU
-    # --------------------------------------------------------
 
     else:
 
@@ -295,7 +363,384 @@ def load_model():
 
 
 # ============================================================
-# 10. CCTV 영상 연결
+# 10. 실시간 차량 이동 경로(Journey) 추적
+# ============================================================
+# ⚠️ 이 섹션 전체(변수/함수/클래스)는 요청하신 대로 단 한 글자도 수정하지 않았다.
+
+CAMERA_LOCATIONS = {
+
+    "L010111": {"name": "보라매역",     "lat": 37.49976, "lng": 126.92007},
+    "L010271": {"name": "장승배기",     "lat": 37.5052,  "lng": 126.93955},
+    "L010128": {"name": "상도",         "lat": 37.50303, "lng": 126.9478},
+    "L010481": {"name": "한강대교남단", "lat": 37.51346, "lng": 126.95552},
+
+}
+
+JOURNEY_STALE_SECONDS = 8.0
+
+OSRM_BASE_URL = "https://router.project-osrm.org/route/v1/driving"
+
+
+def haversine_meters(lat1, lng1, lat2, lng2):
+    """두 좌표 사이의 실제 거리(m). map.js의 haversineMeters()와 동일한 공식."""
+    R = 6371000
+    dlat = math.radians(lat2 - lat1)
+    dlng = math.radians(lng2 - lng1)
+    a = (
+        math.sin(dlat / 2) ** 2
+        + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlng / 2) ** 2
+    )
+    return 2 * R * math.asin(min(1, math.sqrt(a)))
+
+
+def compute_bearing_deg(lat1, lng1, lat2, lng2):
+    """두 좌표 사이의 진행 방위각(0~360). map.js의 computeBearingDeg()와 동일한 공식."""
+    lat1r, lat2r = math.radians(lat1), math.radians(lat2)
+    dlng = math.radians(lng2 - lng1)
+    y = math.sin(dlng) * math.cos(lat2r)
+    x = math.cos(lat1r) * math.sin(lat2r) - math.sin(lat1r) * math.cos(lat2r) * math.cos(dlng)
+    return round((math.degrees(math.atan2(y, x)) + 360) % 360)
+
+
+def strip_start_uturn(points):
+    """경로 시작점 부근의 U턴(되돌아오는 루프) 구간을 제거한다."""
+    if len(points) < 4:
+        return points
+
+    start = points[0]
+    SEARCH_LIMIT_METERS = 300
+    LEFT_START_METERS = 80
+    NEAR_START_METERS = 40
+
+    cum_dist = 0.0
+    left_start = False
+    loop_back_idx = -1
+
+    for i in range(1, len(points)):
+        cum_dist += haversine_meters(points[i - 1][0], points[i - 1][1], points[i][0], points[i][1])
+        if cum_dist > SEARCH_LIMIT_METERS:
+            break
+
+        dist_from_start = haversine_meters(start[0], start[1], points[i][0], points[i][1])
+        if dist_from_start > LEFT_START_METERS:
+            left_start = True
+        elif left_start and dist_from_start <= NEAR_START_METERS:
+            loop_back_idx = i
+
+    if loop_back_idx > 0:
+        print(f"[JOURNEY] 시작점 부근 U턴 감지 - 앞 좌표 {loop_back_idx}개를 건너뜁니다.")
+        return [start] + points[loop_back_idx + 1 :]
+
+    return points
+
+
+def get_road_segment(from_loc, to_loc, cache):
+    """두 CCTV 설치 좌표 사이의 실제 도로 경로(위경도 리스트)를 OSRM에서 받아온다."""
+    key = (from_loc["lat"], from_loc["lng"], to_loc["lat"], to_loc["lng"])
+    if key in cache:
+        return cache[key]
+
+    straight = [(from_loc["lat"], from_loc["lng"]), (to_loc["lat"], to_loc["lng"])]
+    bearing = compute_bearing_deg(from_loc["lat"], from_loc["lng"], to_loc["lat"], to_loc["lng"])
+    url = (
+        f"{OSRM_BASE_URL}/{from_loc['lng']},{from_loc['lat']};{to_loc['lng']},{to_loc['lat']}"
+        f"?overview=full&geometries=geojson&bearings={bearing},60;{bearing},60"
+    )
+
+    try:
+        res = requests.get(url, timeout=5)
+        res.raise_for_status()
+        data = res.json()
+        coords = data["routes"][0]["geometry"]["coordinates"]  # [[lng,lat], ...]
+        path = [(lat, lng) for lng, lat in coords]
+        path = strip_start_uturn(path)
+        cache[key] = path
+        return path
+    except Exception as e:
+        print(f"[JOURNEY] OSRM 도로 경로 조회 실패 - 직선으로 대체합니다: {e}")
+        cache[key] = straight
+        return straight
+
+
+class VehicleJourney:
+    """지금 관제 지도에 표시 중인 "하나의 이상운전 의심 차량 여정" 상태."""
+
+    def __init__(self):
+        self.active = False
+        self.last_cam_id = None
+        self.last_seen_at = 0.0
+        self.points = []
+        self.road_cache = {}
+
+    def reset(self):
+        self.active = False
+        self.last_cam_id = None
+        self.last_seen_at = 0.0
+        self.points = []
+        self._journey_pending = False
+
+
+def send_journey_update(journey):
+    """여정 상태가 바뀔 때마다(새 시작/카메라 전환/종료) 호출한다."""
+    if requests is None:
+        return
+
+    loc = CAMERA_LOCATIONS.get(journey.last_cam_id) if journey.active else None
+
+    payload = {
+        "active": journey.active,
+        "currentCamId": journey.last_cam_id,
+        "currentCamName": loc["name"] if loc else None,
+        "currentLat": loc["lat"] if loc else None,
+        "currentLng": loc["lng"] if loc else None,
+        "points": [{"lat": p[0], "lng": p[1]} for p in journey.points],
+    }
+
+    headers = {
+        "X-API-Key": GATEWAY_API_KEY,
+        "Content-Type": "application/json",
+    }
+
+    try:
+        response = requests.post(JOURNEY_URL, json=payload, headers=headers, timeout=0.5)
+        if not response.ok:
+            print(f"[JOURNEY] 전송 실패 | {response.status_code} | {response.text[:200]}")
+    except requests.RequestException as e:
+        print(f"[JOURNEY] 전송 실패(서버 미기동 등) - 지도 표시에는 영향 없음: {e}")
+
+
+def _extend_journey_async(journey, from_loc, to_loc, new_cam_id):
+    """OSRM 호출은 최대 몇 초 걸릴 수 있어서, 메인 검출 루프(30fps x 4캠)를 멈추지
+    않도록 별도 스레드에서 처리한다."""
+
+    def worker():
+        try:
+            road_points = get_road_segment(
+                from_loc,
+                to_loc,
+                journey.road_cache
+            )
+
+            journey.points.extend(
+                road_points[1:]
+            )
+
+            journey.last_cam_id = new_cam_id
+            journey.last_seen_at = time.time()
+
+            print(
+                f"[JOURNEY] "
+                f"{from_loc['name']} → {to_loc['name']} "
+                f"구간 도로 경로 추가 ({len(road_points)}개 점)"
+            )
+
+            send_journey_update(journey)
+
+        finally:
+            # 현재 구간 이동 완료 → 다음 CCTV 이동 허용
+            journey._journey_pending = False
+        
+
+    threading.Thread(target=worker, daemon=True).start()
+
+
+def update_journey_for_frame(journey, suspicious_vehicles_by_camera):
+    """
+    다중 CCTV에서 동일 차량의 이상운전 여정을 지도에 표시한다.
+
+    데모 영상은 여러 CCTV 영상이 동시에 재생되기 때문에
+    A/B/C/D가 같은 순간에 모두 suspicious=True가 될 수 있다.
+
+    따라서 미리 정의한 CCTV 순서
+    A → B → C → D
+    를 기준으로 Journey를 진행한다.
+    """
+
+    now = time.time()
+
+    active_cam_ids = [
+        cam_id
+        for cam_id, ids in suspicious_vehicles_by_camera.items()
+        if ids
+    ]
+
+    # =========================================================
+    # CCTV 이동 순서
+    # =========================================================
+
+    camera_order = [
+        "L010111",  # CCTV-A / 보라매역
+        "L010271",  # CCTV-B
+        "L010128",  # CCTV-C / 상도
+        "L010481",  # CCTV-D / 한강대교남단
+    ]
+
+    # =========================================================
+    # 아직 Journey가 없으면
+    # 항상 CCTV-A(보라매역)에서 시작
+    # =========================================================
+
+    if not journey.active:
+
+        # 이상운전 차량이 하나도 없으면 대기
+        if not active_cam_ids:
+            return
+
+        start_cam_id = camera_order[0]
+
+        loc = CAMERA_LOCATIONS.get(start_cam_id)
+
+        if not loc:
+            return
+
+        journey.active = True
+
+        journey.last_cam_id = start_cam_id
+
+        journey.points = [
+            (loc["lat"], loc["lng"])
+        ]
+
+        journey.last_seen_at = now
+
+        # 이동 처리 중 여부 초기화
+        journey._journey_pending = False
+
+        print(
+            f"[JOURNEY] 새 여정 시작: "
+            f"{start_cam_id}({loc['name']})"
+        )
+
+        # A 지점 즉시 지도에 전달
+        send_journey_update(journey)
+
+        return
+
+    # =========================================================
+    # 현재 CCTV 위치 확인
+    # =========================================================
+
+    current_index = -1
+
+    if journey.last_cam_id in camera_order:
+
+        current_index = camera_order.index(
+            journey.last_cam_id
+        )
+
+    # =========================================================
+    # 마지막 CCTV(D)까지 도착한 경우
+    # =========================================================
+
+    if current_index == len(camera_order) - 1:
+
+        if journey.last_cam_id in active_cam_ids:
+            journey.last_seen_at = now
+            return
+
+    # =========================================================
+    # 다음 CCTV 탐색
+    # =========================================================
+
+    next_cam_id = None
+
+    if current_index >= 0:
+
+        for i in range(
+            current_index + 1,
+            len(camera_order)
+        ):
+
+            candidate = camera_order[i]
+
+            if candidate in active_cam_ids:
+
+                next_cam_id = candidate
+
+                break
+
+    # =========================================================
+    # 다음 CCTV가 아직 감지되지 않은 경우
+    # =========================================================
+
+    if next_cam_id is None:
+
+        # 현재 CCTV가 계속 감지되고 있으면
+        # Journey 유지
+        if journey.last_cam_id in active_cam_ids:
+
+            journey.last_seen_at = now
+
+            return
+
+        # 현재 CCTV도 더 이상 감지되지 않으면
+        # 일정 시간 동안 기다림
+        if now - journey.last_seen_at > JOURNEY_STALE_SECONDS:
+
+            print(
+                f"[JOURNEY] "
+                f"{JOURNEY_STALE_SECONDS:.0f}초간 재감지 없음 - 여정 종료"
+            )
+
+            journey.reset()
+
+            send_journey_update(journey)
+
+        return
+
+    # =========================================================
+    # 이미 다음 CCTV로 이동 처리 중이면
+    # 중복 스레드 생성 방지
+    # =========================================================
+
+    if getattr(
+        journey,
+        "_journey_pending",
+        False
+    ):
+
+        return
+
+    # =========================================================
+    # 출발 / 도착 CCTV 좌표
+    # =========================================================
+
+    from_loc = CAMERA_LOCATIONS.get(
+        journey.last_cam_id
+    )
+
+    to_loc = CAMERA_LOCATIONS.get(
+        next_cam_id
+    )
+
+    if not from_loc or not to_loc:
+        return
+
+    # =========================================================
+    # 다음 CCTV 이동 시작
+    # =========================================================
+
+    journey._journey_pending = True
+
+    print(
+        f"[JOURNEY] "
+        f"{from_loc['name']} → {to_loc['name']} "
+        f"이동 감지"
+    )
+
+    # =========================================================
+    # OSRM 도로 경로를 비동기로 계산
+    # =========================================================
+
+    _extend_journey_async(
+        journey,
+        from_loc,
+        to_loc,
+        next_cam_id
+    )
+
+# ============================================================
+# 11. CCTV 영상 연결
 # ============================================================
 
 def open_cameras():
@@ -456,7 +901,7 @@ def open_cameras():
 
 
 # ============================================================
-# 11. YOLO + ByteTrack
+# 12. YOLO + ByteTrack
 # ============================================================
 
 def detect_and_track(
@@ -640,7 +1085,7 @@ def detect_and_track(
 
 
 # ============================================================
-# 12. 차량 중심점
+# 13. 차량 중심점
 # ============================================================
 
 def get_center(bbox):
@@ -665,7 +1110,7 @@ def get_center(bbox):
 
 
 # ============================================================
-# 13. 차량 이동 기록
+# 14. 차량 이동 기록
 # ============================================================
 
 def update_vehicle_history(
@@ -708,7 +1153,7 @@ def update_vehicle_history(
 
 
 # ============================================================
-# 14. 이상운전 패턴 분석
+# 15. 이상운전 패턴 분석
 # ============================================================
 
 def analyze_driving_pattern(
@@ -939,7 +1384,7 @@ def analyze_driving_pattern(
 
 
 # ============================================================
-# 15. 이상운전 차량 판정
+# 16. 이상운전 차량 판정
 # ============================================================
 
 def check_suspicious_vehicle(
@@ -1070,7 +1515,7 @@ def check_suspicious_vehicle(
 
 
 # ============================================================
-# 16. Spring Boot Detection API 전송
+# 17. Spring Boot Detection API 전송
 # ============================================================
 
 def send_detection(
@@ -1280,19 +1725,8 @@ def send_detection(
 
 
 # ============================================================
-# 16-1. 대시보드 실시간 박스 오버레이 전송
+# 17-1. 대시보드 실시간 박스 오버레이 전송
 # ============================================================
-#
-# [버그 수정: "카메라 관리로 등록한 CCTV 화면에 바운딩박스가 안 씌워짐"]
-# 위 send_detection()은 "이 차량이 이상운전으로 확정됐다"는 판정 결과(lateralRange 등)를
-# 보내는 별개의 payload라서, b_gateway의 CctvDetectionController가 기대하는
-# {camId, frameWidth, frameHeight, detections:[{trackId, bbox}]} 스키마와 다르다 -
-# 그래서 이 스크립트는 지금까지 대시보드 오버레이 캔버스(CctvOverlayCanvas,
-# /topic/cctv/detections 구독)가 필요로 하는 데이터를 한 번도 보낸 적이 없었다.
-# (test_hls_yolo.py의 send_frame_detections()와 정확히 동일한 스키마 - 계약 유지)
-#
-# 이건 이상운전 판정과 무관하게 "이 프레임에 지금 보이는 차량 전체"를 매 프레임
-# 한 번씩(카메라당) 보내면 되므로, DETECTION_SEND_INTERVAL 쓰로틀링과 별개로 둔다.
 
 def send_frame_detections(cam_id, frame_width, frame_height, tracked_objects, suspicious_ids=None):
     suspicious_ids = suspicious_ids or set()
@@ -1307,8 +1741,6 @@ def send_frame_detections(cam_id, frame_width, frame_height, tracked_objects, su
                 "x2": float(x2),
                 "y2": float(y2),
             },
-            # 음주운전(지그재그 주행 등) 의심으로 확정된 차량이면 true - 대시보드가
-            # 이 값을 보고 박스를 초록 대신 빨간색으로 그린다.
             "alert": track_id in suspicious_ids,
         })
 
@@ -1328,14 +1760,28 @@ def send_frame_detections(cam_id, frame_width, frame_height, tracked_objects, su
         response = requests.post(GATEWAY_URL, json=payload, headers=headers, timeout=0.5)
         if not response.ok:
             print(f"[박스 오버레이 전송 실패] HTTP={response.status_code} body={response.text[:200]}")
-        # 성공 로그는 매 프레임 찍으면 콘솔이 도배되므로 생략(실패했을 때만 남김).
     except requests.exceptions.RequestException as e:
         print(f"[박스 오버레이 네트워크 오류] {e}")
 
 
 # ============================================================
-# 17. 차량 Bounding Box
+# 18. 차량 Bounding Box
 # ============================================================
+# [수정: 관제 UI 개선] 기존 빨간 Bounding Box(요구사항: 절대 삭제 금지)는 그대로
+# 유지한다. is_suspicious일 때만 아래 3가지를 "추가"한다 - 일반 차량(else 분기,
+# 초록 박스 + "Vehicle #ID")은 단 한 줄도 바뀌지 않았다.
+#   1) Glow(은은한 Pulse) - 기존 빨간 bbox 바깥쪽에 옅게
+#   2) 모서리 강조("타겟 지정" 느낌)
+#   3) 한글 텍스트("이상운전 차량"/"차량번호 ..."/"이상운전 감지") - cv2.putText는
+#      한글을 못 그리므로 여기서 직접 그리지 않고 korean_texts 리스트에 쌓기만 한다.
+#      실제 그리기는 draw_korean_texts()가 프레임당 한 번만 수행한다(성능 유지).
+#
+# 기존 "SUSPICIOUS"(영문) cv2.putText는 위 3)의 한글 버전으로 대체한다 - 같은
+# 정보를 두 번 그리면 bbox 아래가 겹쳐 지저분해지기 때문.
+#
+# 새 매개변수(korean_texts, pulse_phase, plate)는 전부 기본값과 함께 끝에
+# 추가했다 - 혹시 다른 곳에서 기존 방식대로 draw_vehicle(frame, track_id, info,
+# history, is_suspicious) 5개 인자만 호출해도 그대로 동작한다(하위 호환).
 
 def draw_vehicle(
 
@@ -1347,7 +1793,11 @@ def draw_vehicle(
 
     history,
 
-    is_suspicious
+    is_suspicious,
+
+    korean_texts=None,
+    pulse_phase=0.0,
+    plate=None,
 
 ):
 
@@ -1389,6 +1839,10 @@ def draw_vehicle(
         )
 
         thickness = 2
+
+    # ---- [신규] Glow(은은한 Pulse) - 이상운전 차량만, 기존 사각형보다 먼저 그린다 ----
+    if is_suspicious:
+        _draw_glow_rect(frame, x1, y1, x2, y2, color, pulse_phase)
 
 
     # ========================================================
@@ -1448,45 +1902,81 @@ def draw_vehicle(
 
     if is_suspicious:
 
-        cv2.putText(
+        # ---- [신규] 모서리 강조 ----
+        _draw_corner_accents(frame, x1, y1, x2, y2, color)
 
-            frame,
+        # ---- [신규] 한글 관제 UI - 실제 그리기는 나중에 draw_korean_texts()가 일괄 처리 ----
+        if korean_texts is not None:
+            dot_x, dot_y = x1 + 7, max(y1 - 26, 14)
+            cv2.circle(frame, (dot_x, dot_y), 6, color, -1)
+            korean_texts.append({
+                "text": "이상운전 차량",
+                "org": (x1 + 18, max(y1 - 34, 4)),
+                "size": 18,
+                "color_bgr": color,
+            })
 
-            "SUSPICIOUS",
+            plate_label = f"차량번호 {plate}" if plate else PLATE_UNKNOWN_LABEL
+            below_y = y2 + 6
+            korean_texts.append({
+                "text": plate_label,
+                "org": (x1, below_y),
+                "size": 17,
+                "color_bgr": (255, 255, 255),
+            })
 
-            (
+            warn_y = below_y + 24
+            tri_cx, tri_cy = x1 + 8, warn_y + 8
+            tri = np.array([[tri_cx, tri_cy - 8], [tri_cx - 8, tri_cy + 7], [tri_cx + 8, tri_cy + 7]], np.int32)
+            cv2.fillPoly(frame, [tri], color)
+            korean_texts.append({
+                "text": "이상운전 감지",
+                "org": (x1 + 20, warn_y),
+                "size": 17,
+                "color_bgr": color,
+            })
+        else:
+            # korean_texts를 안 넘긴 호출부를 위한 방어 처리 - 한글 UI 없이도
+            # 최소한 기존과 동일하게 영문으로는 표시되도록 한다.
+            cv2.putText(
 
-                x1,
+                frame,
 
-                min(
+                "SUSPICIOUS",
 
-                    y2 + 25,
+                (
 
-                    frame.shape[0] - 10
+                    x1,
 
-                )
+                    min(
 
-            ),
+                        y2 + 25,
 
-            cv2.FONT_HERSHEY_SIMPLEX,
+                        frame.shape[0] - 10
 
-            0.65,
+                    )
 
-            (
+                ),
 
-                0,
-                0,
-                255
+                cv2.FONT_HERSHEY_SIMPLEX,
 
-            ),
+                0.65,
 
-            2
+                (
 
-        )
+                    0,
+                    0,
+                    255
+
+                ),
+
+                2
+
+            )
 
 
 # ============================================================
-# 18. CCTV 헤더
+# 19. CCTV 헤더
 # ============================================================
 
 def draw_cctv_header(
@@ -1658,7 +2148,7 @@ def draw_cctv_header(
 
 
 # ============================================================
-# 19. 4분할 화면
+# 20. 4분할 화면
 # ============================================================
 
 def make_four_screen(frames):
@@ -1818,7 +2308,7 @@ def make_four_screen(frames):
 
 
 # ============================================================
-# 20. MAIN
+# 21. MAIN
 # ============================================================
 
 def main():
@@ -1913,12 +2403,30 @@ def main():
 
     }
 
+    # [신규: 관제 UI 연결 지점 - Journey/AI 로직과 무관] 팀의 번호판 인식(LPR)
+    # 모듈이 이 딕셔너리에 plate_by_camera[camera_name][track_id] = "12가5680"
+    # 형태로 값을 채워주면 draw_vehicle()이 그 값을 그대로 화면에 표시한다.
+    # 지금은 비어있는 채로 시작하므로 화면에는 항상 PLATE_UNKNOWN_LABEL
+    # ("차량번호 확인 중")이 표시된다 - 절대 번호를 임의로 지어내지 않는다.
+    plate_by_camera = {
+
+        camera_name: {}
+
+        for camera_name
+        in cameras
+
+    }
+
 
     # ========================================================
     # 이벤트
     # ========================================================
 
     events = []
+
+    # [신규] 실시간 카메라 간 이동 경로(Journey) - 전체 시스템에 하나만 존재한다
+    # (카메라별 상태가 아님 - 위 "10. 실시간 차량 이동 경로" 설명 참고).
+    journey = VehicleJourney()
 
 
     print("=" * 70)
@@ -1947,6 +2455,10 @@ def main():
 
     print(
         f"📡 API : {GATEWAY_URL}"
+    )
+
+    print(
+        f"📡 Journey API : {JOURNEY_URL}"
     )
 
     print(
@@ -2003,6 +2515,10 @@ def main():
 
         all_finished = True
 
+        # [신규] 이상운전 차량의 은은한 Glow/Pulse가 4개 카메라 전부 같은 위상으로
+        # 출렁이도록, 이번 프레임 전체에서 공용으로 쓸 위상값을 한 번만 계산한다.
+        pulse_phase = time.time() * 3.0
+
 
         # ====================================================
         # CCTV A/B/C/D
@@ -2046,6 +2562,11 @@ def main():
                 frame
 
             )
+
+            # [신규] 이번 카메라·이번 프레임에 그릴 한글 텍스트를 모아뒀다가 아래
+            # per-track 루프가 끝난 뒤 한 번만 PIL로 변환한다(요구사항: PIL 변환을
+            # 프레임마다 여러 번 하지 않기).
+            korean_texts = []
 
 
             # =================================================
@@ -2306,7 +2827,10 @@ def main():
 
                     history,
 
-                    is_suspicious
+                    is_suspicious,
+                    korean_texts=korean_texts,
+                    pulse_phase=pulse_phase,
+                    plate=plate_by_camera[camera_name].get(track_id),
 
                 )
 
@@ -2347,10 +2871,31 @@ def main():
 
             )
 
+            # [신규] 이번 카메라 프레임에 쌓인 한글 텍스트를 한 번의 PIL 변환으로
+            # 전부 그린다 - CCTV 헤더(영문, cv2.putText)를 그린 "뒤"에 적용해서
+            # 한글 텍스트가 헤더보다 위(나중에 그려짐)에 오도록 한다.
+            frame = draw_korean_texts(frame, korean_texts)
+
 
             display_frames[
                 camera_name
             ] = frame
+
+
+        # ====================================================
+        # [신규] 실시간 카메라 간 이동 경로(Journey) 갱신
+        # ----------------------------------------------------
+        # 4개 카메라를 전부 처리한 뒤, 프레임당 한 번만 호출한다. camId를 key로
+        # 쓰기 때문에 "카메라 A의 트랙 3번"과 "카메라 B의 트랙 3번"이 절대
+        # 섞이지 않는다(camId가 다르면 무조건 다른 카메라로 취급됨).
+        # ====================================================
+
+        suspicious_by_cam_id = {
+            cameras[camera_name]["camId"]: suspicious_vehicles[camera_name]
+            for camera_name in cameras
+        }
+
+        update_journey_for_frame(journey, suspicious_by_cam_id)
 
 
         # ====================================================
