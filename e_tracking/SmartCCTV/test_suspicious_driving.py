@@ -4,6 +4,7 @@ import time
 import math
 import threading
 import requests
+import uuid
 
 from collections import deque
 from datetime import datetime
@@ -50,6 +51,16 @@ else:
     _GATEWAY_HOST_ONLY = _GATEWAY_BASE_URL
 
 JOURNEY_URL = _GATEWAY_HOST_ONLY + "/api/cctv/journey"
+
+# [신규: "test_suspicious_driving.py를 돌려도 대시보드 이벤트 리스트/화면 중앙 알림
+# 팝업/PDF 리포트가 하나도 안 뜬다"] 지금까지 이 스크립트는 JOURNEY_URL(지도 위 차량
+# 이동/팝업)과 GATEWAY_URL(CCTV 화면의 초록/빨강 박스 오버레이)에만 데이터를 보냈다.
+# 그런데 대시보드의 "이벤트" 리스트·화면 중앙 알림 팝업·PDF 리포트는 전부 세 번째로
+# 완전히 별개인 "공통 이벤트 스키마"(b_gateway의 POST /api/events, b_dashboard의
+# useEventSocket이 구독)로만 굴러간다 - 이 스크립트가 여태 그 endpoint를 호출한 적이
+# 없어서, 실제 음주운전 판정이 지도/CCTV 화면엔 보여도 이벤트 리스트·알림 팝업·리포트
+# 쪽에서는 존재 자체를 몰랐다. 아래 EVENTS_URL/send_ai_event()가 그 빠진 연결을 채운다.
+EVENTS_URL = _GATEWAY_HOST_ONLY + "/api/events"
 
 GATEWAY_API_KEY = os.getenv(
     "GATEWAY_API_KEY"
@@ -376,6 +387,17 @@ CAMERA_LOCATIONS = {
 
 }
 
+# [신규] "보라매역 → 장승배기 → 상도 → 한강대교남단" 순서로만 여정이 진행되게 만든 그
+# 고정 순서 - update_journey_for_frame()과 아래 _advance_journey_to() 둘 다 이
+# 하나의 목록을 그대로 공유한다(예전엔 update_journey_for_frame() 안에만 지역변수로
+# 있어서 다른 함수에서는 같은 순서를 또 만들어야 했다).
+CAMERA_ORDER = [
+    "L010111",  # CCTV-A / 보라매역
+    "L010271",  # CCTV-B / 장승배기
+    "L010128",  # CCTV-C / 상도
+    "L010481",  # CCTV-D / 한강대교남단
+]
+
 JOURNEY_STALE_SECONDS = 8.0
 
 OSRM_BASE_URL = "https://router.project-osrm.org/route/v1/driving"
@@ -434,21 +456,40 @@ def strip_start_uturn(points):
     return points
 
 
-def get_road_segment(from_loc, to_loc, cache):
-    """두 CCTV 설치 좌표 사이의 실제 도로 경로(위경도 리스트)를 OSRM에서 받아온다."""
-    key = (from_loc["lat"], from_loc["lng"], to_loc["lat"], to_loc["lng"])
+def get_multi_point_road_route(cam_ids, cache):
+    """[신규: 사용자 요청 - "폴리라인이 도로 위에 완벽하게 그려져서 한 번에 끝나게
+    해달라, 구간별로 나눠서 그리는 로직은 다 지워달라"]
+
+    예전엔 카메라 사이를 한 구간씩(보라매역→장승배기, 장승배기→상도, ...) 따로따로
+    OSRM에 물어서 순서대로 이어붙였다. 이러면 지도 쪽에서 구간이 도착할 때마다
+    차량 아이콘이 그 구간을 실제로 "운전해서 지나가는" 애니메이션을 큐에 쌓아
+    재생했는데, 여러 구간이 한꺼번에 도착하면(=이 스크립트처럼 여러 카메라를 순식간에
+    따라잡을 때) 그 큐가 파이썬을 이미 끈 뒤에도 한참 재생되며 이상한 지그재그
+    모양으로 보이는 문제가 있었다.
+
+    이제는 카메라 여러 대(cam_ids, CAMERA_ORDER 순서 그대로)를 OSRM "다중 경유지"
+    요청 딱 한 번으로 물어서, 전체 경로를 완성된 하나의 좌표 리스트로 받는다.
+    프론트엔드는 이 결과를 그대로 한 번에 그리기만 하면 되므로, 구간별 분할/애니메이션
+    큐/뒤늦은 재생 문제가 원천적으로 없다.
+    """
+    if requests is None or len(cam_ids) < 2:
+        return None
+
+    key = tuple(cam_ids)
     if key in cache:
         return cache[key]
 
-    straight = [(from_loc["lat"], from_loc["lng"]), (to_loc["lat"], to_loc["lng"])]
-    bearing = compute_bearing_deg(from_loc["lat"], from_loc["lng"], to_loc["lat"], to_loc["lng"])
-    url = (
-        f"{OSRM_BASE_URL}/{from_loc['lng']},{from_loc['lat']};{to_loc['lng']},{to_loc['lat']}"
-        f"?overview=full&geometries=geojson&bearings={bearing},60;{bearing},60"
-    )
+    locs = [CAMERA_LOCATIONS.get(cid) for cid in cam_ids]
+    if any(loc is None for loc in locs):
+        return None
+
+    straight = [(loc["lat"], loc["lng"]) for loc in locs]
+
+    coords_param = ";".join(f"{loc['lng']},{loc['lat']}" for loc in locs)
+    url = f"{OSRM_BASE_URL}/{coords_param}?overview=full&geometries=geojson"
 
     try:
-        res = requests.get(url, timeout=5)
+        res = requests.get(url, timeout=8)
         res.raise_for_status()
         data = res.json()
         coords = data["routes"][0]["geometry"]["coordinates"]  # [[lng,lat], ...]
@@ -457,7 +498,7 @@ def get_road_segment(from_loc, to_loc, cache):
         cache[key] = path
         return path
     except Exception as e:
-        print(f"[JOURNEY] OSRM 도로 경로 조회 실패 - 직선으로 대체합니다: {e}")
+        print(f"[JOURNEY] OSRM 다중 경유지 경로 조회 실패 - 직선으로 대체합니다: {e}")
         cache[key] = straight
         return straight
 
@@ -471,6 +512,11 @@ class VehicleJourney:
         self.last_seen_at = 0.0
         self.points = []
         self.road_cache = {}
+        # [신규] "카메라 지날 때마다 알림 팝업/이벤트가 계속 뜬다" - 한 여정(같은 차량이
+        # 보라매역→장승배기→상도→한강대교남단을 지나가는 동안) 전체를 통틀어 알림을
+        # 딱 한 번만 보내기 위한 플래그. 여정이 처음 시작될 때(=첫 카메라에서 이상운전이
+        # 확정된 순간) True로 바뀌고, 여정이 끝나야(reset) 다시 False가 된다.
+        self.alert_sent = False
 
     def reset(self):
         self.active = False
@@ -478,6 +524,7 @@ class VehicleJourney:
         self.last_seen_at = 0.0
         self.points = []
         self._journey_pending = False
+        self.alert_sent = False
 
 
 def send_journey_update(journey):
@@ -509,37 +556,202 @@ def send_journey_update(journey):
         print(f"[JOURNEY] 전송 실패(서버 미기동 등) - 지도 표시에는 영향 없음: {e}")
 
 
-def _extend_journey_async(journey, from_loc, to_loc, new_cam_id):
-    """OSRM 호출은 최대 몇 초 걸릴 수 있어서, 메인 검출 루프(30fps x 4캠)를 멈추지
-    않도록 별도 스레드에서 처리한다."""
+# [신규] "이벤트/알림 팝업이 뜨는 순간 캡처 이미지도 이미 들어가 있어야 한다" -
+# e_tracking/SmartCCTV/realtime_anomaly.py의 CAPTURES_DIR/save_capture()/
+# frame_buffer/BEFORE_CAPTURE_SECONDS 패턴을 그대로 재사용한다(요구사항: 로직 중복
+# 구현 금지). "전" 캡처는 사건 확정 직전 BEFORE_CAPTURE_SECONDS초 동안 카메라별로
+# 계속 채워둔 frame_buffer의 가장 오래된 프레임, "후"는 확정된 바로 이 프레임이다.
+# 예전에는 이 값들이 없어서 send_ai_event()가 frameRefBefore/frameRefAfter 없이
+# 이벤트를 만들었고, 대시보드는 사용자가 이벤트 카드를 클릭해야만(브라우저 쪽
+# scheduleBeforeAfterCapture) 뒤늦게 캡처를 채워 넣었다 - 그래서 알림 팝업이 뜨는
+# "그 순간"에는 항상 캡처가 비어 있었다.
+CAPTURES_DIR = os.path.join(
+    str(BASE_DIR), "..", "..", "b_dashboard", "public", "captures"
+)
+os.makedirs(CAPTURES_DIR, exist_ok=True)
+
+BEFORE_CAPTURE_SECONDS = 2.0
+
+
+def save_capture(frame, source_id, tag):
+    """프레임을 b_dashboard/public/captures/에 JPEG로 저장하고 대시보드가 바로
+    쓸 수 있는 "/captures/<파일명>.jpg" 상대 경로를 돌려준다. 저장 실패(frame이
+    없거나 imwrite 실패) 시 None을 돌려주며, 이 경우 send_ai_event()는 그냥
+    frameRefBefore/After를 비워서 보낸다(예전과 동일하게 동작 - 새 기능이
+    실패해도 이벤트 자체는 계속 올라간다)."""
+    if frame is None:
+        print(f"[CAPTURE] {source_id}/{tag}: frame이 없어 캡쳐를 저장하지 않습니다.")
+        return None
+
+    filename = f"{uuid.uuid4().hex}.jpg"
+    filepath = os.path.join(CAPTURES_DIR, filename)
+
+    ok = cv2.imwrite(filepath, frame)
+    if not ok:
+        print(f"[CAPTURE] {source_id}/{tag}: 캡쳐 이미지 저장 실패 ({filepath})")
+        return None
+
+    return f"/captures/{filename}"
+
+
+def send_ai_event(
+    cam_id,
+    camera_name,
+    track_id,
+    bbox_xyxy,
+    pattern,
+    frame_ref_before=None,
+    frame_ref_after=None,
+):
+    """[신규] 음주운전(지그재그) 패턴이 처음 확정된 순간(just_confirmed) 딱 한 번 호출된다.
+
+    b_gateway의 "공통 이벤트 스키마" POST /api/events로 보낸다 - 이게 있어야 대시보드
+    오른쪽 "이벤트" 리스트에 카드가 쌓이고, App.jsx가 화면 정중앙 알림 팝업을 띄우고,
+    "📄 PDF 리포트 생성" 버튼도 동작한다(EventCreateRequest 참고: camId/eventType/
+    objectClass/occurredAt만 필수, 나머지는 선택). eventType은 b_dashboard/src/
+    constants.js의 VEHICLE_TRACK_EVENT_TYPES에 이미 등록돼 있는 "DUI_PATTERN"을 쓴다.
+
+    trackId는 map.js가 나중에 이 이벤트를 클릭했을 때 사건 전/후 캡처 이미지를
+    PATCH /api/events/by-track/{trackId}/captures로 이어붙이는 매칭 키로도 쓰이므로,
+    같은 세션 안에서 다른 이벤트와 절대 안 겹치게 "카메라ID-트랙ID-타임스탬프"로 만든다
+    (YOLO track_id는 카메라별로 작은 정수라서 그냥 쓰면 다른 차/다른 카메라와 충돌한다).
+    """
+    if requests is None:
+        return None
+
+    loc = CAMERA_LOCATIONS.get(cam_id)
+    x1, y1, x2, y2 = bbox_xyxy
+    event_track_id = f"{cam_id}-{track_id}-{int(time.time() * 1000)}"
+
+    payload = {
+        "camId": cam_id,
+        "trackId": event_track_id,
+        "eventType": "DUI_PATTERN",
+        "objectClass": "VEHICLE",
+        "bbox": [int(x1), int(y1), int(x2 - x1), int(y2 - y1)],
+        "occurredAt": datetime.now().isoformat(timespec="milliseconds"),
+        "location": {"lat": loc["lat"], "lng": loc["lng"]} if loc else None,
+        # [신규] 아래 두 필드가 채워져 있으면 대시보드는 이벤트가 처음 뜨는 순간부터
+        # "이미지 없음" 대신 실제 사건 전/후 캡처를 바로 보여준다(EventCreateRequest에
+        # 이미 있던 선택 필드 - 지금까지는 아무도 채워서 보낸 적이 없었을 뿐).
+        "frameRefBefore": frame_ref_before,
+        "frameRefAfter": frame_ref_after,
+        "meta": {
+            "source": "ai",
+            "detailType": "car",
+            "cameraName": loc["name"] if loc else camera_name,
+            "reason": "차선 지그재그·급가감속 패턴 감지",
+            "trajectoryFeatures": True,
+            "lateralRange": pattern.get("lateral_range"),
+            "totalLateralMovement": pattern.get("total_lateral_movement"),
+            "directionReversals": pattern.get("reversals"),
+        },
+    }
+
+    headers = {
+        "X-API-Key": GATEWAY_API_KEY,
+        "Content-Type": "application/json",
+    }
+
+    try:
+        response = requests.post(EVENTS_URL, json=payload, headers=headers, timeout=1.0)
+        if response.ok:
+            print(f"🚨 [AI EVENT] 대시보드 이벤트 전송 성공 | camId={cam_id} | trackId={event_track_id}")
+        else:
+            print(f"❌ [AI EVENT] 전송 실패 | {response.status_code} | {response.text[:200]}")
+    except requests.RequestException as e:
+        print(f"❌ [AI EVENT] 전송 실패(서버 미기동 등) - CCTV/지도 표시엔 영향 없음: {e}")
+
+    return event_track_id
+
+
+def _advance_journey_to(journey, target_cam_id):
+    """[신규: 사용자 요청 - "중앙 화면 알림 팝업이 뜨면 폴리라인도 바로 그려지게
+    해달라" + "폴리라인이 도로 위에 완벽하게 그려져서 한 번에 끝나게 해달라, 구간별로
+    나눠서 애니메이션처럼 그리던 로직은 다 지워달라"]
+
+    여정을 target_cam_id까지 진행시키는 단 하나의 함수 - 이전엔 "한 구간씩 감지될
+    때마다 그 구간만 이어붙이는" 정상 흐름과 "알림이 뜬 카메라까지 한 번에 따라잡는"
+    흐름이 서로 다른 함수(각각 _extend_journey_async / fast_forward_journey_to)로
+    나뉘어 있었고, 둘 다 "구간을 하나씩 OSRM에 물어서 순서대로 이어붙이는" 방식이었다.
+    그런데 지도 쪽(map.js)은 구간이 도착할 때마다 차량 아이콘이 그 구간을 실제로
+    "운전해서 지나가는" 애니메이션을 큐에 쌓아 재생했고, 이 스크립트처럼 여러 구간이
+    한꺼번에 확정되면 그 큐가 파이썬을 이미 끈 뒤에도 한참 재생되며 지그재그로 겹쳐
+    그려지는 문제가 있었다.
+
+    이제는 딱 한 가지 방식만 남긴다: 여정이 아직 시작 안 했으면 보라매역에서
+    시작시키고, 거기서부터 target_cam_id까지 CAMERA_ORDER 순서를 그대로(중간
+    지점을 절대 건너뛰지 않고) 우선 직선으로 즉시 한 번에 이어그려서 바로 눈에
+    보이게 한 다음, 보라매역부터 target_cam_id까지 전체 구간을 OSRM "다중 경유지"
+    요청 딱 한 번으로 물어서 완성된 전체 경로를 받아 폴리라인을 통째로 딱 한 번만
+    교체한다. 구간별 분할도, 애니메이션 큐도, 뒤늦은 재생도 전부 없앴다 - 화면에는
+    "즉시 직선이 뜨고, 잠시 후 도로 모양으로 한 번에 딱 맞춰지는" 두 단계만 존재한다.
+    """
+    if target_cam_id not in CAMERA_ORDER:
+        return
+
+    target_index = CAMERA_ORDER.index(target_cam_id)
+
+    if not journey.active:
+        start_loc = CAMERA_LOCATIONS.get(CAMERA_ORDER[0])
+        if not start_loc:
+            return
+        journey.active = True
+        journey.last_cam_id = CAMERA_ORDER[0]
+        journey.points = [(start_loc["lat"], start_loc["lng"])]
+        journey.last_seen_at = time.time()
+        journey._journey_pending = False
+
+    current_index = (
+        CAMERA_ORDER.index(journey.last_cam_id)
+        if journey.last_cam_id in CAMERA_ORDER
+        else 0
+    )
+
+    if target_index <= current_index:
+        # 이미 지나왔거나 같은 지점 - 새로 할 일이 없다.
+        journey.last_seen_at = time.time()
+        return
+
+    if getattr(journey, "_journey_pending", False):
+        # 이미 다른 구간을 진행 중이면(예: 방금 다른 카메라에서도 알림이 떴음)
+        # 그 작업이 끝날 때까지 기다린다 - 동시에 두 번 진행시키지 않는다.
+        return
+
+    # 1) 보라매역부터 target_cam_id까지 좌표 그대로 직선으로 즉시 이어그려서
+    #    바로 눈에 보이게 한다 (실제 도로 경로는 아래 2)에서 한 번에 교체됨).
+    start_loc = CAMERA_LOCATIONS[CAMERA_ORDER[0]]
+    straight_points = [(start_loc["lat"], start_loc["lng"])]
+    for i in range(1, target_index + 1):
+        loc = CAMERA_LOCATIONS.get(CAMERA_ORDER[i])
+        if loc:
+            straight_points.append((loc["lat"], loc["lng"]))
+
+    journey.points = straight_points
+    journey.last_cam_id = target_cam_id
+    journey.last_seen_at = time.time()
+    journey._journey_pending = True
+
+    send_journey_update(journey)
+
+    # 2) 보라매역부터 target_cam_id까지 전체 구간을 OSRM 다중 경유지 요청
+    #    "한 번"으로 계산해서, 완성되면 폴리라인 전체를 한 번에 교체한다.
+    cam_ids = CAMERA_ORDER[: target_index + 1]
 
     def worker():
         try:
-            road_points = get_road_segment(
-                from_loc,
-                to_loc,
-                journey.road_cache
-            )
-
-            journey.points.extend(
-                road_points[1:]
-            )
-
-            journey.last_cam_id = new_cam_id
-            journey.last_seen_at = time.time()
-
-            print(
-                f"[JOURNEY] "
-                f"{from_loc['name']} → {to_loc['name']} "
-                f"구간 도로 경로 추가 ({len(road_points)}개 점)"
-            )
-
-            send_journey_update(journey)
-
+            road_points = get_multi_point_road_route(cam_ids, journey.road_cache)
+            if road_points:
+                journey.points = road_points
+                journey.last_seen_at = time.time()
+                print(
+                    f"[JOURNEY] {CAMERA_LOCATIONS[cam_ids[0]]['name']} → "
+                    f"{CAMERA_LOCATIONS[cam_ids[-1]]['name']} 전체 경로를 "
+                    f"실제 도로 경로로 교체 ({len(road_points)}개 점)"
+                )
+                send_journey_update(journey)
         finally:
-            # 현재 구간 이동 완료 → 다음 CCTV 이동 허용
             journey._journey_pending = False
-        
 
     threading.Thread(target=worker, daemon=True).start()
 
@@ -568,12 +780,7 @@ def update_journey_for_frame(journey, suspicious_vehicles_by_camera):
     # CCTV 이동 순서
     # =========================================================
 
-    camera_order = [
-        "L010111",  # CCTV-A / 보라매역
-        "L010271",  # CCTV-B
-        "L010128",  # CCTV-C / 상도
-        "L010481",  # CCTV-D / 한강대교남단
-    ]
+    camera_order = CAMERA_ORDER
 
     # =========================================================
     # 아직 Journey가 없으면
@@ -641,23 +848,27 @@ def update_journey_for_frame(journey, suspicious_vehicles_by_camera):
     # =========================================================
     # 다음 CCTV 탐색
     # =========================================================
+    # [수정: 사용자 요청 - "폴리라인이 이상한 곳을 그리고 있다, 보라매역→장승배기→
+    # 상도→한강대교남단 순서로 그리게 해달라"] 예전엔 current_index 다음부터 순서상
+    # "가장 먼저 발견되는 활성 카메라"로 바로 건너뛰었다. 그런데 4대 카메라는 각자
+    # 독립된 영상이라 재생 타이밍이 서로 다르기 때문에, 예를 들어 장승배기보다 상도
+    # 카메라가 먼저 이상운전으로 잡히면 보라매역 → 상도로 곧장 건너뛰어 버려서(장승배기를
+    # 건너뜀) 지도 위 경로가 정해진 순서를 벗어난 이상한 길로 그려졌다. 이제는 바로
+    # 다음 순번의 카메라 하나만 확인해서, 그 카메라가 아직 활성화되지 않았으면 기다리고
+    # (아래 "다음 CCTV가 아직 감지되지 않은 경우" 블록에서 처리), 순서를 건너뛰지 않는다.
 
     next_cam_id = None
 
-    if current_index >= 0:
+    if (
+        current_index >= 0
+        and current_index + 1 < len(camera_order)
+    ):
 
-        for i in range(
-            current_index + 1,
-            len(camera_order)
-        ):
+        candidate = camera_order[current_index + 1]
 
-            candidate = camera_order[i]
+        if candidate in active_cam_ids:
 
-            if candidate in active_cam_ids:
-
-                next_cam_id = candidate
-
-                break
+            next_cam_id = candidate
 
     # =========================================================
     # 다음 CCTV가 아직 감지되지 않은 경우
@@ -689,55 +900,12 @@ def update_journey_for_frame(journey, suspicious_vehicles_by_camera):
         return
 
     # =========================================================
-    # 이미 다음 CCTV로 이동 처리 중이면
-    # 중복 스레드 생성 방지
+    # 다음 CCTV 이동 - _advance_journey_to() 하나로 통일 (즉시 직선 이어그리기 +
+    # 전체 구간 OSRM 다중 경유지 요청 한 번으로 도로 경로 완성, 구간별 분할 없음).
+    # 이미 진행 중이면(_journey_pending) 함수 안에서 스스로 무시한다.
     # =========================================================
 
-    if getattr(
-        journey,
-        "_journey_pending",
-        False
-    ):
-
-        return
-
-    # =========================================================
-    # 출발 / 도착 CCTV 좌표
-    # =========================================================
-
-    from_loc = CAMERA_LOCATIONS.get(
-        journey.last_cam_id
-    )
-
-    to_loc = CAMERA_LOCATIONS.get(
-        next_cam_id
-    )
-
-    if not from_loc or not to_loc:
-        return
-
-    # =========================================================
-    # 다음 CCTV 이동 시작
-    # =========================================================
-
-    journey._journey_pending = True
-
-    print(
-        f"[JOURNEY] "
-        f"{from_loc['name']} → {to_loc['name']} "
-        f"이동 감지"
-    )
-
-    # =========================================================
-    # OSRM 도로 경로를 비동기로 계산
-    # =========================================================
-
-    _extend_journey_async(
-        journey,
-        from_loc,
-        to_loc,
-        next_cam_id
-    )
+    _advance_journey_to(journey, next_cam_id)
 
 # ============================================================
 # 11. CCTV 영상 연결
@@ -880,6 +1048,12 @@ def open_cameras():
 
             "last_send_time":
                 0.0,
+
+            # [신규] 사건 "전" 캡처용 최근 프레임 버퍼 - 이 카메라의 실제 fps 기준
+            # BEFORE_CAPTURE_SECONDS초 분량만 들고 있는다(오래된 프레임은 deque가
+            # 자동으로 버림). realtime_anomaly.py의 frame_buffer와 동일한 패턴.
+            "frame_buffer":
+                deque(maxlen=max(1, round(fps * BEFORE_CAPTURE_SECONDS))),
 
         }
 
@@ -2550,6 +2724,11 @@ def main():
                 "frame_idx"
             ] += 1
 
+            # [신규] 사건 "전" 캡처용 - 매 프레임마다 채워둔다 (realtime_anomaly.py와
+            # 동일한 패턴). YOLO 추론 전에 원본 프레임을 그대로 넣어야
+            # 박스/텍스트가 그려지지 않은 깨끗한 캡처가 된다.
+            camera["frame_buffer"].append(frame.copy())
+
 
             # =================================================
             # YOLO + ByteTrack
@@ -2644,27 +2823,17 @@ def main():
 
 
                 # ------------------------------------------------
-                # [신규] 3초 강제 타이머 - 지그재그 패턴이 안 잡혀도 이 차량이
-                # 화면에 처음 등장한 뒤 FORCE_ALERT_AFTER_SECONDS(기본 3초)가
-                # 지나면 그냥 강제로 관심차량(빨간 박스)으로 전환한다.
-                # 지그재그가 먼저 잡히면(is_suspicious가 이미 True) 이 블록은
-                # 아무 일도 안 한다 - 진짜 판정이 항상 우선.
+                # [삭제됨: 사용자 요청 - "계속 엉뚱한 알림이 뜬다, 저거 그냥 없애"]
+                # 예전엔 지그재그 패턴이 전혀 안 잡혀도 차량이 화면에 등장한 뒤
+                # FORCE_ALERT_AFTER_SECONDS(3초)만 지나면 무조건 강제로
+                # 관심차량(빨간 박스) + DUI_PATTERN 이벤트를 만들었다. 그래서 카메라
+                # 4대 모두 영상을 켤 때마다(또는 새로 재생될 때마다) 실제 이상운전
+                # 여부와 무관하게 3초 뒤 항상 알림 팝업/이벤트가 떴다 - 이게 바로
+                # "엉뚱한 곳에 알림이 생겨서 포커싱된다"의 원인이었다. 이제는 아래
+                # check_suspicious_vehicle()의 진짜 지그재그·급가감속 패턴 판정
+                # 결과(is_suspicious/just_confirmed)만 그대로 쓴다 - 강제 타이머는
+                # 더 이상 개입하지 않는다.
                 # ------------------------------------------------
-
-                first_seen_at = (
-                    vehicle_first_seen[camera_name].setdefault(
-                        track_id,
-                        time.time()
-                    )
-                )
-
-                if (
-                    not is_suspicious
-                    and (time.time() - first_seen_at) >= FORCE_ALERT_AFTER_SECONDS
-                ):
-                    suspicious_vehicles[camera_name].add(track_id)
-                    is_suspicious = True
-                    just_confirmed = True
 
 
                 # =================================================
@@ -2720,6 +2889,55 @@ def main():
                         event
                     )
 
+                    # [신규: 사용자 요청 - "알림 팝업이 카메라 지날 때마다 뜬다, 처음
+                    # 잡혔을 때 한 번만 뜨게 해달라"] 지금까지는 카메라마다 각자
+                    # 독립적으로 지그재그 패턴을 판정하기 때문에, 같은 차량이
+                    # 보라매역→장승배기→상도→한강대교남단으로 이어지는 한 여정 동안
+                    # 카메라 4대 모두에서 just_confirmed가 각각 따로 발생해서 대시보드
+                    # 알림 팝업/이벤트가 카메라 수만큼 반복해서 떴다. 이제는 이번 여정
+                    # (journey)에서 이미 한 번 보냈으면(journey.alert_sent) 이후
+                    # 카메라들에서는 send_ai_event를 다시 호출하지 않는다 - 지도 위
+                    # 여정 추적(update_journey_for_frame)과 CCTV 박스 오버레이는
+                    # 이 플래그와 무관하게 그대로 계속된다.
+                    if journey.alert_sent:
+                        print(
+                            f"ℹ️  {camera_name}: 같은 여정에서 이미 알림을 보냈으므로 "
+                            "이벤트를 다시 만들지 않습니다 (여정 추적은 계속됩니다)."
+                        )
+                    else:
+                        journey.alert_sent = True
+
+                        # [신규: 사용자 요청 - "중앙 화면 알림 팝업이 뜨면 폴리라인
+                        # 그리는 그 이벤트가 뜨게 해서 바로 폴리라인 그리게 해달라"]
+                        # 알림을 실제로 보내기 직전, 바로 이 순간 여정을 보라매역부터
+                        # 이 카메라(cam_id)까지 순서대로 즉시 이어그린다 - 그래야 화면
+                        # 중앙 알림 팝업이 뜨는 것과 같은 프레임에 지도 위 폴리라인도
+                        # 함께 나타난다. (자세한 설명은 _advance_journey_to() 참고)
+                        _advance_journey_to(journey, cam_id)
+
+                        # [신규] 사건 전/후 캡처를 여기서 동기적으로 저장해서, 이벤트가
+                        # 대시보드에 뜨는 "그 순간"에 이미 이미지가 들어있게 한다. "전"은
+                        # frame_buffer에서 가장 오래된(=BEFORE_CAPTURE_SECONDS초 전) 프레임,
+                        # "후"는 방금 이 track_id가 확정된 지금 이 프레임 그대로.
+                        _frame_buffer = camera["frame_buffer"]
+                        _before_frame = _frame_buffer[0] if _frame_buffer else None
+                        _after_frame = frame.copy() if frame is not None else None
+                        _frame_ref_before = save_capture(_before_frame, cam_id, "before")
+                        _frame_ref_after = save_capture(_after_frame, cam_id, "after")
+
+                        # [신규] 대시보드 "이벤트" 리스트/화면 중앙 알림 팝업/PDF 리포트로
+                        # 이어지는 진짜 백엔드 이벤트 생성 - 위 events.append(event)는 이
+                        # 파이썬 프로세스 안에서만 쓰는 내부 로그용 리스트라 대시보드와는
+                        # 무관하다(그래서 여태 이벤트가 안 떴다).
+                        send_ai_event(
+                            cam_id,
+                            camera_name,
+                            track_id,
+                            info["bbox"],
+                            pattern,
+                            frame_ref_before=_frame_ref_before,
+                            frame_ref_after=_frame_ref_after,
+                        )
 
                     print()
                     print(

@@ -37,7 +37,16 @@ OBJECT_CLASSES = ["PERSON", "VEHICLE", "OBJECT"]
 # meta.detailType 용 - 실제 탐지 세부 라벨 예시 (참고용, 팀 공통 규격은 아님)
 DETAIL_TYPES = ["person", "knife", "car", "truck", "bag", "motorcycle"]
 
-CAM_IDS = ["CAM-01", "CAM-02", "CAM-03", "CAM-04"]
+# [수정: "화면 중앙 알림 팝업 → '지도에서 실시간으로 보기' → CCTV 화면"이 mock 이벤트로는
+# 동작하지 않던 문제] 예전엔 "CAM-01"~"CAM-04"라는 존재하지 않는 임시 라벨을 썼다 -
+# UTIC CCTV 데이터셋(map.js의 uticCameraManager, 303건)에도 CCTV 관리(/api/cameras)에도
+# 이 ID들은 없어서, 이벤트 자체는 떠도 지도가 카메라를 못 찾아 "CCTV 연동 대상이 아닙니다"
+# 토스트만 뜨고 끝났다(사건 전/후 캡처도, CCTV 화면 자동전환도 안 됨).
+# 대신 e_tracking/SmartCCTV/test_suspicious_driving.py의 데모 카메라 4대(CCTV-A~D)와
+# 똑같은 실제 UTIC cam_id를 쓴다 - 이 4개는 CCTV 관리에도 등록돼 있고(연결됨) UTIC
+# 데이터셋에도 있어서, mock 이벤트만으로도 지도 포커스 + CCTV 전환 + before/after
+# 캡처(실제로는 mock 샘플 이미지) + PDF 리포트까지 끝까지 테스트할 수 있다.
+CAM_IDS = ["L010111", "L010271", "L010128", "L010481"]
 
 # 서울 시내 임의 좌표 범위 (테스트용)
 LAT_RANGE = (37.45, 37.65)

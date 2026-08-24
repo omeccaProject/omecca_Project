@@ -1313,6 +1313,26 @@ class UticCameraManager {
       this.videoManager.switchTo(vm, { force });
     }
 
+    // [수정: "추적 차량 화면의 '실시간 CCTV' 패널을 없애고, 그 기능(연결된 CCTV를
+    // 클릭하면 영상이 뜨는 것)만 관제 화면 오른쪽 CCTV 사이드바로 옮겨달라"]
+    // 예전엔 여기서 videoManager.switchTo()만 호출했다 - 그 결과가 보이려면 map.js
+    // 자신의 <section class="video-panel">("추적 차량" 화면 전용, iframe 내부)이
+    // 떠 있어야 했다. 이제 그 패널은 대시보드(React)에서 더 이상 띄우지 않으므로,
+    // Real Journey의 "CCTV 바로가기"와 동일한 경로(window.__appGoToJourneyStartCctv →
+    // postMessage cctv:select)로 부모 대시보드에 알려서, 관제 화면의 CCTV 사이드바가
+    // 이 카메라로 전환되게 한다.
+    // [버그 수정] 처음엔 this.videoSourceRegistry.getSource(record.cam_id)가 있을 때만
+    // (실시간 UTIC HLS 스트림 303건 중 일부에만 연결된) 보냈는데, 그러면 우리가 실제로
+    // "CCTV 관리"(/api/cameras)에 등록해서 쓰는 데모 카메라 4대(L010111 등, AI
+    // 이상운전 감지가 실제로 이 카메라들을 대상으로 함)는 그 UTIC 스트림 레지스트리에는
+    // 없어서 조건을 통과 못 하고 조용히 씹혔다 - "화면 정중앙 알림 → 지도에서 실시간으로
+    // 보기를 눌러도 CCTV 화면으로 안 넘어간다"는 문제의 원인이었다. "정말 연결됐는지"의
+    // 최종 판단은 어차피 받는 쪽(DashboardCctvPanel)이 자기 카메라 목록으로 다시
+    // 확인하므로(못 찾으면 조용히 무시), 여기서는 그냥 항상 보낸다.
+    if (switchVideo && window.__appGoToJourneyStartCctv) {
+      window.__appGoToJourneyStartCctv(record.cam_id);
+    }
+
     if (this.onCameraSelected) this.onCameraSelected(record);
   }
 
@@ -1758,10 +1778,8 @@ class RealVehicleMarker {
     this.marker = null;
     this._animFrameId = null;
     this._frameLogCounter = 0;
-    this._pathQueue = [];
     this._isAnimating = false;
     this._label = null;
-    this._onProgress = null;
   }
 
   _createIcon() {
@@ -1816,6 +1834,14 @@ class RealVehicleMarker {
       this.marker.setLatLng([lat, lng]);
     }
 
+    // [신규: 사용자 요청 - "실시간으로 보기 누르면 폴리라인 그리는 차량에 포커싱
+    // 돼서 따라가게 해달라"] 위치가 갱신될 때마다 지도도 함께 따라간다.
+    // mapManager.panFollow()는 사용자가 지도를 직접 드래그하면(_followPaused)
+    // 자동으로 멈추고, mapManager.resumeFollow()가 호출되면(예: 이 팝업의 "실시간
+    // 으로 보기" 버튼) 다시 따라가기 시작한다 - VehicleManager 마커가 예전에 하던
+    // 것과 동일한 패턴이다.
+    this.mapManager.panFollow(lat, lng);
+
     if (label) {
       this.marker.bindTooltip(
         String(label),
@@ -1826,76 +1852,88 @@ class RealVehicleMarker {
     }
   }
 
-  followPath(points, label, onComplete, onProgress) {
+  // [신규: 사용자 요청 - "이상감지 차량이 지도 위에서 실시간으로 움직이면서
+  // 폴리라인이 실시간으로 그려져야해"]
+  //
+  // 예전 followPath()/_consumeQueue()는 payload가 올 때마다 애니메이션을
+  // "큐"에 쌓았다 - 파이썬이 구간을 여러 번(직선 → 도로경로로 교체) 빠르게
+  // 보내면 큐가 쌓여서, 파이썬을 이미 끈 뒤에도 오래된 애니메이션이 한참
+  // 재생되며 지그재그로 겹쳐 그려지는 문제가 있었다.
+  //
+  // 지금은 큐가 없다 - payload가 새로 오면 진행 중이던 애니메이션을 즉시
+  // 취소하고(_cancelAnimation) 마커의 "현재 실제 화면 위치"에서 새 points
+  // 배열 쪽으로 바로 이어서 애니메이션을 다시 시작한다. 그래서:
+  //   (a) 파이썬이 멈추면 화면도 그 다음 프레임에 바로 멈춘다(밀린 애니메이션 없음)
+  //   (b) 매 프레임 onFrame(passedPoints + 현재 보간 위치)을 호출해 폴리라인을
+  //       "지나온 authoritative 좌표 + 지금 보간 중인 좌표"로 항상 다시 그리므로
+  //       (setRealJourneyPoints의 전체 재그리기 방식과 동일한 원리),
+  //       예전의 append-only 방식처럼 오래된 직선이 안 지워지고 남는 문제도 없다.
+  animateAlong(points, label, onFrame) {
     if (!points || points.length === 0) return;
-
     this._label = label;
-    if (onProgress) this._onProgress = onProgress;
 
-    if (points.length === 1) {
-      if (!this._isAnimating && this._pathQueue.length === 0) {
-        this.setPosition(points[0][0], points[0][1], label);
-        if (this._onProgress) this._onProgress(points[0][0], points[0][1]);
+    this._cancelAnimation();
+
+    // 현재 마커 위치에서 새 points 배열상 가장 가까운 지점을 찾아 그 지점부터
+    // 이어서 애니메이션한다 - 뒤로 순간이동하는 부자연스러운 점프를 막는다.
+    let startIdx = 0;
+    if (this.marker) {
+      const cur = this.marker.getLatLng();
+      let bestDist = Infinity;
+      for (let i = 0; i < points.length; i++) {
+        const d = haversineMeters([cur.lat, cur.lng], points[i]);
+        if (d < bestDist) {
+          bestDist = d;
+          startIdx = i;
+        }
       }
-      if (onComplete) onComplete();
+    }
+
+    const passedPoints = points.slice(0, startIdx + 1);
+    const remaining = points.slice(startIdx);
+
+    if (remaining.length <= 1) {
+      // 더 이동할 구간이 없다 - 위치만 즉시 맞추고 폴리라인은 전체 좌표로 그린다.
+      const [lat, lng] = points[points.length - 1];
+      this.setPosition(lat, lng, label);
+      if (onFrame) onFrame(points);
       return;
     }
 
-    this._pathQueue.push({ points, onComplete });
-
-    if (!this._isAnimating) {
-      this._consumeQueue();
-    }
+    this._isAnimating = true;
+    this._runAnimatedSegments(remaining, passedPoints, label, onFrame);
   }
 
-  _consumeQueue() {
-    if (this._pathQueue.length === 0) {
-      this._isAnimating = false;
-      return;
-    }
-    this._isAnimating = true;
-
-    const { points, onComplete } = this._pathQueue.shift();
-    const label = this._label;
+  _runAnimatedSegments(remaining, passedPoints, label, onFrame) {
     const self = this;
-
-    console.log("[REAL JOURNEY] 🚗 새 구간 이동 시작", points);
-
     const segLengths = [];
-    let totalLen = 0;
-    for (let i = 1; i < points.length; i++) {
-      const d = haversineMeters(points[i - 1], points[i]);
-      segLengths.push(d);
-      totalLen += d;
+    for (let i = 1; i < remaining.length; i++) {
+      segLengths.push(haversineMeters(remaining[i - 1], remaining[i]));
     }
-    if (totalLen <= 0) totalLen = 1;
 
     const SPEED_METERS_PER_SEC = 300;
     let segIdx = 0;
 
     const runSegment = () => {
       if (segIdx >= segLengths.length) {
-        console.log("[REAL JOURNEY] 🚗 새 구간 이동 완료");
+        console.log("[REAL JOURNEY] 🚗 애니메이션 구간 이동 완료");
         self._animFrameId = null;
-        if (onComplete) onComplete();
-        self._consumeQueue();
+        self._isAnimating = false;
         return;
       }
 
-      const from = points[segIdx];
-      const to = points[segIdx + 1];
-      const segLen = segLengths[segIdx];
+      const from = remaining[segIdx];
+      const to = remaining[segIdx + 1];
+      const segLen = segLengths[segIdx] || 1;
       const segDuration = Math.max(200, (segLen / SPEED_METERS_PER_SEC) * 1000);
       const segStart = performance.now();
-
-      console.log("[REAL JOURNEY] 🚗 새 경로 구간", from, "->", to);
 
       const step = (now) => {
         const t = Math.min(1, (now - segStart) / segDuration);
         const lat = from[0] + (to[0] - from[0]) * t;
         const lng = from[1] + (to[1] - from[1]) * t;
         self.setPosition(lat, lng, label);
-        if (self._onProgress) self._onProgress(lat, lng);
+        if (onFrame) onFrame(passedPoints.concat([[lat, lng]]));
 
         self._frameLogCounter += 1;
         if (self._frameLogCounter % 10 === 0) {
@@ -1905,6 +1943,7 @@ class RealVehicleMarker {
         if (t < 1) {
           self._animFrameId = requestAnimationFrame(step);
         } else {
+          passedPoints.push(to);
           segIdx += 1;
           runSegment();
         }
@@ -1915,13 +1954,16 @@ class RealVehicleMarker {
     runSegment();
   }
 
-  remove() {
+  _cancelAnimation() {
     if (this._animFrameId) {
       cancelAnimationFrame(this._animFrameId);
       this._animFrameId = null;
     }
-    this._pathQueue = [];
     this._isAnimating = false;
+  }
+
+  remove() {
+    this._cancelAnimation();
 
     if (this.marker) {
       const map = this.mapManager.getMap();
@@ -2341,6 +2383,12 @@ class EventManager {
 
   triggerAiEvent(record, eventData, options = {}) {
     const force = !!options.force;
+    // [신규: 사용자 요청 - "실시간으로 보기 누르면 폴리라인 그리는 차량에 포커싱 돼서
+    // 따라가게 해달라"] 기본값은 true(예전 그대로 - 카메라 핀으로 지도 확대/팝업)라서
+    // 다른 호출부(mock 이벤트 WebSocket 등)는 그대로 동작한다. Real Journey 흐름
+    // (omecca-track-vehicle-event 핸들러)에서만 false로 넘겨서, 카메라 핀이 아니라
+    // 실제로 움직이는 Real Journey 차량 마커 쪽에 포커스를 맡긴다.
+    const focusCameraPin = options.focusCameraPin !== false;
     const cameraViewModel = buildUticCameraViewModel(record, this.videoSourceRegistry);
     const normalized = Object.assign({ icon: "🚨", severity: "alert" }, eventData);
     const trackKey = eventData.trackId != null ? String(eventData.trackId) : null;
@@ -2351,10 +2399,19 @@ class EventManager {
     this.renderPanel();
 
     this.cameraManager.setAlert(cameraViewModel.id, true);
-    this.cameraManager.selectById(cameraViewModel.id, { openPopup: true, zoom: true, switchVideo: true, force });
+    this.cameraManager.selectById(cameraViewModel.id, {
+      openPopup: focusCameraPin,
+      zoom: focusCameraPin,
+      switchVideo: true,
+      force,
+    });
 
-    this.vehicleManager.spawnAtEvent(cameraViewModel, eventData);
-    this.trackedVehicleCount = 1;
+    // [삭제됨: 사용자 요청 - "중앙 화면 알림 팝업 클릭하면 저 TRACK.../추적 차량 팝업이
+    // 잡혀서 뜨는데, 저거 안 뜨게 없애줘"] 예전엔 여기서 vehicleManager.spawnAtEvent()로
+    // 지도 위에 별도의 "🚗 추적 차량" 마커+상세 팝업(번호판/Track ID/원인/현재 위치/
+    // 감지 시간 등)을 항상 만들었다. CCTV 전환(위 selectById switchVideo:true)과
+    // 카메라 핀 강조(setAlert)만으로도 "지도에서 실시간으로 보기" 요구사항은 충분히
+    // 충족되므로, 더 이상 이 별도 마커/팝업을 만들지 않는다.
 
     this.alertDetectionCount += 1;
     this._markTrackActive(trackKey, cameraViewModel.id);
@@ -3207,7 +3264,12 @@ document.addEventListener("DOMContentLoaded", () => {
       };
 
       if (record) {
-        eventManager.triggerAiEvent(record, eventData, { force: true });
+        // [수정: 사용자 요청 - "실시간으로 보기 누르면 다른 곳(카메라 핀)에 포커싱
+        // 된다, 폴리라인 그리는 차량에 포커싱 돼서 따라가게 해달라"] focusCameraPin:
+        // false를 넘겨서 CCTV 화면 전환(switchVideo)만 하고, 지도 확대/카메라 핀
+        // 팝업은 열지 않는다 - 포커스는 아래에서 실제로 움직이는 Real Journey 차량
+        // 마커(realVehicleMarker) 쪽으로 보낸다.
+        eventManager.triggerAiEvent(record, eventData, { force: true, focusCameraPin: false });
         scheduleBeforeAfterCapture(eventData.trackId);
       } else if (payload.lat != null && payload.lng != null) {
         const fallbackCam = {
@@ -3222,7 +3284,20 @@ document.addEventListener("DOMContentLoaded", () => {
         toastManager.showMessage("🚗 위치 정보가 없어 지도에 표시할 수 없습니다");
       }
 
-      vehicleManager.focusCurrent(mapManager, { openPopup: false });
+      // [신규] 폴리라인을 따라 실제로 움직이는 Real Journey 차량 마커로 지도를
+      // 이동시키고 그 마커의 상세 팝업을 연다 - 이벤트 리스트의 "Real Journey 카드"를
+      // 클릭했을 때(위 eventManager.onRealJourneyCardClick)와 동일한 동작이다.
+      // realVehicleMarker.marker가 아직 없으면(여정의 첫 좌표가 아직 안 왔으면)
+      // 아무 것도 하지 않는다 - mapManager.resumeFollow()로 이미 추적 모드는 켜져
+      // 있으므로, 다음 좌표가 도착하면(RealVehicleMarker.setPosition) 자동으로
+      // 따라가기 시작한다.
+      if (realVehicleMarker.marker) {
+        const { lat, lng } = realVehicleMarker.marker.getLatLng();
+        mapManager.focus(lat, lng);
+        realVehicleMarker.marker.openPopup();
+      } else {
+        vehicleManager.focusCurrent(mapManager, { openPopup: false });
+      }
     }
   });
   if (window.parent && window.parent !== window) {
@@ -3391,9 +3466,12 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   window.__appSelectCamera = (cameraId) => {
-    if (window.parent && window.parent !== window) {
-      window.parent.postMessage({ type: "omecca-request-tracking-view" }, "*");
-    }
+    // [수정: "실시간 CCTV 패널 제거"] 예전엔 "추적 차량" 화면(map.js 자체의
+    // video-panel)으로 강제 전환시켰다. 그 패널을 없앤 지금은, 아래
+    // uticCameraManager.selectById(..., switchVideo:true)가 알아서
+    // window.__appGoToJourneyStartCctv를 통해 관제 화면 CCTV 사이드바로
+    // 전환 요청을 보낸다(UticCameraManager.selectRecord 참고) - 여기서 따로
+    // "추적 차량 화면으로 가라"고 요청할 필요가 없어졌다.
 
     mapManager.resumeFollow();
 
@@ -3528,23 +3606,9 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  let realJourneyPrevPoints = [];
   // [신규: "CCTV 자동 전환이 안 됨"] 직전 payload의 currentCamId를 기억해뒀다가,
   // 실제로 카메라가 바뀐 시점에만 자동 전환을 트리거하기 위한 값이다.
   let realJourneyPrevCamId = null;
-
-  function pointsEqual(p1, p2) {
-    return p1 && p2 && p1[0] === p2[0] && p1[1] === p2[1];
-  }
-
-  function extractNewJourneySegment(prevPoints, newPoints) {
-    let i = 0;
-    while (i < prevPoints.length && i < newPoints.length && pointsEqual(prevPoints[i], newPoints[i])) {
-      i += 1;
-    }
-    if (i === 0) return newPoints;
-    return newPoints.slice(i - 1);
-  }
 
   const realJourneyListener = new RealVehicleJourneyListener(
     CONFIG.REAL_JOURNEY_STOMP_URL,
@@ -3563,7 +3627,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
         realVehicleMarker.remove();
         routeManager.clearRealJourney();
-        realJourneyPrevPoints = [];
         realJourneyPrevCamId = null;
         // [수정] 화면 중앙 Alert Card 대신 이벤트 리스트 카드를 정리한다.
         eventManager.resolveRealJourneyEvent();
@@ -3585,12 +3648,25 @@ document.addEventListener("DOMContentLoaded", () => {
         points
       );
 
-      const newSegment = extractNewJourneySegment(realJourneyPrevPoints, points);
-      realJourneyPrevPoints = points;
-
+      // [수정: 사용자 요청 - "이상감지 차량이 지도 위에서 실시간으로 움직이면서
+      // 폴리라인이 실시간으로 그려져야해"]
+      //
+      // 이전 단계에서는 정확도를 위해 payload가 올 때마다 즉시 스냅 + 전체
+      // 재그리기만 했다(애니메이션 없음) - 도로 위에 정확하게는 그려졌지만
+      // 차량이 "순간이동"처럼 보였다.
+      //
+      // 지금은 realVehicleMarker.animateAlong()으로 마커를 부드럽게 이동시키고,
+      // 매 애니메이션 프레임마다 onFrame 콜백에서 routeManager.setRealJourneyPoints()
+      // 로 "지나온 좌표 + 지금 보간 중인 좌표"를 항상 전체 다시 그린다. 즉:
+      //   - 폴리라인은 절대 append-only로 이어붙이지 않고 매 프레임 authoritative
+      //     좌표 기준으로 통째로 다시 그리므로, 오래된 직선이 안 지워지고 남는
+      //     문제가 재발하지 않는다(이전 단계에서 고친 버그 그대로 유지).
+      //   - 애니메이션은 큐에 쌓이지 않고 새 payload가 오면 즉시 취소 후
+      //     현재 위치에서 이어서 재시작하므로, 파이썬이 멈추면 화면도 그 다음
+      //     프레임에 바로 멈춘다(밀린 애니메이션이 나중에 재생되는 문제 없음).
       const label = payload.currentCamName || payload.currentCamId;
-      realVehicleMarker.followPath(newSegment, label, null, (lat, lng) => {
-        routeManager.appendRealJourneyPoint([lat, lng]);
+      realVehicleMarker.animateAlong(points, label, (framePoints) => {
+        routeManager.setRealJourneyPoints(framePoints);
       });
 
       // [신규] 마커가 존재하면(대부분의 경우 이미 존재) 상세 팝업 내용을 최신
