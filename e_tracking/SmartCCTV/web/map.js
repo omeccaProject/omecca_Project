@@ -23,6 +23,11 @@ const CONFIG = {
     L010140: { demoId: "CONE", videoUrl: "http://localhost:4000/videos/cone_h264.mp4",      trackLogUrl: "data/debris-track-log-L010140.json" },
   },
   ANOMALY_ACTIVE_MS: 6000,
+  // [수정: "지도에 옛날 발표용 데모(DEMO-DRUNK-001) 알림 팝업이 계속 뜸"] 이 발표용
+  // Forza 데모(20초 뒤 자동 시작, A~D 카메라를 돌며 가짜 음주운전 이벤트를 계속 생성)는
+  // 더 이상 필요 없어서 껐다. true로 바꾸면 예전처럼 다시 켤 수 있다 - 관련 코드
+  // (ForzaDemoTimeline 등)는 그대로 남겨뒀다.
+  ENABLE_FORZA_DEMO: false,
   FORZA_DEMO_START_DELAY_MS: 20000,
   MAP_EVENTS_WS_URL: "ws://localhost:4000/events",
   MAP_EVENTS_POST_URL: "http://localhost:4000/api/map/events",
@@ -54,8 +59,14 @@ const TEST_VIDEO_OVERRIDES = {};
 // "cctv:select" 리스너 쪽 책임이다(이미 콘솔 직접 테스트로 정상 동작 확인됨).
 // 여기서는 mapManager/RealVehicleMarker/Journey Polyline/차량 위치 무엇도
 // 건드리지 않는다 - 이벤트를 하나 던질 뿐이다.
-window.__appGoToJourneyStartCctv = () => {
-  const startCamId = CONFIG.DEMO_CAMERA_ID_MAP.A;
+// [버그 수정: "CCTV 바로가기를 눌러도 항상 같은 카메라(A)로만 감"]
+// 예전엔 인자를 안 받고 CONFIG.DEMO_CAMERA_ID_MAP.A(발표용 데모 카메라)를 무조건
+// 썼다 - 그래서 실제 이상운전 차량이 어느 카메라에 있든 "CCTV 바로가기"를 누르면
+// 항상 데모 카메라 A로만 이동했다. 이제 buildRealJourneyPopupHtml에서 이 함수를
+// 호출할 때 그 팝업이 속한 실제 payload.currentCamId를 그대로 넘겨받아서 쓴다.
+// camId가 없는 경우(옛 팝업 HTML이 캐시돼 있는 등)에만 데모 카메라로 폴백한다.
+window.__appGoToJourneyStartCctv = (camId) => {
+  const startCamId = camId || CONFIG.DEMO_CAMERA_ID_MAP.A;
 
   console.log(
     "[CCTV] Real Journey CCTV 바로가기 요청:",
@@ -3057,7 +3068,7 @@ function buildRealJourneyPopupHtml(payload) {
         <button
           type="button"
           class="popup-btn real-journey-cctv-btn"
-          onclick="window.__appGoToJourneyStartCctv && window.__appGoToJourneyStartCctv()"
+          onclick="window.__appGoToJourneyStartCctv && window.__appGoToJourneyStartCctv('${payload.currentCamId || ""}')"
         >
           📹 CCTV 바로가기
         </button>
@@ -3251,43 +3262,10 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   };
 
-  const forzaDemoTimeline = new ForzaDemoTimeline(CONFIG.DEMO_CAMERA_ID_MAP, CONFIG.FORZA_DEMO_SOURCES);
-
-  forzaDemoTimeline.onStageStart = (demoId, realCamId) => {
-    console.log(`[DEMO] ${demoId}(${realCamId}) stage 시작`);
-    eventManager.beginDemoStageMovement(demoId, realCamId);
-  };
-
-  forzaDemoTimeline.onProgress = (demoId, progress) => {
-    eventManager.updateDemoStageProgress(demoId, progress);
-  };
-
-  forzaDemoTimeline.onStageEnd = (demoId, realCamId) => {
-    console.log(`[DEMO] ${demoId}(${realCamId}) stage 종료 - 다음 stage로 자동 전환`);
-    eventManager.completeDemoStageMovement(demoId, realCamId);
-  };
-
-  forzaDemoTimeline.onAnomaly = (demoId, realCamId, episode) => {
-    const now = new Date();
-    const time = [now.getHours(), now.getMinutes(), now.getSeconds()]
-      .map((n) => String(n).padStart(2, "0"))
-      .join(":");
-
-    eventManager.triggerDemoEvent(realCamId, {
-      time,
-      trackId: episode.track_id,
-      globalVehicleId: CONFIG.DEMO_VEHICLE_ID,
-      plate: episode.plate || null,
-      type: "이상운전 감지 (발표용 데모)",
-      reason: episode.reason,
-      confidence: null,
-    });
-  };
-
-  forzaDemoTimeline.onFinished = () => {
-    console.log("[DEMO] 발표용 Forza DEMO 시나리오가 모두 끝났습니다. 차량은 D(한강대교남단)에 고정된 상태로 유지됩니다.");
-  };
-
+  // [수정] CONFIG.ENABLE_FORZA_DEMO가 false면(기본값) 아래 발표용 데모를 아예 만들지도
+  // 시작하지도 않는다. 다만 예전에 이미 떠 있던 낡은 DEMO-DRUNK-001 이벤트/팝업이
+  // 화면에 남아있을 수 있으니, reset 요청은 데모 켜짐 여부와 무관하게 항상 보내서
+  // 정리한다.
   fetch("http://localhost:4000/api/map/demo/reset", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -3295,10 +3273,49 @@ document.addEventListener("DOMContentLoaded", () => {
   })
     .then((res) => res.json())
     .then((body) => console.log("[DEMO→GATEWAY] 페이지 로드 시 이전 데모 이벤트 초기화:", body))
-    .catch((err) => console.warn("[DEMO→GATEWAY] 초기화 요청 실패(서버 미기동 등) - 데모는 그대로 진행:", err.message));
+    .catch((err) => console.warn("[DEMO→GATEWAY] 초기화 요청 실패(서버 미기동 등):", err.message));
 
-  forzaDemoTimeline.start();
-  window.forzaDemoTimeline = forzaDemoTimeline;
+  if (CONFIG.ENABLE_FORZA_DEMO) {
+    const forzaDemoTimeline = new ForzaDemoTimeline(CONFIG.DEMO_CAMERA_ID_MAP, CONFIG.FORZA_DEMO_SOURCES);
+
+    forzaDemoTimeline.onStageStart = (demoId, realCamId) => {
+      console.log(`[DEMO] ${demoId}(${realCamId}) stage 시작`);
+      eventManager.beginDemoStageMovement(demoId, realCamId);
+    };
+
+    forzaDemoTimeline.onProgress = (demoId, progress) => {
+      eventManager.updateDemoStageProgress(demoId, progress);
+    };
+
+    forzaDemoTimeline.onStageEnd = (demoId, realCamId) => {
+      console.log(`[DEMO] ${demoId}(${realCamId}) stage 종료 - 다음 stage로 자동 전환`);
+      eventManager.completeDemoStageMovement(demoId, realCamId);
+    };
+
+    forzaDemoTimeline.onAnomaly = (demoId, realCamId, episode) => {
+      const now = new Date();
+      const time = [now.getHours(), now.getMinutes(), now.getSeconds()]
+        .map((n) => String(n).padStart(2, "0"))
+        .join(":");
+
+      eventManager.triggerDemoEvent(realCamId, {
+        time,
+        trackId: episode.track_id,
+        globalVehicleId: CONFIG.DEMO_VEHICLE_ID,
+        plate: episode.plate || null,
+        type: "이상운전 감지 (발표용 데모)",
+        reason: episode.reason,
+        confidence: null,
+      });
+    };
+
+    forzaDemoTimeline.onFinished = () => {
+      console.log("[DEMO] 발표용 Forza DEMO 시나리오가 모두 끝났습니다. 차량은 D(한강대교남단)에 고정된 상태로 유지됩니다.");
+    };
+
+    forzaDemoTimeline.start();
+    window.forzaDemoTimeline = forzaDemoTimeline;
+  }
 
   function captureVideoFrame(videoEl) {
     if (!videoEl || videoEl.readyState < 2 || !videoEl.videoWidth || !videoEl.videoHeight) return null;
@@ -3512,6 +3529,9 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   let realJourneyPrevPoints = [];
+  // [신규: "CCTV 자동 전환이 안 됨"] 직전 payload의 currentCamId를 기억해뒀다가,
+  // 실제로 카메라가 바뀐 시점에만 자동 전환을 트리거하기 위한 값이다.
+  let realJourneyPrevCamId = null;
 
   function pointsEqual(p1, p2) {
     return p1 && p2 && p1[0] === p2[0] && p1[1] === p2[1];
@@ -3544,6 +3564,7 @@ document.addEventListener("DOMContentLoaded", () => {
         realVehicleMarker.remove();
         routeManager.clearRealJourney();
         realJourneyPrevPoints = [];
+        realJourneyPrevCamId = null;
         // [수정] 화면 중앙 Alert Card 대신 이벤트 리스트 카드를 정리한다.
         eventManager.resolveRealJourneyEvent();
 
@@ -3575,6 +3596,23 @@ document.addEventListener("DOMContentLoaded", () => {
       // [신규] 마커가 존재하면(대부분의 경우 이미 존재) 상세 팝업 내용을 최신
       // CCTV 정보로 동기화한다 - 팝업이 열려 있어도, 닫혀 있어도 안전하다.
       syncRealJourneyPopup(payload);
+
+      // [신규: "오른쪽 CCTV에 자동으로 그 CCTV가 보여야 하는데 안 보임"]
+      // 예전엔 사용자가 팝업의 "CCTV 바로가기" 버튼을 직접 눌러야만 오른쪽
+      // CCTV 패널이 전환됐다(__appGoToJourneyStartCctv는 버튼 onclick에서만
+      // 호출됐음). 차량이 새 카메라 구간으로 넘어갈 때(currentCamId 변경)
+      // 버튼 클릭 없이도 자동으로 같은 함수를 호출해 오른쪽 패널을 전환한다.
+      // 좌표만 갱신되고 카메라는 그대로인 payload가 초당 여러 번 올 수 있어서,
+      // camId가 실제로 바뀐 경우에만(=여정 시작 포함) 보낸다 - 그래야 사용자가
+      // 수동으로 다른 CCTV를 보고 있을 때 매 프레임 강제로 뺏어오지 않는다.
+      if (
+        payload.currentCamId &&
+        payload.currentCamId !== realJourneyPrevCamId
+      ) {
+        realJourneyPrevCamId = payload.currentCamId;
+        window.__appGoToJourneyStartCctv &&
+          window.__appGoToJourneyStartCctv(payload.currentCamId);
+      }
     }
   );
 
