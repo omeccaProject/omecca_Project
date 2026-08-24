@@ -9,7 +9,7 @@ from ultralytics import YOLO
 
 
 class FaceDetector:
-    def __init__(self, db_path=None, tolerance=0.55, model="cnn"):
+    def __init__(self, db_path=None, tolerance=0.48, model="cnn"):
         if db_path is None:
             base_dir = os.path.dirname(os.path.abspath(__file__))
             db_path = os.path.join(base_dir, "face_embeddings.pkl")
@@ -83,6 +83,7 @@ class FaceDetector:
         """
         2단계 Person Crop 파이프라인
         - YOLO로 사람 영역 선출 후 원본 해상도(100%) Crop 내부에서 얼굴 인식
+        - 해상도 가드(100x40) 미달 시 continue로 건너뜀
         - 절대좌표 오프셋 변환 반환
         - personBbox: 이 얼굴이 속한 사람의 YOLO 전체 영역 (흉기 소지 판정용)
         """
@@ -93,10 +94,23 @@ class FaceDetector:
 
         person_results = self.person_model(frame, classes=[0], conf=person_conf, verbose=False)
         results = []
+        h_frame, w_frame = frame.shape[:2]
 
         for r in person_results:
             for box in r.boxes:
                 px1, py1, px2, py2 = map(int, box.xyxy[0].tolist())
+
+                # 1. 경계값 클리핑
+                px1, py1 = max(0, px1), max(0, py1)
+                px2, py2 = min(w_frame, px2), min(h_frame, py2)
+
+                crop_h = py2 - py1
+                crop_w = px2 - px1
+
+                # 2. 해상도 안전 가드 (100x40 미만은 불필요한 연산 방지를 위해 스킵)
+                if crop_h < 100 or crop_w < 40:
+                    continue
+
                 crop = frame[py1:py2, px1:px2]
                 if crop.size == 0:
                     continue
