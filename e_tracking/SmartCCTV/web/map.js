@@ -1418,6 +1418,8 @@ class RouteManager {
   }
 
   setRealJourneyPoints(points) {
+    // [참고] 지금은 아무도 호출하지 않는다(appendRealJourneyPoint()로 실시간
+    // 누적 방식만 씀) - 혹시 필요해질 때를 위해 남겨둔다.
     if (!points || points.length < 2) {
       if (this.realJourneyPolyline) {
         this.map.removeLayer(this.realJourneyPolyline);
@@ -1447,23 +1449,49 @@ class RouteManager {
       this.map.removeLayer(this.realJourneyPolyline);
       this.realJourneyPolyline = null;
     }
-    this.realJourneyPoints = [];
+    // [수정: "동교동삼거리 사각지대" 버그] 예전엔 좌표를 하나의 평평한 배열
+    // (realJourneyPoints)에 계속 append만 했다 - 그런데 사각지대 구간에서는
+    // 일부러 좌표를 안 그린 채 건너뛰었기 때문에, Leaflet이 "마지막으로 그린
+    // 점(신촌 근처)"과 "다음에 그려진 점(합정역 이후)" 사이를 자동으로 직선
+    // 으로 이어버렸다 - 화면에 보인 그 긴 사선 직선의 진짜 원인이었다.
+    // 이제는 여러 개의 "끊어진 선분(segment)"을 따로 관리한다 - Leaflet의
+    // L.polyline()은 좌표 배열의 배열([[..], [..]])을 주면 그 사이는 자동으로
+    // 잇지 않고 각각 독립된 선으로 그린다(MultiPolyline).
+    this.realJourneySegments = [];
+  }
+
+  // [신규] 사각지대(예: 동교동삼거리) 통과 등, 지금까지 그린 선과 이어붙이면
+  // 안 되는 지점에서 호출한다 - 다음 appendRealJourneyPoint()부터는 새 선분에
+  // 쌓이기 시작해서, 이전 선분과 화면에서 자동으로 연결되지 않는다.
+  startNewRealJourneySegment() {
+    if (!this.realJourneySegments) this.realJourneySegments = [];
+    if (
+      this.realJourneySegments.length === 0 ||
+      this.realJourneySegments[this.realJourneySegments.length - 1].length > 0
+    ) {
+      this.realJourneySegments.push([]);
+    }
   }
 
   appendRealJourneyPoint(latlng) {
-    if (!this.realJourneyPoints) this.realJourneyPoints = [];
+    if (!this.realJourneySegments) this.realJourneySegments = [];
+    if (this.realJourneySegments.length === 0) this.realJourneySegments.push([]);
 
-    const last = this.realJourneyPoints[this.realJourneyPoints.length - 1];
+    const currentSegment = this.realJourneySegments[this.realJourneySegments.length - 1];
+
+    const last = currentSegment[currentSegment.length - 1];
     if (last && last[0] === latlng[0] && last[1] === latlng[1]) return;
-    this.realJourneyPoints.push(latlng);
+    currentSegment.push(latlng);
 
-    if (this.realJourneyPoints.length < 2) return;
+    // 선분이 하나도 2점 이상이 안 되면(막 시작한 선분 하나뿐) 아직 그릴 게 없다.
+    const drawable = this.realJourneySegments.filter((seg) => seg.length >= 2);
+    if (drawable.length === 0) return;
 
     const routeColor =
       getComputedStyle(document.documentElement).getPropertyValue("--accent-alert").trim() || "#ef4444";
 
     if (!this.realJourneyPolyline) {
-      this.realJourneyPolyline = L.polyline(this.realJourneyPoints, {
+      this.realJourneyPolyline = L.polyline(drawable, {
         color: routeColor,
         weight: 4,
         opacity: 0.85,
@@ -1471,7 +1499,7 @@ class RouteManager {
         lineJoin: "round",
       }).addTo(this.map);
     } else {
-      this.realJourneyPolyline.setLatLngs(this.realJourneyPoints);
+      this.realJourneyPolyline.setLatLngs(drawable);
     }
   }
 
@@ -1824,6 +1852,30 @@ class RealVehicleMarker {
         }
       );
     }
+
+    // [신규] "안 보이는 구간" 연출(hide()) 이후 다시 setPosition()이 호출되면
+    // (=다음 카메라에서 재감지) 마커가 다시 보여야 하므로 항상 불투명도를
+    // 되돌려놓는다. hide() 상태가 아니었을 때는 아무 효과 없다.
+    this.marker.setOpacity(1);
+  }
+
+  // [신규] 카메라 사이 "사각지대" 구간(예: 동교동삼거리) 연출용 - 마커를 지도에서
+  // 완전히 떼어내지 않고 투명하게만 만든다. remove()와 달리 다음 setPosition()
+  // 호출로 그대로 이어서 다시 보이게 할 수 있다(_isAnimating/_pathQueue를
+  // 건드리지 않는다 - 이 메서드는 followPath()의 애니메이션 큐와는 무관하게
+  // 쓰인다).
+  hide() {
+    if (this.marker) this.marker.setOpacity(0);
+  }
+
+  // [신규] followPath()의 _pathQueue에 이미 쌓여있는 다음 구간 애니메이션들을
+  // 전부 비운다. 사각지대(gap) 진입이 확정된 순간 호출해야 한다 - 그렇지
+  // 않으면, beforeGap 애니메이션이 끝나 hide()가 호출된 바로 다음 줄에서
+  // _consumeQueue()가 큐에 남아있던 다음 구간(예: 합정역->양화대교북단)을
+  // 곧바로 이어서 재생하면서 setPosition()을 호출해버려 opacity가 다시
+  // 1로 돌아가고, 결과적으로 마커가 눈에 보이게 사라지는 순간이 없어진다.
+  clearQueue() {
+    this._pathQueue = [];
   }
 
   followPath(points, label, onComplete, onProgress) {
@@ -3533,6 +3585,46 @@ document.addEventListener("DOMContentLoaded", () => {
   // 실제로 카메라가 바뀐 시점에만 자동 전환을 트리거하기 위한 값이다.
   let realJourneyPrevCamId = null;
 
+  // [수정: "동교동삼거리는 카메라 경계가 아니라 지리적으로 신촌↔합정역
+  // 구간 도로 중간에 있다"] camId 쌍(A→B)으로 사각지대를 판정하던 방식은
+  // 폐기했다 - 실제 OSRM 도로 경로를 그려보니 동교동삼거리는 "신촌→합정역"
+  // 구간의 도로 경로 *중간*에 있었지, 카메라 전환 경계(신촌→합정역 자체,
+  // 또는 합정역→양화대교북단)와 일치하지 않았다. 그래서 이제는 애니메이션
+  // 중인 도로 좌표들이 동교동삼거리 좌표에 실제로 가까워지는 지점을 찾아서
+  // 그 지점에서 끊는다 - 어느 leg(카메라 구간) 안에서 발생하든 상관없다.
+  //
+  // 좌표는 정확한 측량값이 아니라 지도로 눈대중한 근사치다 - 실제 재생해보고
+  // 끊기는 지점이 원하는 곳과 다르면 lat/lng나 radiusMeters를 조정하면 된다.
+  const REAL_JOURNEY_GAP_WAYPOINT = {
+    lat: 37.5570,
+    lng: 126.9260,
+    radiusMeters: 250,
+  };
+  // 사각지대를 빠져나와 다시 나타날 위치 - CAMERA_LOCATIONS의 L010481(양화대교북단)
+  // 값과 동일하게 맞춰뒀다(파이썬 test_suspicious_driving.py 쪽 값과 반드시
+  // 같이 맞춰야 한다 - 한쪽만 바꾸면 지도 위 위치가 어긋난다).
+  const REAL_JOURNEY_GAP_REVEAL = { lat: 37.5462, lng: 126.9125, label: "양화대교북단" };
+  const REAL_JOURNEY_GAP_HIDE_MS = 5000;
+  let realJourneyGapTimer = null;
+  // 사각지대 진입 후 REAL_JOURNEY_GAP_HIDE_MS가 지날 때까지는 true - 그 사이
+  // 도착하는 payload(예: 합정역→양화대교북단 이동 감지)는 지도에 반영하지
+  // 않고 무시한다(타이머가 끝나면 어차피 REAL_JOURNEY_GAP_REVEAL 위치로
+  // 점프하므로, 그 중간에 들어온 좌표를 따로 그릴 필요가 없다).
+  let realJourneySuppressed = false;
+
+  // newSegment(이번에 새로 추가된 도로 좌표들) 안에서 동교동삼거리에 실제로
+  // 가까워지는 첫 지점의 인덱스를 찾는다. 없으면 -1.
+  function findGapWaypointIndex(segment) {
+    for (let i = 0; i < segment.length; i++) {
+      const d = haversineMeters(
+        segment[i],
+        [REAL_JOURNEY_GAP_WAYPOINT.lat, REAL_JOURNEY_GAP_WAYPOINT.lng]
+      );
+      if (d <= REAL_JOURNEY_GAP_WAYPOINT.radiusMeters) return i;
+    }
+    return -1;
+  }
+
   function pointsEqual(p1, p2) {
     return p1 && p2 && p1[0] === p2[0] && p1[1] === p2[1];
   }
@@ -3565,6 +3657,10 @@ document.addEventListener("DOMContentLoaded", () => {
         routeManager.clearRealJourney();
         realJourneyPrevPoints = [];
         realJourneyPrevCamId = null;
+        if (realJourneyGapTimer) {
+          clearTimeout(realJourneyGapTimer);
+          realJourneyGapTimer = null;
+        }
         // [수정] 화면 중앙 Alert Card 대신 이벤트 리스트 카드를 정리한다.
         eventManager.resolveRealJourneyEvent();
 
@@ -3589,9 +3685,82 @@ document.addEventListener("DOMContentLoaded", () => {
       realJourneyPrevPoints = points;
 
       const label = payload.currentCamName || payload.currentCamId;
-      realVehicleMarker.followPath(newSegment, label, null, (lat, lng) => {
-        routeManager.appendRealJourneyPoint([lat, lng]);
-      });
+
+      if (realJourneySuppressed) {
+        // 이미 사각지대에 들어가서 REAL_JOURNEY_GAP_HIDE_MS 타이머가 도는
+        // 중이다 - 그 사이 도착하는 payload(예: 합정역→양화대교북단 이동
+        // 감지)는 지도에 반영하지 않는다. 타이머가 끝나면 REAL_JOURNEY_GAP_REVEAL
+        // 위치로 점프하므로 중간 좌표를 그릴 필요가 없다.
+        console.log(
+          "[REAL JOURNEY] 🕳️ 사각지대 대기 중 - payload 무시:",
+          payload.currentCamId
+        );
+      } else {
+        // [수정: 요구사항] "동교동삼거리"는 카메라 경계가 아니라 이번에 새로
+        // 추가된 도로 좌표들(newSegment) *중간* 어딘가에 있을 수 있다 - 실제로
+        // 그 좌표에 가까워지는 지점을 찾는다.
+        const gapIdx = findGapWaypointIndex(newSegment);
+
+        if (gapIdx === -1) {
+          // 사각지대 없음 - 기존처럼 도로 경로를 따라 마커와 폴리라인을 함께
+          // 실시간으로 채워나간다(마커가 움직이는 매 프레임마다 선도 같이 자람).
+          realVehicleMarker.followPath(newSegment, label, null, (lat, lng) => {
+            routeManager.appendRealJourneyPoint([lat, lng]);
+          });
+        } else {
+          // 사각지대 발견 - 그 지점까지만 애니메이션하고, 거기서 멈춘 뒤
+          // 마커를 감춘다. REAL_JOURNEY_GAP_HIDE_MS 후 REAL_JOURNEY_GAP_REVEAL
+          // (양화대교북단)로 애니메이션 없이 바로 이동시킨다.
+          const beforeGap = newSegment.slice(0, gapIdx + 1);
+
+          // [수정: 레이스 컨디션 버그] realJourneySuppressed를 onComplete
+          // 안에서(=beforeGap 애니메이션이 다 끝난 뒤에) true로 바꾸면 그
+          // 사이(수 초간 이어지는 애니메이션 도중) 도착하는 다음 payload가
+          // realJourneySuppressed를 아직 false로 보고 자기 구간을 그대로
+          // followPath()에 큐잉해버린다. 그러면 beforeGap이 끝나고 hide()가
+          // 호출된 바로 다음 줄(_consumeQueue())에서 큐에 쌓여있던 그 다음
+          // 구간이 곧장 재생되며 setPosition()이 opacity를 다시 1로 되돌려서
+          // 마커가 사라지는 순간이 실제로는 보이지 않았다(0프레임짜리 숨김).
+          // 그래서 gap을 발견한 이 시점에 즉시 suppress 플래그를 켜고, 혹시
+          // 이미 큐에 쌓여있을 수도 있는 이전 구간들도 비워서 beforeGap
+          // 애니메이션만 단독으로 재생되도록 한다.
+          realJourneySuppressed = true;
+          realVehicleMarker.clearQueue();
+
+          realVehicleMarker.followPath(beforeGap, label, () => {
+            console.log(
+              `[REAL JOURNEY] 🕳️ 동교동삼거리 부근 도달 - 마커 ${REAL_JOURNEY_GAP_HIDE_MS}ms 숨김`
+            );
+            routeManager.startNewRealJourneySegment();
+            realVehicleMarker.hide();
+            const __gapHideStartedAt = Date.now();
+            console.log(
+              `[REAL JOURNEY] ⏱️ 숨김 시작 (${new Date(__gapHideStartedAt).toLocaleTimeString()}) - ${REAL_JOURNEY_GAP_HIDE_MS}ms 후 재등장 예정`
+            );
+
+            if (realJourneyGapTimer) clearTimeout(realJourneyGapTimer);
+            realJourneyGapTimer = setTimeout(() => {
+              const __elapsed = Date.now() - __gapHideStartedAt;
+              console.log(
+                `[REAL JOURNEY] ⏱️ 재등장 (실제 경과 ${__elapsed}ms, 목표 ${REAL_JOURNEY_GAP_HIDE_MS}ms)`
+              );
+              realVehicleMarker.setPosition(
+                REAL_JOURNEY_GAP_REVEAL.lat,
+                REAL_JOURNEY_GAP_REVEAL.lng,
+                REAL_JOURNEY_GAP_REVEAL.label
+              );
+              routeManager.appendRealJourneyPoint([
+                REAL_JOURNEY_GAP_REVEAL.lat,
+                REAL_JOURNEY_GAP_REVEAL.lng,
+              ]);
+              realJourneySuppressed = false;
+              realJourneyGapTimer = null;
+            }, REAL_JOURNEY_GAP_HIDE_MS);
+          }, (lat, lng) => {
+            routeManager.appendRealJourneyPoint([lat, lng]);
+          });
+        }
+      }
 
       // [신규] 마커가 존재하면(대부분의 경우 이미 존재) 상세 팝업 내용을 최신
       // CCTV 정보로 동기화한다 - 팝업이 열려 있어도, 닫혀 있어도 안전하다.

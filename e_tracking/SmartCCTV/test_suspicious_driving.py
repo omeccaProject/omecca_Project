@@ -1,4 +1,14 @@
 import os
+
+# [환경] Windows + conda 환경에서 torch/numpy(MKL)와 OpenCV 등이 각자 자기
+# OpenMP 런타임(libiomp5md.dll)을 들고 들어와서 충돌하는 경우가 있다
+# ("OMP: Error #15: Initializing libiomp5md.dll, but found ... already
+# initialized"). 이 스크립트는 멀티스레드 수치 연산 결과의 미세한 오차가
+# 문제될 상황이 아니라서(순차적으로 YOLO 추론 -> OCR -> 후처리), 아래처럼
+# 허용해도 안전하다 - Intel 공식 에러 메시지가 권장하는 우회법이기도 하다.
+# cv2/numpy/torch를 import하기 "전에" 설정해야 의미가 있다.
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+
 import cv2
 import time
 import math
@@ -14,6 +24,7 @@ import torch
 from dotenv import load_dotenv
 from ultralytics import YOLO
 from PIL import Image, ImageDraw, ImageFont
+from lpr_bridge import PlateReader
 
 
 # ============================================================
@@ -50,6 +61,20 @@ else:
     _GATEWAY_HOST_ONLY = _GATEWAY_BASE_URL
 
 JOURNEY_URL = _GATEWAY_HOST_ONLY + "/api/cctv/journey"
+TARGETS_URL = _GATEWAY_HOST_ONLY + "/api/targets"
+
+# [테스트용] easyocr 미설치라 실제 OCR이 안 될 때, 매칭->Journey 파이프라인만
+# 먼저 검증하기 위한 스위치. True로 두면 진짜 영상 번호판 대신 아래 풀에서
+# 무작위로 고른 값이 "인식된 번호판"으로 나온다 (콘솔에 [LPR-TEST]로 어떤
+# 차량에 어떤 번호가 붙었는지 찍어준다 - 그 번호를 관심 대상으로 등록하면 됨).
+# easyocr 설치(pip install easyocr torch) 후에는 False로 되돌리면 된다.
+LPR_TEST_MOCK = False
+# 풀을 1개만 둔 이유: d_lpr의 다수결 확정(TrackVote, vote_window=5)이 최근 5번
+# 인식 중 80% 이상 같은 값이어야 확정되는데, 무작위로 여러 개 중에서 고르면
+# 우연히 4/5가 같은 값이 나올 때까지 오래 걸린다(테스트 목적엔 너무 느림).
+# 1개만 넣으면 거의 즉시 확정된다 - 대신 카메라에 잡히는 차량 전부가 이
+# 번호판으로 "인식"된다(진짜 OCR이 아니라 배선 확인용이라는 점 유의).
+LPR_TEST_MOCK_PLATES = ["12가3456"]
 
 GATEWAY_API_KEY = os.getenv(
     "GATEWAY_API_KEY"
@@ -365,14 +390,21 @@ def load_model():
 # ============================================================
 # 10. 실시간 차량 이동 경로(Journey) 추적
 # ============================================================
-# ⚠️ 이 섹션 전체(변수/함수/클래스)는 요청하신 대로 단 한 글자도 수정하지 않았다.
+# [업데이트] 관심 차량 추적 데모용으로 경로 지명/좌표를 교체했다
+# (이대역-신촌-합정역-양화대교북단, 동교동삼거리는 카메라가 없어 제외).
+# 이동 상태 판단 로직(다음 CCTV 탐색, stale 처리 등) 자체는 그대로다 - 시작
+# 카메라를 항상 camera_order[0]으로 고정하던 부분만 실제 매칭 지점 기준으로 고쳤다.
+# "동교동삼거리 비감지 구간" 연출(마커 숨김/지연 재등장)은 여기(파이썬)가 아니라
+# web/map.js의 REAL_JOURNEY_BLIND_GAPS에서 처리한다 - 이 파일은 4개 카메라를
+# 순서대로 넘겨줄 뿐, 어느 구간이 "사각지대"인지는 신경 쓰지 않는다.
 
 CAMERA_LOCATIONS = {
 
-    "L010111": {"name": "보라매역",     "lat": 37.49976, "lng": 126.92007},
-    "L010271": {"name": "장승배기",     "lat": 37.5052,  "lng": 126.93955},
-    "L010128": {"name": "상도",         "lat": 37.50303, "lng": 126.9478},
-    "L010481": {"name": "한강대교남단", "lat": 37.51346, "lng": 126.95552},
+    # 경로: 이대역 -> 신촌 -> (동교동삼거리, 카메라 없음/비감지 구간) -> 합정역 -> 양화대교북단
+    "L010111": {"name": "이대역",       "lat": 37.55667, "lng": 126.94583},
+    "L010271": {"name": "신촌",         "lat": 37.5596,  "lng": 126.9366},
+    "L010128": {"name": "합정역",       "lat": 37.54917, "lng": 126.91361},
+    "L010481": {"name": "양화대교북단", "lat": 37.5462,  "lng": 126.9125},
 
 }
 
@@ -569,15 +601,18 @@ def update_journey_for_frame(journey, suspicious_vehicles_by_camera):
     # =========================================================
 
     camera_order = [
-        "L010111",  # CCTV-A / 보라매역
-        "L010271",  # CCTV-B
-        "L010128",  # CCTV-C / 상도
-        "L010481",  # CCTV-D / 한강대교남단
+        "L010111",  # CCTV-A / 이대역
+        "L010271",  # CCTV-B / 신촌
+        "L010128",  # CCTV-C / 합정역  (다음 양화대교북단까지가 "동교동삼거리 비감지 구간")
+        "L010481",  # CCTV-D / 양화대교북단
     ]
 
     # =========================================================
     # 아직 Journey가 없으면
-    # 항상 CCTV-A(보라매역)에서 시작
+    # [수정] camera_order[0]으로 무조건 고정하지 않는다 - 실제로 처음
+    # 매칭이 뜬 카메라가 camera_order 몇 번째든(예: 신촌에서 처음 등록/매칭
+    # 됐으면 신촌) 그 지점을 시작점으로 삼는다. camera_order 순서상 가장
+    # 앞선(=가장 먼저 지나갔을) 카메라를 우선한다.
     # =========================================================
 
     if not journey.active:
@@ -586,7 +621,14 @@ def update_journey_for_frame(journey, suspicious_vehicles_by_camera):
         if not active_cam_ids:
             return
 
-        start_cam_id = camera_order[0]
+        start_cam_id = next(
+            (cam_id for cam_id in camera_order if cam_id in active_cam_ids),
+            None,
+        )
+
+        if start_cam_id is None:
+            # camera_order에 없는 camId에서만 매칭된 경우(설정 누락 등) - 대기
+            return
 
         loc = CAMERA_LOCATIONS.get(start_cam_id)
 
@@ -738,6 +780,68 @@ def update_journey_for_frame(journey, suspicious_vehicles_by_camera):
         to_loc,
         next_cam_id
     )
+
+
+# ============================================================
+# 10-1. 등록된 관심 차량(번호판) 매칭  [신규]
+# ------------------------------------------------------------
+# d_lpr(번호판 인식)이 읽어낸 번호판을, b_gateway에 등록된 관심 대상(Target,
+# targetType=VEHICLE, status=ACTIVE)의 plateNumber와 대조한다.
+# 일치하면 그 track_id는 "이상운전 여부와 무관하게" 위 10번 섹션의 Journey를
+# 트리거하는 대상이 된다 - main()의 target_matched_vehicles에 채워 넣고,
+# update_journey_for_frame()에 넘기는 dict를 suspicious_vehicles 대신 이걸로
+# 바꾸는 방식이다(10번 섹션 함수 자체는 한 글자도 건드리지 않는다).
+# ============================================================
+
+TARGET_POLL_INTERVAL_SEC = 10.0
+
+_target_cache = {"plates": {}, "fetched_at": 0.0}
+
+
+def normalize_plate(raw):
+    """공백 제거 정도만 한다 - TargetsPanel(프론트) 입력값과 d_lpr 인식값
+    양쪽 다 지역명 없이 "12가3456" 형태로 다룬다는 전제가 이미 있어서(V2 LPR
+    테이블 주석 참고), 추가 정규화는 하지 않는다."""
+    return (raw or "").replace(" ", "").strip()
+
+
+def refresh_target_plates(force=False):
+    """활성(ACTIVE) 차량 관심대상의 번호판 -> {targetId, label} 맵을 갱신한다.
+    TARGET_POLL_INTERVAL_SEC마다 한 번만 실제로 조회하고, 그 사이엔 캐시를
+    그대로 돌려준다(프레임마다 호출해도 API를 매번 때리지 않기 위함).
+
+    실패해도 예외를 던지지 않는다 - 관심 대상 조회가 안 된다고 이상운전
+    탐지/Journey 전체가 멈추면 안 된다는 이 파일 전체의 원칙과 동일하다."""
+    now = time.time()
+    if not force and now - _target_cache["fetched_at"] < TARGET_POLL_INTERVAL_SEC:
+        return _target_cache["plates"]
+
+    headers = {"X-API-Key": GATEWAY_API_KEY}
+    try:
+        response = requests.get(
+            TARGETS_URL,
+            params={"status": "ACTIVE", "size": 200},
+            headers=headers,
+            timeout=2,
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        plates = {}
+        for t in data.get("content", []):
+            if t.get("targetType") != "VEHICLE":
+                continue
+            plate = normalize_plate(t.get("plateNumber"))
+            if plate:
+                plates[plate] = {"targetId": t.get("id"), "label": t.get("label")}
+
+        _target_cache["plates"] = plates
+        _target_cache["fetched_at"] = now
+
+    except requests.RequestException as e:
+        print(f"[TARGET] 관심 대상 조회 실패(다음 주기에 재시도) - {e}")
+
+    return _target_cache["plates"]
 
 # ============================================================
 # 11. CCTV 영상 연결
@@ -2428,6 +2532,25 @@ def main():
     # (카메라별 상태가 아님 - 위 "10. 실시간 차량 이동 경로" 설명 참고).
     journey = VehicleJourney()
 
+    # [신규] 번호판 인식(LPR) - 프로세스 전체에서 공유하는 단일 인스턴스.
+    # (cam_id, track_id) 쌍으로 내부적으로 구분하므로 카메라 4개가 공유해도 안전하다.
+    if LPR_TEST_MOCK:
+        plate_reader = PlateReader(mock=True, mock_plates=LPR_TEST_MOCK_PLATES)
+    else:
+        plate_reader = PlateReader()
+
+    # 어떤 (카메라, track_id)에 어떤 번호판이 확정됐는지 한 번만 찍기 위한
+    # 기록 - 확정 후에는 매 프레임 값이 나와서 그대로 찍으면 로그가 도배된다.
+    _lpr_test_logged = set()
+
+    # [신규] 카메라별 "이번에 등록된 관심 차량과 매칭된 track_id -> 매칭정보" 기록.
+    # suspicious_vehicles와 같은 모양(카메라명을 key로 갖는 dict)으로 맞췄다.
+    target_matched_vehicles = {
+        camera_name: {}
+        for camera_name
+        in cameras
+    }
+
 
     print("=" * 70)
     print("분석 시작")
@@ -2596,6 +2719,54 @@ def main():
 
                 )
 
+
+                # ------------------------------------------------
+                # [신규] 번호판 인식 + 등록된 관심 차량 매칭
+                # ------------------------------------------------
+
+                x1, y1, x2, y2 = info["bbox"]
+
+                plate_reader.update(
+                    cam_id,
+                    track_id,
+                    (x1, y1, x2, y2),
+                    frame,
+                    camera["frame_idx"],
+                )
+
+                confirmed_plate = plate_reader.plate_of(cam_id, track_id)
+
+                if confirmed_plate:
+
+                    _log_key = (camera_name, track_id)
+                    if _log_key not in _lpr_test_logged:
+                        _lpr_test_logged.add(_log_key)
+                        _tag = "LPR-TEST" if LPR_TEST_MOCK else "LPR"
+                        print(
+                            f"🔎 [{_tag}] {camera_name} track={track_id} "
+                            f"plate={confirmed_plate} -> 이 번호판을 "
+                            f"'관심 대상 관리'에 등록하면 🎯 매칭이 뜹니다."
+                        )
+
+                    plate_by_camera[camera_name][track_id] = confirmed_plate
+
+                    matched_target = refresh_target_plates().get(
+                        normalize_plate(confirmed_plate)
+                    )
+
+                    if matched_target and track_id not in target_matched_vehicles[camera_name]:
+
+                        target_matched_vehicles[camera_name][track_id] = {
+                            "plate": confirmed_plate,
+                            "targetId": matched_target["targetId"],
+                            "label": matched_target["label"],
+                        }
+
+                        print(
+                            f"🎯 [TARGET] 등록된 관심 차량 감지 | "
+                            f"{camera_name} | plate={confirmed_plate} | "
+                            f"targetId={matched_target['targetId']}"
+                        )
 
                 # ------------------------------------------------
                 # 주행 패턴
@@ -2895,7 +3066,12 @@ def main():
             for camera_name in cameras
         }
 
-        update_journey_for_frame(journey, suspicious_by_cam_id)
+        target_matched_by_cam_id = {
+            cameras[camera_name]["camId"]: set(target_matched_vehicles[camera_name].keys())
+            for camera_name in cameras
+        }
+
+        update_journey_for_frame(journey, target_matched_by_cam_id)
 
 
         # ====================================================
