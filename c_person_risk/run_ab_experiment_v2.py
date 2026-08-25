@@ -31,7 +31,6 @@ print("\n" + "="*70)
 print("🔬 [실험 2] 기준사진(1/2/3)별 False Accept 3x4 정밀 매트릭스 측정")
 print("="*70)
 
-# 1. 기준 사진 3종 임베딩 추출
 base_embeddings = {}
 for photo in CANDIDATE_PHOTOS:
     path = os.path.join(KNOWN_DIR, photo)
@@ -49,7 +48,6 @@ if not base_embeddings:
     print("[ERROR] 등록 가능한 기준 사진이 없습니다.")
     sys.exit(1)
 
-# 2. 타인 4명 임베딩 추출
 other_files = sorted([f for f in os.listdir(OTHERS_DIR) if f.lower().endswith(('.jpg', '.jpeg', '.png'))])
 other_embeddings = {}
 for o_name in other_files:
@@ -58,7 +56,6 @@ for o_name in other_files:
     if o_emb is not None:
         other_embeddings[o_name] = o_emb
 
-# 3. 3x4 거리 매트릭스 연산
 matrix = {}
 for photo_name, b_emb in base_embeddings.items():
     matrix[photo_name] = {}
@@ -66,7 +63,6 @@ for photo_name, b_emb in base_embeddings.items():
         dist = float(face_recognition.face_distance([b_emb], o_emb)[0])
         matrix[photo_name][o_name] = dist
 
-# 4. 클로드 보고용 결과 출력
 print("\n" + "="*70)
 print("📋 [클로드 전달용] 3x4 Raw Distance 매트릭스 (Tolerance: 0.48)")
 print("="*70)
