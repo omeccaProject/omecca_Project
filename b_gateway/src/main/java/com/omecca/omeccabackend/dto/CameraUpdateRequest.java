@@ -18,4 +18,5 @@ public class CameraUpdateRequest {
     private Boolean violationDetectionEnabled;
     private Boolean uturnDetectionEnabled;
     private Boolean signalDetectionEnabled;
+    private Boolean personRiskDetectionEnabled;
 }

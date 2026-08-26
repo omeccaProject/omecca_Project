@@ -181,6 +181,25 @@ public class VehicleJourneyController {
         private Double currentLng;
 
         /**
+         * [신규] 이 여정이 "DUI"(음주운전 의심) 인지 "TARGET"(관심 차량 추적) 인지.
+         * Python(test_suspicious_driving.py)의 send_journey_update()가 항상
+         * journey.reason(=journey.kind, "DUI"|"TARGET")을 실어 보내는데, 이 DTO에
+         * 필드가 없어서 Jackson이 역직렬화할 때 조용히 버려지고 있었다 - 그래서
+         * /topic/cctv/journey로 재방송되는 모든 payload의 reason이 항상 없어서(null),
+         * 프론트(map.js)의 `payload.reason === "TARGET"` 판정이 절대 참이 될 수 없었고,
+         * DUI/TARGET 두 여정이 전부 "DUI" 트랙 하나로 뒤섞여 처리되고 있었다
+         * ("음주운전 마커가 관심 차량 경로 쪽으로 가버림" 버그의 실제 원인).
+         */
+        private String reason;
+
+        /**
+         * [신규] 매칭된 차량 번호판(TARGET 여정에서 LPR로 확정되면 채워짐). 위와
+         * 같은 이유로 이 필드가 없어서 항상 null로 방송되어, 프론트에 "차량번호
+         * 확인 중"만 계속 표시되고 있었다.
+         */
+        private String plate;
+
+        /**
          * 지금까지 누적된 전체 차량 이동 경로
          *
          * [

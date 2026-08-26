@@ -22,7 +22,9 @@ import json
 import os
 import logging
 import threading
+import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime
 from queue import Empty, Queue
@@ -212,6 +214,58 @@ class GatewayClient:
             log.warning("게이트웨이 큐가 가득 참 — 이벤트 폐기 (%s)", ev.event_id)
             return False
 
+    # ------------------------------------------------------------------
+    # [신규] 사건 전/후 캡처 이미지 반영.
+    #
+    # 이벤트 자체(POST /api/events)는 `_emit()`이 위반을 확정한 그 순간 버스로
+    # 이미 나가버린다(위 `subscribe_to_bus`/`send` 참고) - 그 시점엔 아직 "사건
+    # 전/후" 캡처 이미지를 만들 수 없다(전 프레임은 버퍼에서, 후 프레임은 바로
+    # 이 프레임에서 떠야 하는데, 이벤트 발행 자체가 그 계산보다 먼저 끝난다).
+    #
+    # 그래서 e_tracking(SmartCCTV)의 server/gatewayForward.js가 이미 쓰고 있는
+    # 것과 똑같은 2단계 패턴을 따른다:
+    #   1) 위반이 잡히면 이벤트를 먼저 보낸다(캡처 없이, 지금처럼)
+    #   2) run_uturn.py가 그 직후 전/후 프레임을 JPEG로 저장하고, 이 메서드로
+    #      PATCH /api/events/by-track/{trackId}/captures 를 호출해 방금 만든
+    #      이벤트에 frameRefBefore/frameRefAfter만 채워 넣는다.
+    #
+    # 실패해도(게이트웨이가 꺼져 있거나 아직 그 trackId 이벤트가 없어도) 조용히
+    # 넘어간다 - 캡처 반영 실패가 위반 감지 자체를 막으면 안 된다. 프레임 처리
+    # 루프를 절대 막지 않도록 별도 스레드에서 fire-and-forget으로 보낸다.
+    def update_captures(self, track_id: str, frame_before: Optional[str],
+                         frame_after: Optional[str], delay_sec: float = 0.0) -> None:
+        if not self.enabled or (not frame_before and not frame_after):
+            return
+
+        def _worker() -> None:
+            # [신규] --plate-hold로 이벤트 POST 자체가 지연될 수 있어서, 그 이벤트가
+            # 실제로 게이트웨이에 생기기 전에 PATCH가 먼저 도착하면 "그 trackId
+            # 이벤트가 아직 없음"으로 조용히 무시된다. 호출자가 넘긴 만큼 먼저 기다린다.
+            if delay_sec > 0:
+                time.sleep(delay_sec)
+            url = self.url.rsplit("/api/events", 1)[0] + \
+                f"/api/events/by-track/{urllib.parse.quote(track_id, safe='')}/captures"
+            data = json.dumps(
+                {"frameRefBefore": frame_before, "frameRefAfter": frame_after},
+                ensure_ascii=False,
+            ).encode("utf-8")
+            req = urllib.request.Request(
+                url, data=data, method="PATCH",
+                headers={
+                    "Content-Type": "application/json; charset=utf-8",
+                    "X-API-Key": self.api_key,
+                },
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=self.timeout) as r:
+                    if not (200 <= r.status < 300):
+                        log.warning("캡처 이미지 반영 실패 (HTTP %s): %s", r.status, track_id)
+            except Exception as e:
+                log.warning("캡처 이미지 반영 중 오류(%s): %s", track_id, e)
+
+        threading.Thread(target=_worker, daemon=True, name="gateway-captures").start()
+
+    # ------------------------------------------------------------------
     def enqueue(self, payload: dict[str, Any]) -> bool:
         """이미 규격 변환이 끝난 payload 를 전송 큐에 넣는다.
 

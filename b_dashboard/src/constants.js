@@ -5,7 +5,7 @@ export const EVENT_LABEL = {
   WEAPON: '흉기',
   UNREGISTERED_VEHICLE: '미등록차량',
   DEBRIS: '낙하물',
-  DUI_PATTERN: '음주운전의심',
+  DUI_PATTERN: '이상운전감지',
   SIGNAL_VIOLATION: '신호위반',
   UTURN_VIOLATION: '불법유턴',
 }
