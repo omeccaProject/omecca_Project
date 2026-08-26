@@ -38,10 +38,45 @@ import argparse
 import json
 import sys
 import time
+import uuid
+from collections import deque
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE))
+
+# [신규] 사건 전/후 캡처 이미지.
+#
+# a_core(낙하물)와 e_tracking(SmartCCTV, 이상운전)이 이미 쓰고 있는 것과 동일한
+# 패턴 - 위반이 잡힌 "그 순간"의 프레임을 "후" 캡처로, 그보다 BEFORE_CAPTURE_SECONDS
+# 초 전 프레임을 "전" 캡처로 저장해서 b_dashboard/public/captures/ 에 JPEG로 둔다.
+# b_dashboard가 이 폴더를 정적으로 그대로 서빙하므로, 대시보드/리포트는
+# "/captures/<uuid>.jpg" 경로만 그대로 쓰면 된다.
+PROJECT_ROOT = BASE.parent
+CAPTURES_DIR = PROJECT_ROOT / "b_dashboard" / "public" / "captures"
+BEFORE_CAPTURE_SECONDS = 2.0
+
+
+def save_capture(cv2, frame, cam_id: str, tag: str) -> str | None:
+    """프레임 1장을 JPEG로 저장하고 "/captures/<uuid>.jpg" 경로를 돌려준다.
+
+    frame이 없거나 저장에 실패해도 None만 돌려주고 예외를 던지지 않는다 -
+    캡처 실패가 위반 감지 루프를 멈추면 안 된다.
+    """
+    if frame is None:
+        return None
+    CAPTURES_DIR.mkdir(parents=True, exist_ok=True)
+    filename = f"{uuid.uuid4().hex}.jpg"
+    filepath = CAPTURES_DIR / filename
+    try:
+        ok = cv2.imwrite(str(filepath), frame)
+    except Exception as e:
+        print(f"[CAPTURE] {cam_id}/{tag}: 캡쳐 저장 중 오류: {e}")
+        return None
+    if not ok:
+        print(f"[CAPTURE] {cam_id}/{tag}: 캡쳐 이미지 저장 실패 ({filepath})")
+        return None
+    return f"/captures/{filename}"
 
 from app.core.schemas import ViolationType                       # noqa: E402
 from app.violation.engine import ViolationEngine                 # noqa: E402
@@ -348,12 +383,26 @@ def main() -> None:
     t_start = time.time()
     processed = 0
 
+    # 최근 BEFORE_CAPTURE_SECONDS초 분량의 (영상 시각, 프레임)만 들고 있는다.
+    # 위반이 잡히는 순간 frame_buffer[0]이 "그 몇 초 전" 프레임이 된다 - a_core/
+    # e_tracking의 first_frame/frame_buffer와 동일한 역할.
+    frame_buffer: deque = deque()
+    # 위반 잡힌 순간 곧바로 PATCH를 보내면, --plate-hold로 이벤트 POST 자체가
+    # 뒤로 미뤄져 있을 때 캡처 PATCH가 이벤트 생성보다 먼저 게이트웨이에 도착해
+    # "그 trackId 이벤트가 아직 없음"으로 조용히 무시될 수 있다. 이벤트가 실제로
+    # 나갈 시점 이후에 PATCH가 도착하도록 그만큼 지연을 준다.
+    capture_delay_sec = (a.plate_hold + 0.5) if (forwarder is not None) else 0.0
+
     for frame_no, ts, frame, dets in src.frames():
         processed += 1
         if writer is None and a.save:
             Path(a.save).parent.mkdir(parents=True, exist_ok=True)
             writer = cv2.VideoWriter(a.save, cv2.VideoWriter_fourcc(*"mp4v"),
                                      src.fps / a.stride, src.size)
+
+        frame_buffer.append((ts, frame))
+        while frame_buffer and ts - frame_buffer[0][0] > BEFORE_CAPTURE_SECONDS:
+            frame_buffer.popleft()
 
         watching: dict[int, tuple] = {}
         for d in dets:
@@ -372,6 +421,18 @@ def main() -> None:
                 print(f"\n  ★ {VTYPE_KO[ev.violation_type]}  t={ts:6.2f}s  "
                       f"track=#{ev.track_id}  "
                       f"{ev.subtype or ev.zone_id}  {ev.detail}")
+
+                # [신규] 사건 전/후 캡처 - "전"은 frame_buffer에 남아있는 가장 오래된
+                # (=이 순간 기준 BEFORE_CAPTURE_SECONDS초 전) 프레임, "후"는 위반이
+                # 확정된 바로 이 프레임.
+                before_frame = frame_buffer[0][1] if frame_buffer else None
+                frame_ref_before = save_capture(cv2, before_frame, a.cam, "before")
+                frame_ref_after = save_capture(cv2, frame, a.cam, "after")
+                if gw is not None and (frame_ref_before or frame_ref_after):
+                    gw.update_captures(
+                        f"trk-{ev.track_id}", frame_ref_before, frame_ref_after,
+                        delay_sec=capture_delay_sec,
+                    )
             watching[d.track_id] = (d.bbox, state)
 
         # 보류 중인 위반 이벤트 중 번호판이 확정됐거나 대기 시간을 넘긴 건을 내보낸다.
