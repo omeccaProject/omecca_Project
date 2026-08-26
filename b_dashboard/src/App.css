@@ -5,24 +5,22 @@
 html, body, #root {
   height: 100%;
   margin: 0;
-  /* overflow:hidden이 없으면 안쪽(control-events-list 등)이 flex:1 + min-height:0으로
-     제대로 잡혀있어도, 넘치는 내용이 그냥 body 밖으로 삐져나가면서 body/뷰포트 자체가
-     스크롤돼버린다 - 지도가 스크롤에 밀려 화면 밖으로 사라져 보이던 버그의 진짜 원인이었다.
-     여기서 막아야 안쪽 컨테이너들의 overflow-y:auto가 실제로 동작(그 안에서만 스크롤)한다. */
   overflow: hidden;
 }
 
 body {
-  font-family: 'Inter', -apple-system, "Malgun Gothic", Pretendard, Arial, sans-serif;
+  /* [개선] 예전엔 영문 폰트(Inter)가 한글 폰트(Malgun Gothic/Pretendard)보다 먼저
+     와서, 브라우저가 우선순위를 판단하는 방식에 따라 한글이 살짝 어색한 서체로
+     보일 여지가 있었다. 한글 전용 폰트를 앞쪽에 명시적으로 추가해 어떤 환경에서도
+     한글은 항상 깔끔한 고딕체로, 영문/숫자는 Inter로 각각 안정적으로 렌더링되게 함.
+     새 폰트 파일을 추가로 내려받는 게 아니라 이미 시스템에 있는 폰트 이름 순서만
+     조정한 것이라 로딩 속도에는 영향 없음. */
+  font-family: 'Inter', 'Pretendard', "Apple SD Gothic Neo", "Malgun Gothic",
+    -apple-system, Arial, sans-serif;
 }
 
 .app-shell {
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  /* 예전엔 min-height: 100vh였는데, 이러면 오른쪽 이벤트 리스트가 길어질 때 이 컨테이너
-     자체가 100vh를 넘게 늘어나면서 body 전체가 스크롤됐다(지도가 스크롤에 밀려 화면 밖으로
-     나가 보이던 버그의 원인). #root(height:100%, flex column)의 자식으로서 정확히 화면
-     높이만큼만 차지하고, 넘치는 내용은 안쪽(control-events-list 등)에서만 스크롤되게
-     flex: 1 + min-height: 0으로 바꿨다. */
   flex: 1;
   min-height: 0;
   height: 100%;
@@ -193,7 +191,6 @@ body {
   cursor: default;
   opacity: .7;
 }
-/* 새로고침 버튼(⟳) 클릭 시 도는 스피너 - 눌러도 반응이 없어 보이던 문제 보완용 */
 .top-bar-icon-btn.spinning {
   animation: top-bar-icon-spin .6s linear infinite;
 }
@@ -215,24 +212,15 @@ body {
   background: var(--c-bg);
 }
 
-/* 좌측 메뉴 사이드바를 감싸는 래퍼. 접기/펼치기 버튼(sidebar-collapse-btn)이 이 래퍼의
-   오른쪽 가장자리에 절대위치로 붙어있어서, 안쪽 .control-sidebar의 너비가 0으로
-   줄어들어도(overflow:hidden) 버튼 자체는 잘리지 않고 항상 화면에 남아있는다. */
 .control-sidebar-wrap {
   position: relative;
   flex-shrink: 0;
-  /* flex 아이템의 min-height 기본값은 auto(내용 크기)라서, 명시하지 않으면 안쪽 내용이
-     길어질 때 이 래퍼 자체가 그만큼 늘어나버려 부모(.control-screen)의 높이 제한을
-     깨고, 결국 안쪽 overflow-y:auto가 있는 요소까지 스크롤이 안 걸리게 된다. */
   min-height: 0;
 }
 
-/* 오른쪽 "AI 관제 이벤트" 패널을 감싸는 래퍼. 왼쪽과 동일한 구조. */
 .control-events-wrap {
   position: relative;
   flex-shrink: 0;
-  /* 이벤트 리스트가 길어져도 이 래퍼가 부모 높이를 넘어서 늘어나지 않도록(그래야 안쪽
-     .control-events-list의 overflow-y:auto가 실제로 스크롤을 담당하게 된다) */
   min-height: 0;
   display: flex;
 }
@@ -272,8 +260,6 @@ body {
   border-radius: 8px 0 0 8px;
 }
 
-/* "추적 차량" 화면 전용 - 지도(+ 그 iframe 안의 실시간 CCTV 영상 패널, 김준호 map.js 소유이라
-   건드리지 않음) 아래에 "추적 차량 목록"을 가로 밴드로 붙인다. */
 .control-content-tracking {
   flex-direction: column;
 }
@@ -296,9 +282,6 @@ body {
   padding-top: 0;
   padding-bottom: 0;
 }
-/* flex 카드열 대신 grid로 바꿔서, 마지막 줄에 카드가 다 안 차더라도 각 카드가 남은 폭을
-   나눠 갖게(1fr) 해서 오른쪽에 빈 공간이 안 남게 한다(예전 flex:0 0 280px는 4개 들어가고
-   남는 폭만큼 항상 오른쪽이 비어 보였음). */
 .control-content-tracking .control-events-list {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
@@ -309,7 +292,6 @@ body {
 .control-content-tracking .control-event-card {
   min-width: 0;
 }
-/* 접기 버튼 - 가로 밴드 상단 중앙에, 예전보다 훨씬 넓고 잘 보이게(180x26, 배경 대비 강조) */
 .control-content-tracking .sidebar-collapse-btn-right {
   left: 50%;
   top: -26px;
@@ -322,9 +304,6 @@ body {
   border-radius: 0 0 12px 12px;
 }
 .control-content-tracking .sidebar-collapse-btn-right svg {
-  /* 방향(위/아래)은 컴포넌트 쪽(IconChevron rotateBase)에서 인라인 style로 이미 계산해서
-     내려주므로 여기서는 크기만 살짝 키운다 - transform을 여기 또 넣으면 인라인 style한테
-     항상 밀려서(우선순위 낮음) 적용도 안 되고 헷갈리기만 함. */
   width: 16px;
   height: 16px;
 }
@@ -333,9 +312,6 @@ body {
   border-color: var(--c-accent);
 }
 
-/* 대시보드/지도/CCTV/이벤트 4개 뷰가 번갈아 렌더링되는 사이드바 우측 영역.
-   대시보드 뷰일 때만 지도(flex:1) + 이벤트 카드열(380px)이 나란히 뜨고,
-   지도/CCTV/이벤트 전체화면 뷰일 때는 하나의 패널이 이 영역을 꽉 채운다. */
 .control-content {
   display: flex;
   flex: 1;
@@ -452,14 +428,10 @@ body {
   border-right: 1px solid var(--c-border);
 }
 
-/* "지도" 사이드바 항목을 눌렀을 때 — 이벤트 카드열 없이 GIS 지도가 화면을 꽉 채움 */
 .control-map-col-full {
   border-right: none;
 }
 
-/* CCTV/남은 이벤트/관심 대상 화면에서는 지도를 안 보여주지만, iframe은 계속 마운트해둔
-   채로 화면에서만 감춘다(display:none) — unmount하면 지도 안의 추적 진행 상태가 초기화됨.
-   display:none인 동안엔 flex 레이아웃에서 완전히 빠지므로 다른 전체화면 뷰의 너비에 영향 없음. */
 .control-map-col-hidden {
   display: none;
 }
@@ -489,12 +461,6 @@ body {
   z-index: 2;
   padding: 9px 16px;
   border-radius: 999px;
-  /* [버그 수정: "라이트 모드에서 글씨가 안 보임"] 이 버튼은 지도(일반지도/위성지도 등
-     밝은 타일도 있음) 위에 항상 떠 있는 오버레이라서, 배경은 테마와 무관하게 항상
-     어두운 반투명으로 고정한다 - 문제는 글자 색이 var(--c-text)를 따라가고 있었던
-     것이다. 라이트 모드에서 --c-text가 거의 검정(#12151a)이 되면서, 어두운 배경 위에
-     어두운 글씨가 겹쳐 거의 안 보였다. 배경이 테마와 무관하게 항상 어두우므로 글자색도
-     테마와 무관하게 항상 밝은 색으로 고정해야 두 모드 모두에서 또렷하게 보인다. */
   border: 1px solid rgba(255, 255, 255, .16);
   background: rgba(13, 15, 19, .78);
   backdrop-filter: blur(8px);
@@ -526,7 +492,6 @@ body {
   pointer-events: none;
 }
 
-/* CCTV 그리드뷰어 / 전체 이벤트 목록 전체화면 뷰 공용 래퍼 */
 .control-fullview {
   flex: 1;
   min-width: 0;
@@ -546,8 +511,6 @@ body {
   flex-shrink: 0;
 }
 
-/* "대시보드" 우측 패널 상단의 "이벤트"/"CCTV" 작은 탭. 대시보드 화면에서 CCTV 영상을 보려면
-   예전엔 "추적 차량"(다른 iframe)까지 나가야 했는데, 여기서 바로 전환되게 한다. */
 .control-panel-tabs {
   display: flex;
   gap: 6px;
@@ -647,9 +610,6 @@ body {
   border-color: color-mix(in srgb, var(--c-amber) 40%, var(--c-border));
 }
 
-/* "추적 차량 목록"에서 관심대상으로 등록만 되고 아직 실제 탐지 이벤트가 안 들어온 차량 -
-   지도에 보여줄 위치 정보가 없어 클릭해도 포커싱이 안 되므로, 클릭 가능한 카드들과
-   시각적으로 구분되게 커서/테두리를 다르게 준다. */
 .control-event-card.pending {
   cursor: default;
   border-style: dashed;
@@ -732,11 +692,6 @@ body {
   color: #f5f6f8;
   overflow: auto;
 
-  /* [버그 수정] .panel/.cctv-cell 등 재사용 컴포넌트들은 var(--c-border), var(--c-bg2) 같은
-     CSS 변수를 쓰는데, 그 변수들은 원래 .app-shell[data-theme="dark"]에만 정의돼 있었다.
-     kiosk 뷰(?view=cctv/events/map/monitor2/monitor3)는 .app-shell 밖에서 렌더링되므로
-     변수가 정의되지 않은 채로 쓰여서, CCTV 그리드 셀 등의 테두리/배경이 안 보이고 있었다.
-     kiosk 자체가 항상 다크 테마이므로 여기에도 같은 값을 정의해서 해결한다. */
   --c-bg: #08090b;
   --c-bg2: #0d0f13;
   --c-bg3: #14171d;
@@ -753,11 +708,6 @@ body {
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
-/* 3분할 모드 2/3번 모니터(?view=monitor2/3) - CCTV 그리드 뷰어가 화면 전체를 꽉 채우게 한다.
-   기본 .kiosk는 그냥 overflow:auto인 블록 컨테이너라서, CctvGrid 내부의 flex:1 체인
-   (.cctv-panel → .cctv-grid)이 기준 삼을 flex 부모가 없어 그리드가 콘텐츠 크기만큼만
-   작게 그려졌었다 - 여기서 .kiosk 자체를 flex 컨테이너로 만들어 그 체인이 실제로
-   100vh 전체를 채우도록 한다. */
 .kiosk-cctv-fill {
   display: flex;
   flex-direction: column;
@@ -896,22 +846,11 @@ body {
   color: #999999;
 }
 
-/* ==========================================================================
-   CCTV 그리드뷰어(CctvGrid) / 전체 이벤트 목록(EventList) / 공용 뱃지·프레임
-   기존엔 별도 모니터 팝업(?view=cctv|events)에서만 쓰여서 스타일이 없었음.
-   메인 대시보드 사이드바 네비게이션에서도 그대로 재사용하기 위해 다크/라이트
-   테마 변수(--c-*)에 맞춰 새로 추가.
-   ========================================================================== */
-
 .panel {
   display: flex;
   flex-direction: column;
   gap: 14px;
   min-height: 0;
-  /* "남은 이벤트"(EventList) 화면처럼 안에 flex:1 + overflow-y:auto로 자체 스크롤하는
-     리스트(.tier-list)를 담는 패널은, 이 flex:1이 없으면 패널 자체가 내용 크기만큼
-     늘어나버려서 안쪽 리스트가 스크롤될 기준 높이를 못 잡는다(부모인 .control-fullview
-     전체가 대신 늘어나며 스크롤이 안 걸리는 것처럼 보이던 원인). */
   flex: 1;
 }
 .panel h2 {
@@ -921,7 +860,6 @@ body {
   color: var(--c-text);
 }
 
-/* --- CctvGrid --- */
 .cctv-panel {
   flex: 1;
   min-height: 0;
@@ -1060,7 +998,6 @@ body {
   flex-shrink: 0;
 }
 
-/* 실시간 HLS 영상이 연결된 카메라(REAL_CAMERAS) 전용 셀 */
 .cctv-cell-live {
   opacity: 1;
 }
@@ -1098,14 +1035,6 @@ body {
   gap: 6px;
 }
 
-/* [바운딩박스 오버레이] LiveHlsVideoWithDetections.jsx의 wrapper. 그리드 셀/확대
-   모달/대시보드 패널 세 군데에서 쓰이는데 레이아웃 요구사항이 서로 달라서(그리드
-   셀은 flex:1로 footer와 공간 분배, 확대 모달/대시보드 패널은 aspect-ratio로 이미
-   크기가 정해진 박스를 그냥 채우기만 하면 됨), 실제 크기는 각 호출부가 넘긴
-   className(.cctv-cell-live-video / .cctv-zoom-live-video / .dash-cctv-video, 아래
-   참고)이 정하고, 여기서는 "안쪽 video/canvas가 이 박스를 무조건 꽉 채운다"만 강제한다.
-   (전에 이 wrapper에 flex:1을 하드코딩했다가 확대 모달이 무한정 늘어나 화면 중앙에
-   안 뜨고 잘려 보이는 버그가 났었다 - 컨텍스트별 크기 결정을 wrapper가 가로채면 안 됨.) */
 .cctv-live-detections-wrap {
   position: relative;
 }
@@ -1114,14 +1043,10 @@ body {
   inset: 0;
 }
 
-/* 그리드 셀 안에서는 .cctv-cell-live-wrap(세로 flex 컨테이너)의 형제인 footer
-   (카메라 이름 표시줄)와 공간을 나눠 가져야 하므로 flex:1 + min-height:0 필요. */
 .cctv-cell-live-video {
   flex: 1;
   min-height: 0;
 }
-/* 대시보드 CCTV 패널: .dash-cctv-video-wrap이 aspect-ratio로 이미 박스 크기를
-   정해두므로, 이 wrapper는 그 박스를 그냥 꽉 채우기만 하면 된다. */
 .dash-cctv-video {
   width: 100%;
   height: 100%;
@@ -1139,8 +1064,6 @@ body {
   border-color: var(--c-red);
 }
 
-/* 칸별 수동 카메라 배정 - "이 칸에 이 카메라를 고정"할 수 있는 작은 드롭다운.
-   칸의 상태(대기/실시간/상세보기)와 무관하게 항상 우상단에 떠 있는다. */
 .cctv-cell-pin {
   position: absolute;
   top: 6px;
@@ -1283,7 +1206,6 @@ body {
   white-space: nowrap;
 }
 
-/* --- EventList (위험도별 아코디언) --- */
 .tier-list {
   flex: 1;
   min-height: 0;
@@ -1297,13 +1219,6 @@ body {
   border-radius: 12px;
   overflow: hidden;
   background: var(--c-bg2);
-  /* .tier-list의 flex 아이템인 .tier에 overflow:hidden이 걸려있으면, flexbox 스펙상
-     "자동 min-height"가 콘텐츠 크기가 아니라 0으로 계산된다(overflow가 visible이 아닌
-     flex 아이템의 특수 규칙). 그러면 열려있는 티어(예: 고위험, 카드 12개)가 여유 공간이
-     부족할 때 자기 콘텐츠 크기 이하로 짓눌려 찌그러지면서 내용이 조용히 잘려나가고,
-     정작 .tier-list 자체는 넘치는 걸로 계산이 안 돼서 스크롤바도 안 생긴다 - 스크롤이
-     전혀 안 되던 진짜 원인. flex-shrink:0으로 각 티어가 원래 콘텐츠 크기를 그대로
-     유지하게 하면, .tier-list가 실제로 넘치게 되고 그때 overflow-y:auto가 정상 동작한다. */
   flex-shrink: 0;
 }
 .tier-3 { border-color: color-mix(in srgb, var(--c-red) 45%, var(--c-border)); }
@@ -1340,11 +1255,6 @@ body {
   flex-direction: column;
   gap: 8px;
   padding: 0 12px 12px;
-  /* 예전엔 열려있는 티어(예: 고위험 카드 12개)가 끝없이 늘어나고, 세 티어를 통틀어
-     .tier-list 하나가 통째로 스크롤됐다 - 그러면 "고위험" 리스트를 보다가 스크롤을
-     계속 내려야 "주의"/"저위험" 헤더가 나오는 구조였다. 이제는 열려있는 티어 하나의
-     카드 목록 자체가 이 높이(최대 420px, 화면이 작으면 화면의 55%) 안에서 자체
-     스크롤되고, 다른 티어 헤더들은 항상 그 아래 고정된 위치에 그대로 보인다. */
   max-height: min(420px, 55vh);
   overflow-y: auto;
 }
@@ -1398,7 +1308,6 @@ body {
   color: var(--c-muted);
 }
 
-/* --- TargetsPanel (관심 대상 등록/추적종료) --- */
 .targets-panel {
   flex: 1;
   min-height: 0;
@@ -1566,7 +1475,6 @@ body {
   color: var(--c-muted2);
 }
 
-/* --- VehicleAlertPopup (실시간 차량 이벤트 중앙 알림) --- */
 @keyframes vehicle-alert-pop-in {
   from { opacity: 0; transform: translateY(8px) scale(.97); }
   to { opacity: 1; transform: translateY(0) scale(1); }
@@ -1665,7 +1573,6 @@ body {
   filter: brightness(1.08);
 }
 
-/* --- EventDetailModal (이벤트 상세화면: 사건 전/후 이미지 · 위치 · PDF 리포트) --- */
 .event-detail-overlay {
   position: fixed;
   inset: 0;
@@ -1809,7 +1716,12 @@ body {
 }
 .cam-mgr-box {
   width: min(720px, 100%);
-  max-height: min(720px, 90vh);
+  /* [개선] 모달 전체 높이를 화면의 90%까지 더 넉넉하게 열어주고(예전 720px 고정 상한
+     제거), 등록 폼(.cam-mgr-form)은 내용 크기만큼만 차지하도록 flex-shrink:0을
+     명시한다. 체크박스가 2x2 그리드로 바뀌면서 폼이 세로로 조금 길어졌는데,
+     남은 공간을 전부 .cam-mgr-list(카메라 목록)가 가져가게 해서, 카메라를 5~6개
+     이상 등록해도 목록 스크롤 영역이 예전보다 좁아지지 않게 함. */
+  max-height: 90vh;
   background: var(--c-bg2);
   border: 1px solid var(--c-border2);
   border-radius: 16px;
@@ -1847,6 +1759,9 @@ body {
   flex-wrap: wrap;
   align-items: flex-end;
   gap: 10px;
+  /* 등록 폼은 내용 크기만큼만 차지하고 줄어들지 않게 고정 - 아래 .cam-mgr-list가
+     min-height:0 + flex:1로 남는 공간을 전부 가져가서 스크롤 영역이 된다. */
+  flex-shrink: 0;
 }
 .cam-mgr-form label {
   display: flex;
@@ -1859,10 +1774,23 @@ body {
   flex: 1;
   min-width: 140px;
 }
+/* [교체] 체크박스 4개 전용 wrapper - 2x2 그리드로 항상 깔끔하게 정렬. 예전엔
+   체크박스가 다른 입력창들과 같은 flex 줄에 섞여있어 개수가 3->4개로 늘어나며
+   줄바꿈 위치가 어긋나 뒤죽박죽으로 보였다. 전용 줄(width:100%)로 분리한다. */
+.cam-mgr-checkbox-group {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(160px, 1fr));
+  gap: 8px 16px;
+  padding-top: 10px;
+  margin-top: 2px;
+  border-top: 1px solid var(--c-border);
+}
 .cam-mgr-form label.cam-mgr-checkbox {
   flex-direction: row;
   align-items: center;
   gap: 6px;
+  font-size: 12.5px;
 }
 .cam-mgr-form label.cam-mgr-checkbox input {
   width: auto;
@@ -1892,14 +1820,12 @@ body {
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
+  margin-left: auto;
 }
 .cam-mgr-submit-btn:disabled {
   opacity: .6;
   cursor: default;
 }
-/* UTIC 카메라 사전 등록 카탈로그 자동완성 - cam_id/이름 입력창을 감싸서 그 아래에
-   드롭다운을 절대좌표로 띄운다. flex 속성은 기존에 label 두 개가 .cam-mgr-form의
-   직접 자식이었을 때와 레이아웃이 그대로 보이도록 동일하게 맞춘 것. */
 .cam-mgr-autocomplete-wrap {
   position: relative;
   display: flex;
@@ -2016,8 +1942,13 @@ body {
 .cam-mgr-error {
   color: var(--c-red);
 }
+/* [교체] 목록 한 줄 - 예전엔 이름/태그와 버튼 5개가 전부 한 줄에서 flex로 공간을
+   나눠 갖는 구조였다. 태그 최대 4개 + 버튼 5개로 늘어나면서 min-width:0인 제목
+   영역이 극단적으로 쥐어짜여 글자가 세로로 깨지는 문제가 있었다. flex-wrap을
+   켜고 버튼들을 별도 줄(.cam-mgr-row-actions)로 분리해 근본적으로 해결한다. */
 .cam-mgr-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   padding: 10px 12px;
@@ -2039,17 +1970,26 @@ body {
   color: var(--c-muted2);
 }
 .cam-mgr-live-badge.on {
+  /* [개선] color-mix()는 2023년 이후 브라우저에서만 지원됨. 구형 브라우저는 이 줄을
+     그냥 무시하므로, 먼저 고정 색상(fallback)을 넣어두면 지원 안 되는 환경에서도
+     최소한 배경이 완전히 비거나 이상해 보이지 않고 이 색으로 채워진다. 최신
+     브라우저에서는 바로 아래 color-mix 값으로 덮어써져서 지금과 동일하게 보임. */
+  background: rgba(220, 38, 38, .16);
   background: color-mix(in srgb, var(--c-red) 16%, transparent);
   color: var(--c-red);
 }
 .cam-mgr-row-main {
-  flex: 1;
-  min-width: 0;
+  flex: 1 1 240px;
+  min-width: 200px;
 }
 .cam-mgr-row-title {
   font-size: 13.5px;
   color: var(--c-text);
   font-weight: 600;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  row-gap: 4px;
 }
 .cam-mgr-row-camid {
   margin-left: 6px;
@@ -2058,19 +1998,40 @@ body {
   font-family: var(--font-mono);
   font-weight: 400;
 }
-/* CCTV 이름 옆 "(낙하물)" 등 감지 태그. CameraManagerModal 목록/CctvGrid 셀·확대화면에서 공용. */
 .cam-tag-debris {
   margin-left: 6px;
   font-size: 11.5px;
   font-weight: 600;
   color: var(--c-amber);
+  white-space: nowrap;
+}
+/* [신규] 수배자/흉기 태그 전용 - 다른 감지 태그(낙하물/불법유턴/신호위반)는 전부
+   같은 호박색이라 바쁜 상황에서 "이 카메라가 정확히 뭘 감지 중인지" 빠르게
+   구분이 안 됐다. 위험도가 가장 높은 수배자/흉기만 빨간 계열로 눈에 띄게 해서
+   관제요원이 한눈에 우선순위를 판단할 수 있게 함. */
+.cam-tag-person-risk {
+  margin-left: 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--c-red);
+  white-space: nowrap;
 }
 .cam-mgr-row-sub {
   font-size: 11.5px;
   color: var(--c-muted2);
 }
-.cam-mgr-toggle-btn,
-.cam-mgr-delete-btn {
+/* [신규] 토글 버튼 5개 + 삭제 버튼 전용 줄. flex-basis:100%로 강제 줄바꿈시켜서
+   항상 카메라 이름 아래 두 번째 줄에 나오게 한다 - row-main 압축 문제의 근본 해결책. */
+.cam-mgr-row-actions {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 8px;
+  margin-top: 4px;
+  border-top: 1px solid var(--c-border);
+}
+.cam-mgr-toggle-btn {
   flex-shrink: 0;
   padding: 7px 12px;
   border-radius: 8px;
@@ -2084,9 +2045,26 @@ body {
   border-color: var(--c-accent);
   color: var(--c-text);
 }
+/* [개선] 삭제 버튼을 감싸는 전용 구역. 예전엔 다른 토글 버튼들과 나란히 붙어있어서
+   바쁜 상황에서 실수로 잘못 누를 위험이 있었다. 왼쪽에 구분선(border-left)과
+   여유 간격(padding-left)을 둬서 시각적으로 "여기부터는 별개의, 되돌릴 수 없는
+   동작"이라는 걸 한눈에 알 수 있게 함. */
+.cam-mgr-danger-zone {
+  margin-left: auto;
+  padding-left: 14px;
+  border-left: 1px solid var(--c-border2);
+  display: flex;
+}
 .cam-mgr-delete-btn {
-  border-color: var(--c-red);
+  flex-shrink: 0;
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--c-red);
+  background: transparent;
   color: var(--c-red);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
 }
 .cam-mgr-delete-btn:hover {
   background: rgba(220, 38, 38, .1);
