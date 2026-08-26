@@ -28,7 +28,7 @@ def test_pipeline_contracts():
     H, W = frame.shape[:2]
 
     # 2. 수배자 얼굴 검증
-    face_detector = FaceDetector(tolerance=0.55)
+    face_detector = FaceDetector(tolerance=0.48)
     faces = face_detector.detect_faces_with_person_crop(frame)
     print(f"[TEST 1] face_detect.py 검증 (실제 검출된 수배자: {len(faces)}명)")
     assert len(faces) > 0, "[FAIL] 수배자 검출 수 0"
