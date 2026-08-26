@@ -59,6 +59,13 @@ sys.path.insert(0, str(BASE))
 PROJECT_ROOT = BASE.parent
 CAPTURES_DIR = PROJECT_ROOT / "b_dashboard" / "public" / "captures"
 BEFORE_CAPTURE_SECONDS = 2.0
+# [신규: 사용자 요청 - "차 뒷바퀴가 정지선을 넘어서 한 번 찍고, 다 넘고 2초 뒤 한 번
+# 더 찍어달라"] 신호위반(RED_LIGHT)은 유턴과 캡처 타이밍 개념이 다르다 - 유턴은
+# "위반 전 상태"를 보여주는 게 중요해서 판정 이전 프레임을 쓰지만, 신호위반은
+# "정지선을 넘는 그 순간"이 이미 위반 증거이므로 그걸 첫 캡처로 쓰고, 두 번째
+# 캡처는 그로부터 AFTER_CAPTURE_SIGNAL_SECONDS(영상 시각 기준)초 뒤 - 차량이
+# 교차로를 완전히 통과한 모습을 보여준다.
+AFTER_CAPTURE_SIGNAL_SECONDS = 2.0
 
 
 def save_capture(cv2, frame, cam_id: str, tag: str) -> str | None:
@@ -298,10 +305,16 @@ def main() -> None:
 
     if a.mode == "uturn":
         watched_types = (ViolationType.ILLEGAL_UTURN,)
+        # [버그 수정] 반대쪽(--mode signal) 프로세스가 담당하는 유형은 게이트웨이로
+        # 보내지 않는다 - 안 그러면 중앙선+정지선이 둘 다 있는 카메라에서 두 프로세스가
+        # 같은 위반을 각자 감지해 이벤트가 중복으로 뜬다 (plate_hold.py 주석 참고).
+        excluded_types = {ViolationType.RED_LIGHT.value}
     elif a.mode == "signal":
         watched_types = (ViolationType.RED_LIGHT,)
+        excluded_types = {ViolationType.ILLEGAL_UTURN.value}
     else:
         watched_types = (ViolationType.ILLEGAL_UTURN, ViolationType.RED_LIGHT)
+        excluded_types = set()
 
     # 1인칭 게임 신호위반 데모 전용 이동 ROI 설정
     moving_roi = None
@@ -420,11 +433,11 @@ def main() -> None:
 
             forwarder = PlateHoldForwarder(
                 gateway=gw, lpr=engine.lpr, matcher=engine.matcher,
-                hold_sec=a.plate_hold,
+                hold_sec=a.plate_hold, excluded_types=frozenset(excluded_types),
             ).attach()
             print(f"게이트웨이 전송: {gw.url}  (번호판 확정 대기 {a.plate_hold:g}초)")
         else:
-            gw.subscribe_to_bus()
+            gw.subscribe_to_bus(excluded_types=excluded_types)
             print(f"게이트웨이 전송: {gw.url}")
 
     # --- 차량 검출 ---------------------------------------------------
@@ -461,6 +474,9 @@ def main() -> None:
     # 위반이 잡히는 순간 frame_buffer[0]이 "그 몇 초 전" 프레임이 된다 - a_core/
     # e_tracking의 first_frame/frame_buffer와 동일한 역할.
     frame_buffer: deque = deque()
+    # [신규] 신호위반 전용 - "정지선 넘는 순간" 캡처는 이미 찍어서 PATCH까지 보냈고,
+    # "그로부터 2초 뒤" 캡처만 기다리는 중인 건들. {track_id, target_ts} 형태.
+    pending_signal_after: list[dict] = []
     # 위반 잡힌 순간 곧바로 PATCH를 보내면, --plate-hold로 이벤트 POST 자체가
     # 뒤로 미뤄져 있을 때 캡처 PATCH가 이벤트 생성보다 먼저 게이트웨이에 도착해
     # "그 trackId 이벤트가 아직 없음"으로 조용히 무시될 수 있다. 이벤트가 실제로
@@ -519,18 +535,54 @@ def main() -> None:
                       f"track=#{ev.track_id}  "
                       f"{ev.subtype or ev.zone_id}  {ev.detail}")
 
-                # [신규] 사건 전/후 캡처 - "전"은 frame_buffer에 남아있는 가장 오래된
-                # (=이 순간 기준 BEFORE_CAPTURE_SECONDS초 전) 프레임, "후"는 위반이
-                # 확정된 바로 이 프레임.
-                before_frame = frame_buffer[0][1] if frame_buffer else None
-                frame_ref_before = save_capture(cv2, before_frame, a.cam, "before")
-                frame_ref_after = save_capture(cv2, frame, a.cam, "after")
-                if gw is not None and (frame_ref_before or frame_ref_after):
-                    gw.update_captures(
-                        f"trk-{ev.track_id}", frame_ref_before, frame_ref_after,
-                        delay_sec=capture_delay_sec,
-                    )
+                if ev.violation_type == ViolationType.RED_LIGHT:
+                    # [신규] 신호위반 - "뒷바퀴가 정지선을 넘어서" 확정된 이 순간을
+                    # 첫 캡처("전")로 쓰고, "후"는 지금 당장이 아니라 AFTER_CAPTURE_
+                    # SIGNAL_SECONDS초 뒤(영상 시각 기준, 교차로를 다 통과한 모습)로
+                    # 미룬다 - 그래서 여기선 "전"만 즉시 캡처/전송하고, "후"는 아래
+                    # pending_signal_after 큐에 넣어 이후 프레임에서 채운다.
+                    frame_ref_before = save_capture(cv2, frame, a.cam, "signal-before")
+                    if gw is not None and frame_ref_before:
+                        gw.update_captures(
+                            f"trk-{ev.cam_id}-{ev.track_id}", frame_ref_before, None,
+                            delay_sec=capture_delay_sec,
+                        )
+                    pending_signal_after.append({
+                        "track_id": ev.track_id,
+                        "cam_id": ev.cam_id,
+                        "target_ts": ts + AFTER_CAPTURE_SIGNAL_SECONDS,
+                    })
+                else:
+                    # [기존] 유턴 - "전"은 frame_buffer에 남아있는 가장 오래된
+                    # (=이 순간 기준 BEFORE_CAPTURE_SECONDS초 전) 프레임, "후"는 위반이
+                    # 확정된 바로 이 프레임.
+                    before_frame = frame_buffer[0][1] if frame_buffer else None
+                    frame_ref_before = save_capture(cv2, before_frame, a.cam, "before")
+                    frame_ref_after = save_capture(cv2, frame, a.cam, "after")
+                    if gw is not None and (frame_ref_before or frame_ref_after):
+                        gw.update_captures(
+                            f"trk-{ev.cam_id}-{ev.track_id}", frame_ref_before, frame_ref_after,
+                            delay_sec=capture_delay_sec,
+                        )
             watching[d.track_id] = (d.bbox, state)
+
+        # [신규] 신호위반 "2초 뒤" 캡처 - 목표 시각(target_ts)에 도달한 건부터
+        # 지금 프레임을 "후" 캡처로 저장해서 PATCH로 채워 넣는다. frame_ref_before를
+        # None으로 보내므로(EventService가 null 필드는 덮어쓰지 않음) 이미 저장된
+        # "전" 캡처는 그대로 유지된다.
+        if pending_signal_after:
+            still_pending = []
+            for item in pending_signal_after:
+                if ts >= item["target_ts"]:
+                    frame_ref_after = save_capture(cv2, frame, a.cam, "signal-after")
+                    if gw is not None and frame_ref_after:
+                        gw.update_captures(
+                            f"trk-{item['cam_id']}-{item['track_id']}", None, frame_ref_after,
+                            delay_sec=capture_delay_sec,
+                        )
+                else:
+                    still_pending.append(item)
+            pending_signal_after = still_pending
 
         # 보류 중인 위반 이벤트 중 번호판이 확정됐거나 대기 시간을 넘긴 건을 내보낸다.
         if forwarder is not None:
@@ -554,6 +606,19 @@ def main() -> None:
                   f"({processed / max(1e-6, time.time() - t_start):.1f} fps 처리)",
                   end="", flush=True)
 
+    # [신규] 영상이 끝날 때까지 target_ts(정지선 통과 +2초)에 못 미친 신호위반
+    # 건이 남아있으면 - 있는 그대로 마지막 프레임을 "후" 캡처로 써서 보낸다
+    # (forwarder.flush()와 같은 취지: 캡처가 아예 안 붙은 채로 끝나는 일은 없게 한다).
+    if pending_signal_after:
+        for item in pending_signal_after:
+            frame_ref_after = save_capture(cv2, frame, a.cam, "signal-after")
+            if gw is not None and frame_ref_after:
+                gw.update_captures(
+                    f"trk-{item['cam_id']}-{item['track_id']}", None, frame_ref_after,
+                    delay_sec=capture_delay_sec,
+                )
+        pending_signal_after = []
+
     if api_signal is not None:
         api_signal.stop()
         print(f"\n신호 API 폴링 {api_signal.stats['polls']}회 "
@@ -564,6 +629,11 @@ def main() -> None:
         forwarder.detach()
         print(f"번호판 대기 결과: {forwarder.stats}")
     if gw is not None:
+        # update_captures()가 delay_sec만큼 지연 후 PATCH를 보내는 백그라운드 스레드를
+        # daemon으로 띄우기 때문에, 여기서 join하지 않고 바로 stop()/프로세스 종료로 넘어가면
+        # 아직 sleep 중이던 캡처 전송 스레드가 통째로 죽어 "이미지 없음"이 발생한다.
+        # 반드시 stop()보다 먼저 호출해서 지연 전송이 끝날 때까지 기다려야 한다.
+        gw.join_captures(timeout=capture_delay_sec + 3.0)
         gw.stop(drain=True)
         print(f"게이트웨이 전송 결과: {gw.stats}")
     if writer is not None:

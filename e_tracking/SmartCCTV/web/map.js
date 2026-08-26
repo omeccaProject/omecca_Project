@@ -3575,6 +3575,38 @@ document.addEventListener("DOMContentLoaded", () => {
     window.forzaDemoTimeline = forzaDemoTimeline;
   }
 
+  // [수정] "사건 발생 전/후" 캡쳐가 통째로 새까맣게 저장되는 문제 대응.
+  // 원인은 두 가지가 겹쳐 있었다:
+  //  1) CORS - 크로스 오리진 스트림(UTIC HLS 등)을 CORS 없이 그리면 canvas가
+  //     "오염(tainted)"돼 toDataURL()이 예외를 던진다 - 이 경로는 이미 catch에서
+  //     null을 돌려주고 uploadCaptures()가 (before/after 둘 다 없으면) 건너뛰므로
+  //     원래도 안전했다.
+  //  2) 타이밍 - 'loadeddata' 이벤트는 "첫 프레임 데이터를 확보했다"는 뜻일 뿐,
+  //     실제로 그 프레임이 화면에 합성(paint)됐다는 보장이 없다. 그 틈에
+  //     drawImage()를 하면 예외 없이 "성공"하지만 캔버스 내용 자체가 새까맣다 -
+  //     이게 실제로 검은 JPEG가 저장된 진짜 원인이었다(예외가 안 나서 기존 코드로는
+  //     못 걸러냈음). 그려진 내용이 사실상 새까만지 픽셀을 직접 샘플링해서 걸러낸다.
+  function isBlankCanvas(canvas, ctx) {
+    try {
+      const w = canvas.width, h = canvas.height;
+      const sampleW = Math.min(w, 64), sampleH = Math.min(h, 64);
+      const sx = Math.max(0, (w - sampleW) / 2 | 0);
+      const sy = Math.max(0, (h - sampleH) / 2 | 0);
+      const { data } = ctx.getImageData(sx, sy, sampleW, sampleH);
+      let sum = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        sum += data[i] + data[i + 1] + data[i + 2];
+      }
+      const avg = sum / (data.length / 4) / 3;   // 0(검정) ~ 255(흰색)
+      return avg < 2;   // 사실상 완전히 검은 프레임만 걸러낸다(오탐 방지로 임계값을 낮게 잡음)
+    } catch (err) {
+      // getImageData 자체가 막히는 경우(오염된 캔버스) - 이미 위 CORS 케이스에서
+      // toDataURL()이 먼저 예외를 던지므로 이 분기까지 오지 않는 게 정상이지만,
+      // 혹시 몰라 방어적으로 "검은 프레임 아님"으로 처리해 기존 동작을 유지한다.
+      return false;
+    }
+  }
+
   function captureVideoFrame(videoEl) {
     if (!videoEl || videoEl.readyState < 2 || !videoEl.videoWidth || !videoEl.videoHeight) return null;
     const canvas = document.createElement("canvas");
@@ -3582,6 +3614,11 @@ document.addEventListener("DOMContentLoaded", () => {
     canvas.height = videoEl.videoHeight;
     const ctx = canvas.getContext("2d");
     ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+
+    if (isBlankCanvas(canvas, ctx)) {
+      console.warn("[CAPTURE] 새까만 프레임이 캡쳐돼 저장을 건너뜁니다(영상이 아직 실제로 그려지기 전일 가능성).");
+      return null;
+    }
 
     try {
       const log = videoManager.trackLogCache;
