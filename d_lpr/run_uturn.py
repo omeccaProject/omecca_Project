@@ -258,6 +258,89 @@ def update_demo_moving_roi(cz, ts, spec):
         line.p1 = lerp_point(motion["p1_start"], motion["p1_end"], ratio)
         line.p2 = lerp_point(motion["p2_start"], motion["p2_end"], ratio)
 
+# 새로 추가 (main() 함수 정의 바로 위)
+def run_journey_follow(a) -> None:
+    """--journey-role follow 전용 경로. ROI(config_zones.json)도, ViolationEngine도
+    거치지 않는다 - 이 카메라는 실제 위반을 판정하지 않고, 영상에 차량이 처음
+    나타나는 순간 이전 카메라(--journey-peer-cam)의 확정 번호판을 그대로 이어받아
+    /api/cctv/journey 로 Journey 연장만 보낸다."""
+    if not a.video:
+        sys.exit("--journey-role follow 는 --video 가 필요합니다.")
+    if not a.gateway:
+        sys.exit("--journey-role follow 는 --gateway 가 필요합니다 "
+                 "(이전 카메라 번호판 조회 + Journey 전송).")
+
+    # 변경 후
+    from app.core.journey import (
+        fetch_latest_plate, send_journey_update, CAMERA_LOCATIONS, build_route_points,
+    )
+
+    if a.cam not in CAMERA_LOCATIONS:
+        sys.exit(f"'{a.cam}' 의 위경도가 app/core/journey.py CAMERA_LOCATIONS 에 없습니다. "
+                 f"먼저 한 줄 추가하세요.")
+
+    plate = fetch_latest_plate(a.gateway, a.journey_peer_cam) if a.journey_peer_cam else ""
+    if plate:
+        print(f"Journey: {a.journey_peer_cam}에서 확정된 번호판 '{plate}'을 이어받습니다.")
+    else:
+        print(f"Journey: {a.journey_peer_cam}의 확정 번호판을 아직 못 찾았습니다 "
+              f"(먼저 그 카메라를 --journey-role start 로 돌려 위반을 확정시켜 두세요). "
+              f"번호판 없이 이어집니다.")
+
+    try:
+        import cv2
+    except ImportError:
+        sys.exit("OpenCV 가 필요합니다:  pip install opencv-python")
+    try:
+        from app.violation.vehicle_track import VehicleSource
+    except ImportError:
+        sys.exit("ultralytics 가 필요합니다:  pip install ultralytics")
+
+    src = VehicleSource(a.video, cam_id=a.cam, weights=a.weights, conf=a.conf,
+                        stride=a.stride, imgsz=a.imgsz)
+
+    sent = False
+    processed = 0
+    t_start = time.time()
+    for frame_no, ts, frame, dets in src.frames():
+        processed += 1
+
+        # 변경 후
+        if not sent and dets:
+            peer_loc = CAMERA_LOCATIONS.get(a.journey_peer_cam)
+            here_loc = CAMERA_LOCATIONS[a.cam]
+            if peer_loc:
+                # 직선이 아니라 실제 도로를 따라가는 경로로 이어준다(OSRM).
+                points = build_route_points(peer_loc, here_loc)
+            else:
+                points = [{"lat": here_loc["lat"], "lng": here_loc["lng"]}]
+            send_journey_update(a.gateway, True, a.cam, points)
+            print(f"\n  ★ Journey 연장  t={ts:6.2f}s  {a.journey_peer_cam} → {a.cam}"
+                  + (f"  번호판={plate}" if plate else ""))
+            sent = True
+            if not a.show:
+                break  # --show 없으면 트리거 즉시 종료 (영상 끝까지 돌 필요 없음)
+
+        if a.show:
+            vis = frame.copy()
+            for d in dets:
+                x1, y1, x2, y2 = d.bbox.to_xyxy()
+                cv2.rectangle(vis, (x1, y1), (x2, y2), (0, 200, 0), 2)
+            cv2.imshow("journey-follow", cv2.resize(vis, None, fx=0.6, fy=0.6))
+            if cv2.waitKey(1) & 0xFF == ord("q"):
+                break
+
+        if processed % 30 == 0:
+            print(f"\r  {frame_no+1}/{src.total or '?'} 프레임  "
+                  f"({processed / max(1e-6, time.time() - t_start):.1f} fps 처리)",
+                  end="", flush=True)
+
+    if a.show:
+        cv2.destroyAllWindows()
+    if not sent:
+        print("\n  ⚠ 영상 전체에서 차량이 한 번도 감지되지 않아 Journey를 보내지 못했습니다.")
+    print(f"\n처리 프레임 {processed}")
+
 
 # --------------------------------------------------------------------------
 def main() -> None:
@@ -292,8 +375,18 @@ def main() -> None:
     ap.add_argument("--plate-hold", type=float, default=2.0, metavar="SEC",
                     help="위반이 잡혔는데 번호판이 아직 확정 전이면 이만큼(영상 시각 기준 초) "
                          "기다렸다 전송한다. 0 이면 기다리지 않고 예전처럼 즉시 보낸다")
+    # 변경 후
     ap.add_argument("--mode", choices=["all", "uturn", "signal"], default="all",
                     help="감지 모드 (all: 불법유턴+신호위반, uturn: 불법유턴만, signal: 신호위반만)")
+    ap.add_argument("--journey-role", choices=["", "start", "follow"], default="",
+                    help="GIS 이동 경로(Journey) 데모용. 'start': 이 카메라에서 위반이 잡히면 "
+                         "여정을 시작한다(예: 한강중학교/L010321). 'follow': 이전 카메라"
+                         "(--journey-peer-cam)에서 확정된 번호판을 그대로 이어받아 이 카메라"
+                         "에서도 같은 차량으로 잡은 것처럼 여정을 연장한다(예: 녹사평역/L010062).")
+    ap.add_argument("--journey-peer-cam", default="", metavar="CAM_ID",
+                    help="--journey-role follow 일 때, 바로 이전 지점의 cam_id. 그 카메라의 "
+                         "가장 최근 확정 번호판을 자동으로 가져와 이 카메라 LPR 결과 대신 "
+                         "강제로 사용한다.")
     ap.add_argument(
         "--demo-moving-roi",
         default="",
@@ -301,7 +394,14 @@ def main() -> None:
         help="1인칭 게임 신호위반 데모 전용 이동 ROI 설정 파일. "
             "정지선/진출선에만 적용하며 불법유턴 ROI에는 적용하지 않음.",
     )
+    # 변경 후
     a = ap.parse_args()
+
+    if a.journey_role == "follow":
+        # 이 카메라는 ROI도 ViolationEngine도 필요 없다 - 차량이 나타나는 순간
+        # 이전 카메라의 확정 번호판을 그대로 이어받아 Journey만 보낸다.
+        run_journey_follow(a)
+        return
 
     if a.mode == "uturn":
         watched_types = (ViolationType.ILLEGAL_UTURN,)
@@ -421,19 +521,40 @@ def main() -> None:
     # --- 엔진 --------------------------------------------------------
     engine = ViolationEngine(zones=zones, signal_provider=signal, lpr=lpr_pipeline)
 
+    # 변경 후
     gw = None
     forwarder = None
     if a.gateway:
         gw = GatewayClient(base_url=a.gateway).start()
-        if a.lpr and a.plate_hold > 0:
-            # 위반은 라인을 넘는 "그 순간" 확정되고, 번호판은 여러 프레임을 모아
-            # 확정된다. 즉시 보내면 이벤트 리포트의 "차량 번호판"이 빈 채로 굳는다.
-            # subscribe_to_bus() 와 둘 다 붙이면 같은 이벤트가 두 번 나가므로 하나만.
+
+        force_plate = ""
+        if a.journey_role == "follow" and a.journey_peer_cam:
+            from app.core.journey import fetch_latest_plate  # noqa: E402
+
+            force_plate = fetch_latest_plate(a.gateway, a.journey_peer_cam)
+            if force_plate:
+                print(f"Journey: {a.journey_peer_cam}에서 확정된 번호판 '{force_plate}'을 "
+                      f"이어받아 이 카메라에서 강제로 사용합니다.")
+            else:
+                print(f"Journey: {a.journey_peer_cam}의 확정 번호판을 아직 못 찾았습니다 "
+                      f"(먼저 그 카메라를 --journey-role start 로 돌려 위반을 확정시켜 두세요). "
+                      f"이번 실행에서는 번호판 없이 이어집니다.")
+
+        # 위반은 라인을 넘는 "그 순간" 확정되고, 번호판은 여러 프레임을 모아
+        # 확정된다. 즉시 보내면 이벤트 리포트의 "차량 번호판"이 빈 채로 굳는다.
+        # subscribe_to_bus() 와 둘 다 붙이면 같은 이벤트가 두 번 나가므로 하나만.
+        # journey_role이 설정된 경우, --lpr 없이도 force_plate만으로 이어지도록
+        # forwarder를 만든다(신호위반2 카메라는 자체 LPR 없이도 동작해야 하므로).
+        if (a.lpr and a.plate_hold > 0) or a.journey_role:
             from app.core.plate_hold import PlateHoldForwarder  # noqa: E402
 
             forwarder = PlateHoldForwarder(
-                gateway=gw, lpr=engine.lpr, matcher=engine.matcher,
+                gateway=gw, lpr=engine.lpr if a.lpr else None, matcher=engine.matcher,
                 hold_sec=a.plate_hold, excluded_types=frozenset(excluded_types),
+                gateway_origin=a.gateway,
+                journey_role=a.journey_role,
+                journey_peer_cam_id=a.journey_peer_cam,
+                force_plate=force_plate,
             ).attach()
             print(f"게이트웨이 전송: {gw.url}  (번호판 확정 대기 {a.plate_hold:g}초)")
         else:

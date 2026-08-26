@@ -35,6 +35,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
+from . import journey
 from .bus import TOPIC_VIOLATION, bus
 from .gateway import GatewayClient, payload_from_bus
 
@@ -66,6 +67,7 @@ class PlateHoldForwarder:
     반드시 루프 안과 종료 직전에 한 번씩 부른다.
     """
 
+    # 변경 후
     gateway: GatewayClient
     lpr: Any                       # LPRPipeline (confirmed_plate/confidence_of 만 쓴다)
     matcher: Any = None            # VehicleMatcher (선택) — 뒤늦게 붙은 번호판의 DB 대조용
@@ -84,6 +86,12 @@ class PlateHoldForwarder:
     # 유형)의 값을 넘겨주면, 그 유형은 여기서 조용히 무시한다. high_risk_vehicle처럼
     # 어느 --mode에도 안 걸리는 유형은 그대로 다 통과시킨다(빈 집합이면 필터 없음).
     excluded_types: frozenset = field(default_factory=frozenset)
+
+    # --- GIS 이동 경로(Journey) 데모 전용 (선택) --------------------------------
+    gateway_origin: str = ""       # journey POST용 base URL (예: http://localhost:8080)
+    journey_role: str = ""         # "" | "start" | "follow"
+    journey_peer_cam_id: str = ""  # journey_role="follow"일 때, 이전 카메라의 cam_id
+    force_plate: str = ""          # 설정돼 있으면 LPR 결과 대신 이 번호판으로 강제 고정
 
     _pending: list[_Pending] = field(default_factory=list, init=False)
     _attached: bool = field(default=False, init=False)
@@ -129,6 +137,14 @@ class PlateHoldForwarder:
         cam_id = str(payload.get("cam_id") or "")
         if (cam_id, track_id) in self._sent_tracks:
             return
+
+        # 변경 후
+        if not payload.get("plate_no") and self.force_plate:
+            # journey_role="follow"용: 이 카메라 LPR 결과를 기다리지 않고, 이전 카메라
+            # (journey_peer_cam_id)에서 이미 확정된 번호판으로 강제 고정한다. 두 영상이
+            # 실제로는 다른 차량을 찍었더라도(데모 특성상) Journey 상에서는 같은 차량으로
+            # 대시보드/지도에 표시하기 위함이다.
+            payload["plate_no"] = self.force_plate
 
         if payload.get("plate_no"):
             # 이미 번호판이 붙어 있다 — 기다릴 이유가 없다.
@@ -235,6 +251,7 @@ class PlateHoldForwarder:
         if conf > 0:
             payload["plate_confidence"] = round(conf, 4)
 
+    # 변경 후
     def _send(self, payload: dict[str, Any]) -> None:
         try:
             track_id = _as_int(payload.get("track_id"))
@@ -245,8 +262,32 @@ class PlateHoldForwarder:
             sent = self.gateway.enqueue(payload_from_bus(payload))
             if sent:
                 self._sent_tracks.add((cam_id, track_id))
+                self._post_journey(cam_id)
         except Exception:
             log.exception("게이트웨이 전송 큐 적재 실패")
+
+    # 변경 후
+    def _post_journey(self, cam_id: str) -> None:
+        """이 이벤트가 GIS 이동 경로(Journey) 데모용으로 설정돼 있으면
+        /api/cctv/journey에도 함께 알려서 대시보드 지도에 polyline이 그려지게 한다."""
+        if not self.journey_role or not self.gateway_origin:
+            return
+        if self.journey_role == "start":
+            here = journey.CAMERA_LOCATIONS.get(cam_id)
+            if not here:
+                return
+            points = [{"lat": here["lat"], "lng": here["lng"]}]
+        elif self.journey_role == "follow":
+            peer = journey.CAMERA_LOCATIONS.get(self.journey_peer_cam_id)
+            here = journey.CAMERA_LOCATIONS.get(cam_id)
+            if not peer or not here:
+                return
+            # 직선이 아니라 실제 도로를 따라가는 경로로 이어준다(OSRM).
+            points = journey.build_route_points(peer, here)
+        else:
+            return
+        if points:
+            journey.send_journey_update(self.gateway_origin, True, cam_id, points)
 
 
 # --------------------------------------------------------------------------

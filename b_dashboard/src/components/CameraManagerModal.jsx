@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { fetchCameras, createCamera, updateCamera, deleteCamera, fetchCameraCatalog, uploadCameraVideo } from '../api'
 
-const EMPTY_FORM = { camId: '', name: '', streamUrl: '', streamFormat: 'HLS', debrisDetectionEnabled: false, uturnDetectionEnabled: false, signalDetectionEnabled: false }
+const EMPTY_FORM = { camId: '', name: '', streamUrl: '', streamFormat: 'HLS', debrisDetectionEnabled: false, uturnDetectionEnabled: false, signalDetectionEnabled: false, personRiskDetectionEnabled: false }
 
 // 카메라 마스터 데이터 관리 모달. CctvGrid 헤더의 "카메라 관리" 버튼으로 연다.
 // 실제 설치된 카메라 목록(cam_id/이름/실시간 영상 URL)을 여기서 등록·수정·삭제한다 —
@@ -50,6 +50,17 @@ export default function CameraManagerModal({ onClose, onChanged }) {
   useEffect(() => () => {
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
   }, [])
+
+  // [개선] ESC 키로도 모달을 닫을 수 있게 함 - 예전엔 마우스로 바깥 클릭하거나
+  // "닫기" 버튼만 눌러야 했음. 키보드 단축키는 관제실처럼 마우스보다 키보드
+  // 조작이 잦을 수 있는 환경에서 사용성을 개선한다.
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') onClose?.()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
 
   const searchCatalog = (query) => {
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
@@ -125,6 +136,7 @@ export default function CameraManagerModal({ onClose, onChanged }) {
         uturnDetectionEnabled: form.uturnDetectionEnabled,
         signalDetectionEnabled: form.signalDetectionEnabled,
         violationDetectionEnabled: form.uturnDetectionEnabled || form.signalDetectionEnabled,
+        personRiskDetectionEnabled: form.personRiskDetectionEnabled,
       })
       setForm(EMPTY_FORM)
       setSuggestions([])
@@ -174,6 +186,20 @@ export default function CameraManagerModal({ onClose, onChanged }) {
       onChanged?.()
     } catch (err) {
       alert(err.message || '신호위반 감지 설정 변경에 실패했습니다.')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  // 이미 등록된 카메라의 수배자/흉기(C파트) 감지 사용 여부를 토글한다.
+  const handleTogglePersonRisk = async (cam) => {
+    setBusyId(cam.id)
+    try {
+      await updateCamera(cam.id, { personRiskDetectionEnabled: !cam.personRiskDetectionEnabled })
+      load()
+      onChanged?.()
+    } catch (err) {
+      alert(err.message || '수배자/흉기 감지 설정 변경에 실패했습니다.')
     } finally {
       setBusyId(null)
     }
@@ -315,30 +341,45 @@ export default function CameraManagerModal({ onClose, onChanged }) {
             <span>또는 동영상 업로드</span>
             <input type="file" accept="video/mp4,video/webm,video/quicktime" onChange={handleFileUpload} disabled={uploading} />
           </label>
-          <label className="cam-mgr-checkbox">
-            <input
-              type="checkbox"
-              checked={form.debrisDetectionEnabled}
-              onChange={(e) => setForm((prev) => ({ ...prev, debrisDetectionEnabled: e.target.checked }))}
-            />
-            <span>낙하물 감지 사용</span>
-          </label>
-          <label className="cam-mgr-checkbox">
-            <input
-              type="checkbox"
-              checked={form.uturnDetectionEnabled}
-              onChange={(e) => setForm((prev) => ({ ...prev, uturnDetectionEnabled: e.target.checked }))}
-            />
-            <span>불법유턴 감지 사용</span>
-          </label>
-          <label className="cam-mgr-checkbox">
-            <input
-              type="checkbox"
-              checked={form.signalDetectionEnabled}
-              onChange={(e) => setForm((prev) => ({ ...prev, signalDetectionEnabled: e.target.checked }))}
-            />
-            <span>신호위반 감지 사용</span>
-          </label>
+
+          {/* [수정] 체크박스 4개를 전용 wrapper로 묶어서 2x2 그리드로 항상 깔끔하게
+              정렬되게 함 (App.css의 .cam-mgr-checkbox-group). 예전엔 다른 입력창들과
+              같은 flex 줄에 섞여서, 개수가 늘어날 때마다 줄바꿈 위치가 어긋났었음. */}
+          <div className="cam-mgr-checkbox-group">
+            <label className="cam-mgr-checkbox">
+              <input
+                type="checkbox"
+                checked={form.debrisDetectionEnabled}
+                onChange={(e) => setForm((prev) => ({ ...prev, debrisDetectionEnabled: e.target.checked }))}
+              />
+              <span>낙하물 감지 사용</span>
+            </label>
+            <label className="cam-mgr-checkbox">
+              <input
+                type="checkbox"
+                checked={form.uturnDetectionEnabled}
+                onChange={(e) => setForm((prev) => ({ ...prev, uturnDetectionEnabled: e.target.checked }))}
+              />
+              <span>불법유턴 감지 사용</span>
+            </label>
+            <label className="cam-mgr-checkbox">
+              <input
+                type="checkbox"
+                checked={form.signalDetectionEnabled}
+                onChange={(e) => setForm((prev) => ({ ...prev, signalDetectionEnabled: e.target.checked }))}
+              />
+              <span>신호위반 감지 사용</span>
+            </label>
+            <label className="cam-mgr-checkbox">
+              <input
+                type="checkbox"
+                checked={form.personRiskDetectionEnabled}
+                onChange={(e) => setForm((prev) => ({ ...prev, personRiskDetectionEnabled: e.target.checked }))}
+              />
+              <span>수배자/흉기 감지 사용</span>
+            </label>
+          </div>
+
           <button type="submit" className="cam-mgr-submit-btn" disabled={submitting || uploading}>
             {submitting ? '등록 중...' : uploading ? '영상 업로드 중...' : '등록'}
           </button>
@@ -380,52 +421,73 @@ export default function CameraManagerModal({ onClose, onChanged }) {
                   {cam.debrisDetectionEnabled && <span className="cam-tag-debris">(낙하물)</span>}
                   {cam.uturnDetectionEnabled && <span className="cam-tag-debris">(불법유턴)</span>}
                   {cam.signalDetectionEnabled && <span className="cam-tag-debris">(신호위반)</span>}
+                  {cam.personRiskDetectionEnabled && <span className="cam-tag-person-risk">(수배자/흉기)</span>}
                 </div>
                 <div className="cam-mgr-row-sub">
                   {cam.status === 'ACTIVE' ? '운영 중' : '비활성'}
                   {cam.streamUrl ? ` · ${cam.streamFormat || '스트림'} 연결됨` : ' · 실시간 영상 없음'}
                 </div>
               </div>
-              <button
-                type="button"
-                className="cam-mgr-toggle-btn"
-                disabled={busyId === cam.id}
-                onClick={() => handleToggleDebris(cam)}
-              >
-                {cam.debrisDetectionEnabled ? '낙하물 끄기' : '낙하물 켜기'}
-              </button>
-              <button
-                type="button"
-                className="cam-mgr-toggle-btn"
-                disabled={busyId === cam.id}
-                onClick={() => handleToggleUturn(cam)}
-              >
-                {cam.uturnDetectionEnabled ? '불법유턴 끄기' : '불법유턴 켜기'}
-              </button>
-              <button
-                type="button"
-                className="cam-mgr-toggle-btn"
-                disabled={busyId === cam.id}
-                onClick={() => handleToggleSignal(cam)}
-              >
-                {cam.signalDetectionEnabled ? '신호위반 끄기' : '신호위반 켜기'}
-              </button>
-              <button
-                type="button"
-                className="cam-mgr-toggle-btn"
-                disabled={busyId === cam.id}
-                onClick={() => handleToggleStatus(cam)}
-              >
-                {cam.status === 'ACTIVE' ? '비활성화' : '활성화'}
-              </button>
-              <button
-                type="button"
-                className="cam-mgr-delete-btn"
-                disabled={busyId === cam.id}
-                onClick={() => handleDelete(cam)}
-              >
-                삭제
-              </button>
+
+              {/* [수정] 버튼 5개를 전용 wrapper(cam-mgr-row-actions)로 묶어서 항상
+                  다음 줄에 표시되게 함. 예전엔 이 버튼들이 cam-mgr-row-main과 같은
+                  줄에서 고정폭을 다 차지하는 바람에, 제목 영역(min-width:0)이
+                  극단적으로 압축되어 글자가 세로로 깨지는 문제가 있었음. */}
+              <div className="cam-mgr-row-actions">
+                <button
+                  type="button"
+                  className="cam-mgr-toggle-btn"
+                  disabled={busyId === cam.id}
+                  onClick={() => handleToggleDebris(cam)}
+                >
+                  {cam.debrisDetectionEnabled ? '낙하물 끄기' : '낙하물 켜기'}
+                </button>
+                <button
+                  type="button"
+                  className="cam-mgr-toggle-btn"
+                  disabled={busyId === cam.id}
+                  onClick={() => handleToggleUturn(cam)}
+                >
+                  {cam.uturnDetectionEnabled ? '불법유턴 끄기' : '불법유턴 켜기'}
+                </button>
+                <button
+                  type="button"
+                  className="cam-mgr-toggle-btn"
+                  disabled={busyId === cam.id}
+                  onClick={() => handleToggleSignal(cam)}
+                >
+                  {cam.signalDetectionEnabled ? '신호위반 끄기' : '신호위반 켜기'}
+                </button>
+                <button
+                  type="button"
+                  className="cam-mgr-toggle-btn"
+                  disabled={busyId === cam.id}
+                  onClick={() => handleTogglePersonRisk(cam)}
+                >
+                  {cam.personRiskDetectionEnabled ? '수배자/흉기 끄기' : '수배자/흉기 켜기'}
+                </button>
+                <button
+                  type="button"
+                  className="cam-mgr-toggle-btn"
+                  disabled={busyId === cam.id}
+                  onClick={() => handleToggleStatus(cam)}
+                >
+                  {cam.status === 'ACTIVE' ? '비활성화' : '활성화'}
+                </button>
+                {/* [개선] 삭제 버튼을 전용 구역(cam-mgr-danger-zone)으로 분리 -
+                    바쁜 관제 상황에서 다른 토글 버튼과 헷갈려 실수로 삭제를
+                    누르는 걸 방지하기 위해, 구분선을 두고 시각적으로 떨어뜨림 */}
+                <div className="cam-mgr-danger-zone">
+                  <button
+                    type="button"
+                    className="cam-mgr-delete-btn"
+                    disabled={busyId === cam.id}
+                    onClick={() => handleDelete(cam)}
+                  >
+                    삭제
+                  </button>
+                </div>
+              </div>
             </div>
           ))}
         </div>

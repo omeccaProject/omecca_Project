@@ -48,8 +48,6 @@ public class Camera {
 
     // 이 카메라에서 낙하물(DEBRIS) 자동 감지를 돌릴지 여부. true면 camera_watcher.py가
     // yolo_infer.py를 이 카메라의 streamUrl로 자동으로 붙여서 돌린다.
-    // 이 카메라에서 낙하물(DEBRIS) 자동 감지를 돌릴지 여부. true면 camera_watcher.py가
-    // yolo_infer.py를 이 카메라의 streamUrl로 자동으로 붙여서 돌린다.
     @Column(name = "debris_detection_enabled", nullable = false)
     @Builder.Default
     private Boolean debrisDetectionEnabled = Boolean.FALSE;
@@ -68,6 +66,14 @@ public class Camera {
     @Column(name = "signal_detection_enabled", nullable = false)
     @Builder.Default
     private Boolean signalDetectionEnabled = Boolean.FALSE;
+
+    // [C파트 추가] 이 카메라에서 수배자/흉기(WANTED_PERSON, WEAPON) 자동 감지를 돌릴지 여부.
+    // true면 camera_watcher.py가 c_person_risk/test_run.py를 이 카메라의 streamUrl로
+    // 자동으로 붙여서 돌린다. 낙하물/유턴/신호위반과 달리 "이벤트가 한 번 나면 재시작 안 함"
+    // 로직이 없다 - CCTV는 계속 사람이 지나다니므로 지속 감시가 이 도메인의 정상 동작이다.
+    @Column(name = "person_risk_detection_enabled", nullable = false)
+    @Builder.Default
+    private Boolean personRiskDetectionEnabled = Boolean.FALSE;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

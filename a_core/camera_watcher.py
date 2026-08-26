@@ -1,23 +1,23 @@
-"""카메라 등록 ↔ 낙하물 감지 자동 연결 워처.
+"""카메라 등록 ↔ 낙하물/불법유턴/신호위반/수배자·흉기 감지 자동 연결 워처.
 
-b_gateway에서 카메라를 등록/활성화하고 "낙하물 감지 사용"을 켜면, 사람이 따로
-yolo_infer.py를 켜지 않아도 이 스크립트가 대신 켜고 꺼준다.
+b_gateway에서 카메라를 등록/활성화하고 각 감지 사용 체크박스를 켜면, 사람이 따로
+탐지 스크립트를 켜지 않아도 이 스크립트가 대신 켜고 꺼준다.
 
     GET /api/cameras 주기 폴링
-        → status=ACTIVE, debrisDetectionEnabled=true, streamUrl 있음 인 카메라마다
-          yolo_infer.py --video <streamUrl> --cam-id <camId> --no-display 프로세스 유지
+        → status=ACTIVE, ○○DetectionEnabled=true, streamUrl 있음 인 카메라마다
+          해당 탐지 프로세스를 유지
         → 조건이 깨지면(비활성화/삭제/URL 제거) 그 프로세스는 종료
         → 업로드 동영상처럼 끝까지 재생돼 프로세스가 스스로 끝나면 다음 폴링에서
-          자동으로 다시 켜짐(반복재생 효과) - 단, 그 카메라가 낙하물 이벤트를 이미
-          한 번 냈으면 재시작하지 않는다(카메라당 한 번으로 충분, 같은 물체로 계속
-          새 이벤트가 쌓이는 것을 방지)
+          자동으로 다시 켜짐(반복재생 효과)
 
-yolo_infer.py 자체 탐지 로직은 전혀 건드리지 않는다 - 이 스크립트는 그걸 "누가,
-언제 켜고 끌지"만 관리한다.
+낙하물/불법유턴/신호위반은 "카메라당 이벤트 한 번으로 충분"이라 이벤트가 한 번
+나면 재시작하지 않는다(같은 물체로 계속 새 이벤트가 쌓이는 것을 방지). 반면
+수배자/흉기(C파트)는 CCTV처럼 계속 사람이 지나다니는 걸 지속 감시해야 하는
+도메인이라, 이벤트가 나도 재시작 자체는 막지 않고 계속 감시를 유지한다
+(단, 크래시로 죽으면 backoff 후 재시작).
 
-불법유턴/신호위반(run_uturn.py, 박지원(D) 모듈)도 낙하물과 완전히 동일한 방식으로
-자동 연결한다 - 카메라별 violationDetectionEnabled + config_zones.json에 ROI(중앙선/
-정지선 등)가 등록돼 있는지를 보고 별도의 프로세스 풀로 켜고 끈다.
+각 탐지 로직 자체는 전혀 건드리지 않는다 - 이 스크립트는 그걸 "누가, 언제 켜고
+끌지"만 관리한다.
 
 또한 1시간마다 b_dashboard/public/captures/(사건 전/후 캡처 이미지)를 훑어서
 --capture-retention-days(기본 30일)보다 오래된 파일을 자동으로 지운다 - 이벤트가
@@ -54,6 +54,11 @@ D_LPR_DIR = PROJECT_ROOT / "d_lpr"
 RUN_UTURN_PATH = D_LPR_DIR / "run_uturn.py"
 ZONES_PATH = D_LPR_DIR / "config_zones.json"
 SIGNAL_TIMELINE_PATH = D_LPR_DIR / "signal_timeline.json"
+
+# 수배자/흉기(C) — 이시헌(C) 모듈
+C_PERSON_RISK_DIR = PROJECT_ROOT / "c_person_risk"
+TEST_RUN_PATH = C_PERSON_RISK_DIR / "test_run.py"
+
 
 def resolve_demo_moving_roi(cam_id):
     """카메라별 1인칭 게임 신호위반 데모용 이동 ROI 설정 파일을 찾는다.
@@ -251,6 +256,22 @@ def qualifying_signal_cameras(cameras):
     return result
 
 
+def qualifying_person_risk_cameras(cameras):
+    """자동 수배자/흉기 감지 대상: 운영 중 + 감지 사용 + 실제 영상 URL이 있는 카메라.
+    낙하물/유턴/신호위반과 달리 ROI 설정이 필요 없다(전체 화면 대상 얼굴/흉기 탐지이므로)."""
+    result = {}
+    for cam in cameras:
+        if cam.get("status") != "ACTIVE":
+            continue
+        if not cam.get("personRiskDetectionEnabled"):
+            continue
+        stream_url = cam.get("streamUrl")
+        if not stream_url:
+            continue
+        result[cam["camId"]] = resolve_stream_url(stream_url)
+    return result
+
+
 class CameraWatcher:
     def __init__(self, interval, max_concurrent, threshold=None, capture_retention_days=30, lpr=True):
         self.interval = interval
@@ -271,6 +292,11 @@ class CameraWatcher:
         # 신호위반 프로세스 풀
         self.signal_processes = {}
         self.fired_signal_cams = set()
+
+        # 수배자/흉기(C파트) 프로세스 풀 - "이미 났으면 끝" 개념이 없어 fired_* 세트가 없다.
+        # CCTV는 계속 지나다니는 사람을 지속 감시해야 하므로, 카메라가 살아있는 한
+        # 계속 감시를 유지한다(크래시로 죽으면 backoff 후 재시작).
+        self.person_risk_processes = {}
 
         # 영상 완주 및 재시도 쿨다운 트래킹 (무한 급속 재시작 방지)
         self.completed_cams = set()  # (mode, cam_id)
@@ -484,6 +510,56 @@ class CameraWatcher:
             self._start_signal(cam_id, stream_url)
 
     # ------------------------------------------------------------------
+    # 수배자/흉기(C파트) 프로세스 관리
+    def _start_person_risk(self, cam_id, stream_url):
+        print(f"[WATCHER] 🟢 수배자/흉기 감지 시작: {cam_id} ({stream_url})")
+        cmd = [sys.executable, str(TEST_RUN_PATH),
+               "--video", stream_url, "--cam-id", cam_id, "--no-display"]
+        proc = subprocess.Popen(cmd, cwd=str(C_PERSON_RISK_DIR))
+        self.person_risk_processes[cam_id] = proc
+
+    def _stop_person_risk(self, cam_id, reason):
+        proc = self.person_risk_processes.pop(cam_id, None)
+        if proc is None:
+            return
+        print(f"[WATCHER] 🔴 수배자/흉기 감지 중단: {cam_id} ({reason})")
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+
+    def sync_person_risk(self, targets):
+        # 대상에서 빠진 카메라(비활성화/삭제/URL 제거/체크박스 끔) 프로세스 정지
+        for cam_id in list(self.person_risk_processes.keys()):
+            if cam_id not in targets:
+                self._stop_person_risk(cam_id, "카메라 비활성화/삭제/URL 제거/감지 꺼짐")
+
+        now = time.time()
+        # [주의] 낙하물/유턴/신호위반과 달리 "이미 났으니 끝" 판단을 하지 않는다 - 죽은
+        # 프로세스는 정상 종료(영상 재생 완료)든 크래시든 그냥 재시작 대상으로 남긴다.
+        for cam_id, proc in list(self.person_risk_processes.items()):
+            poll = proc.poll()
+            if poll is not None:
+                del self.person_risk_processes[cam_id]
+                if poll == 0:
+                    print(f"[WATCHER] ⏹ {cam_id} 수배자/흉기 영상 재생 완료 (종료코드 {poll}) - 다음 폴링에서 재시작")
+                else:
+                    self.backoff_cams[("person_risk", cam_id)] = now + RETRY_BACKOFF_SEC
+                    print(f"[WATCHER] ⚠ {cam_id} 수배자/흉기 프로세스 비정상 종료 (코드 {poll}) - "
+                          f"{RETRY_BACKOFF_SEC}초 후 재시도")
+
+        for cam_id, stream_url in targets.items():
+            if cam_id in self.person_risk_processes:
+                continue
+            if now < self.backoff_cams.get(("person_risk", cam_id), 0):
+                continue
+            if len(self.person_risk_processes) >= self.max_concurrent:
+                print(f"[WATCHER] ⚠ 수배자/흉기 동시 실행 한도({self.max_concurrent}) 도달 - {cam_id} 대기")
+                continue
+            self._start_person_risk(cam_id, stream_url)
+
+    # ------------------------------------------------------------------
     def run(self):
         print(f"[WATCHER] 시작. {self.interval}초 간격으로 {GATEWAY_URL} 폴링, "
               f"동시 실행 최대 {self.max_concurrent}개, "
@@ -503,6 +579,9 @@ class CameraWatcher:
                     signal_targets = qualifying_signal_cameras(cameras)
                     self.sync_signal(signal_targets)
 
+                    person_risk_targets = qualifying_person_risk_cameras(cameras)
+                    self.sync_person_risk(person_risk_targets)
+
                 now = time.time()
                 if now - self.last_cleanup_at >= CLEANUP_INTERVAL_SEC:
                     cleanup_old_captures(self.capture_retention_days)
@@ -517,10 +596,12 @@ class CameraWatcher:
                 self._stop_uturn(cam_id, "워처 종료")
             for cam_id in list(self.signal_processes.keys()):
                 self._stop_signal(cam_id, "워처 종료")
+            for cam_id in list(self.person_risk_processes.keys()):
+                self._stop_person_risk(cam_id, "워처 종료")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="카메라 등록 상태를 보고 낙하물/불법유턴/신호위반 감지를 자동으로 켜고 끄는 워처")
+    parser = argparse.ArgumentParser(description="카메라 등록 상태를 보고 낙하물/불법유턴/신호위반/수배자·흉기 감지를 자동으로 켜고 끄는 워처")
     parser.add_argument("--interval", type=int, default=10, help="폴링 간격(초)")
     parser.add_argument("--max-concurrent", type=int, default=5, help="동시 실행 가능한 감지 프로세스 수")
     parser.add_argument("--threshold", type=int, default=2, help="방치물 정지 판정 시간(초)")

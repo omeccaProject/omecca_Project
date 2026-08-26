@@ -12,40 +12,22 @@
         {
           "line_id": "stop_A",
           "name": "정지선(북→남)",
-          "p1": [
-            300,
-            700
-          ],
-          "p2": [
-            1600,
-            700
-          ],
+          "p1": [300, 700],
+          "p2": [1600, 700],
           "direction": "negative"
         },
         {
           "line_id": "exit_A",
           "name": "진출선(북→남)",
-          "p1": [
-            300,
-            950
-          ],
-          "p2": [
-            1600,
-            950
-          ],
+          "p1": [300, 950],
+          "p2": [1600, 950],
           "direction": "negative"
         },
         {
           "line_id": "center_A",
           "name": "중앙선(노란 실선) — 유턴 금지",
-          "p1": [
-            800,
-            550
-          ],
-          "p2": [
-            800,
-            1060
-          ],
+          "p1": [800, 550],
+          "p2": [800, 1060],
           "direction": "both",
           "line_type": "center",
           "uturn_allowed": false,
@@ -58,24 +40,7 @@
           "name": "유턴 금지 구간",
           "zone_type": "uturn",
           "uturn_allowed": false,
-          "polygon": [
-            [
-              250,
-              600
-            ],
-            [
-              1650,
-              600
-            ],
-            [
-              1650,
-              1020
-            ],
-            [
-              250,
-              1020
-            ]
-          ]
+          "polygon": [[250, 600], [1650, 600], [1650, 1020], [250, 1020]]
         }
       ],
       "intersections": [
@@ -98,27 +63,15 @@
         {
           "line_id": "stop_B",
           "name": "정지선(동→서)",
-          "p1": [
-            900,
-            200
-          ],
-          "p2": [
-            900,
-            900
-          ],
+          "p1": [900, 200],
+          "p2": [900, 900],
           "direction": "positive"
         },
         {
           "line_id": "center_B",
           "name": "중앙선 — 유턴 허용(표지판 있음)",
-          "p1": [
-            1300,
-            150
-          ],
-          "p2": [
-            1300,
-            950
-          ],
+          "p1": [1300, 150],
+          "p2": [1300, 950],
           "direction": "both",
           "line_type": "center",
           "uturn_allowed": true,
@@ -127,14 +80,8 @@
         {
           "line_id": "center_B2",
           "name": "중앙선(서측) — 유턴 금지",
-          "p1": [
-            400,
-            150
-          ],
-          "p2": [
-            400,
-            950
-          ],
+          "p1": [400, 150],
+          "p2": [400, 950],
           "direction": "both",
           "line_type": "center",
           "uturn_allowed": false,
@@ -147,48 +94,14 @@
           "name": "유턴 허용 구간",
           "zone_type": "uturn",
           "uturn_allowed": true,
-          "polygon": [
-            [
-              900,
-              150
-            ],
-            [
-              1800,
-              150
-            ],
-            [
-              1800,
-              950
-            ],
-            [
-              900,
-              950
-            ]
-          ]
+          "polygon": [[900, 150], [1800, 150], [1800, 950], [900, 950]]
         },
         {
           "zone_id": "uturn_B2",
           "name": "유턴 금지 구간(서측)",
           "zone_type": "uturn",
           "uturn_allowed": false,
-          "polygon": [
-            [
-              100,
-              150
-            ],
-            [
-              880,
-              150
-            ],
-            [
-              880,
-              950
-            ],
-            [
-              100,
-              950
-            ]
-          ]
+          "polygon": [[100, 150], [880, 150], [880, 950], [100, 950]]
         }
       ],
       "intersections": [
@@ -207,14 +120,8 @@
         {
           "line_id": "center_uturn3",
           "name": "중앙선(노란 복선) — 유턴 금지",
-          "p1": [
-            949,
-            250
-          ],
-          "p2": [
-            941,
-            1080
-          ],
+          "p1": [949, 250],
+          "p2": [941, 1080],
           "direction": "both",
           "line_type": "center",
           "uturn_allowed": false,
@@ -223,14 +130,8 @@
         {
           "line_id": "center_auto",
           "name": "중앙선(노란 실선) - 유턴 금지 [자동 검출]",
-          "p1": [
-            639,
-            180
-          ],
-          "p2": [
-            619,
-            719
-          ],
+          "p1": [639, 180],
+          "p2": [619, 719],
           "direction": "both",
           "line_type": "center",
           "uturn_allowed": false
@@ -246,14 +147,8 @@
         {
           "line_id": "center_uturn6",
           "name": "중앙선(노란선)",
-          "p1": [
-            484,
-            318
-          ],
-          "p2": [
-            1154,
-            662
-          ],
+          "p1": [484, 318],
+          "p2": [1154, 662],
           "direction": "both",
           "line_type": "center",
           "uturn_allowed": false,
@@ -270,14 +165,8 @@
         {
           "line_id": "center_uturn7",
           "name": "중앙선(노란선)",
-          "p1": [
-            494,
-            282
-          ],
-          "p2": [
-            1216,
-            723
-          ],
+          "p1": [494, 282],
+          "p2": [1216, 723],
           "direction": "both",
           "line_type": "center",
           "uturn_allowed": false,
@@ -294,14 +183,8 @@
         {
           "line_id": "center_uturn5",
           "name": "중앙선(노란선, 연장)",
-          "p1": [
-            0,
-            620
-          ],
-          "p2": [
-            700,
-            409
-          ],
+          "p1": [0, 620],
+          "p2": [700, 409],
           "direction": "both",
           "line_type": "center",
           "uturn_allowed": false,
@@ -318,14 +201,8 @@
         {
           "line_id": "stop_sig2",
           "name": "정지선 (횡단보도 앞)",
-          "p1": [
-            240,
-            533
-          ],
-          "p2": [
-            1500,
-            668
-          ],
+          "p1": [240, 533],
+          "p2": [1500, 668],
           "direction": "both",
           "line_type": "stop",
           "signal_id": "SIG-SIG2"
@@ -333,14 +210,8 @@
         {
           "line_id": "exit_sig2",
           "name": "진출선 (교차로 안쪽)",
-          "p1": [
-            300,
-            380
-          ],
-          "p2": [
-            1550,
-            470
-          ],
+          "p1": [300, 380],
+          "p2": [1550, 470],
           "direction": "both",
           "line_type": "exit",
           "signal_id": "SIG-SIG2"
@@ -363,14 +234,8 @@
         {
           "line_id": "center_1",
           "name": "중앙선 · 유턴 금지",
-          "p1": [
-            643,
-            138
-          ],
-          "p2": [
-            630,
-            715
-          ],
+          "p1": [643, 138],
+          "p2": [630, 715],
           "direction": "both",
           "line_type": "center",
           "uturn_allowed": false,
@@ -476,20 +341,14 @@
       ]
     },
     {
-      "cam_id": "L010264-TEST",
-      "name": "L010264-TEST",
+      "cam_id": "L010321",
+      "name": "L010321",
       "lines": [
         {
           "line_id": "stop_1",
           "name": "정지선",
-          "p1": [
-            1049,
-            418
-          ],
-          "p2": [
-            389,
-            412
-          ],
+          "p1": [1049, 418],
+          "p2": [389, 412],
           "direction": "both",
           "line_type": "stop",
           "uturn_allowed": false,
@@ -498,14 +357,8 @@
         {
           "line_id": "exit_1",
           "name": "진출선",
-          "p1": [
-            999,
-            380
-          ],
-          "p2": [
-            397,
-            375
-          ],
+          "p1": [999, 380],
+          "p2": [397, 375],
           "direction": "both",
           "line_type": "exit",
           "uturn_allowed": false,
@@ -515,7 +368,7 @@
       "zones": [],
       "intersections": [
         {
-          "intersection_id": "INT-L010264-TEST",
+          "intersection_id": "INT-L010321",
           "stop_line": "stop_1",
           "exit_line": "exit_1",
           "signal_id": "SIG-1"
