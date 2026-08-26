@@ -30,14 +30,23 @@ report:
 spring:
   application:
     name: omecca-backend
-<<<<<<< Updated upstream
+
+  # 카메라 관리에서 시연용 영상을 올릴 때 쓴다.
+  #   기본값이 파일 1MB / 요청 10MB 라 10초짜리 720p mp4(2~7MB)도 막힌다.
+  #   한도를 넘으면 서버가 연결을 끊어 버려서 브라우저에는 413 이 아니라
+  #   **"Failed to fetch"** 로만 보인다 — 용량 문제인 줄 알기 어렵다.
+  servlet:
+    multipart:
+      max-file-size: 200MB
+      max-request-size: 200MB
+
+  # 팀이 올린 환경변수 방식으로 정리했다 (stash 충돌 해결, 2026-08-22).
+  #   기본값은 로컬 MySQL. 카페24 공용 DB 를 쓰려면 .env 에 아래를 넣는다.
+  #       DB_HOST=thebrains27.cafe24.com
+  #       DB_NAME=thebrains27
+  #   주소를 코드에 박아 두면 팀원마다 파일을 고쳐야 해서 매번 충돌이 난다.
   datasource:
     url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:omecca}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=UTF-8
-=======
-
-  datasource:
-    url: jdbc:mysql://thebrains27.cafe24.com:3306/thebrains27?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=UTF-8
->>>>>>> Stashed changes
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver

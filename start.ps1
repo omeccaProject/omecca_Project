@@ -1,4 +1,4 @@
-<#
+﻿<#
   오메카3 통합 실행 — 서버 3개를 한 번에 띄운다.
 
       .\start.ps1            준비 상태만 점검 (실행 안 함)
@@ -47,7 +47,7 @@ if (-not (Test-Path $gwEnv)) {
 }
 $pw = (Select-String -Path $gwEnv -Pattern '^DB_PASSWORD=(.*)$').Matches.Groups[1].Value
 Chk "b_gateway\.env 비밀번호" `
-    ($pw -and $pw -notmatch '여기에|본인|CHANGE|password') `
+    ($pw -and $pw.Trim() -ne '' -and $pw -notmatch '(?i)CHANGE|password|_MySQL_|YOUR') `
     "b_gateway\.env 의 DB_PASSWORD 를 본인 MySQL 비밀번호로 바꾸세요 (현재: '$pw')"
 
 $mapEnv = Join-Path $ROOT "e_tracking\SmartCCTV\.env"

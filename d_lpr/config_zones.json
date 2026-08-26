@@ -219,6 +219,21 @@
           "line_type": "center",
           "uturn_allowed": false,
           "signal_id": ""
+        },
+        {
+          "line_id": "center_auto",
+          "name": "중앙선(노란 실선) - 유턴 금지 [자동 검출]",
+          "p1": [
+            639,
+            180
+          ],
+          "p2": [
+            619,
+            719
+          ],
+          "direction": "both",
+          "line_type": "center",
+          "uturn_allowed": false
         }
       ],
       "zones": [],
@@ -340,6 +355,15 @@
           "signal_id": "SIG-SIG2"
         }
       ]
+    },
+    {
+      "cam_id": "DUI-DEMO",
+      "name": "음주운전 시연 (번호판 인식 전용)",
+      "location": [
+        37.5665,
+        126.978
+      ],
+      "lines": []
     }
   ]
 }
