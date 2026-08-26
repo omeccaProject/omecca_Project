@@ -17,14 +17,36 @@ class EventPublisher:
         self.cooldown_sec = cooldown_sec
         self.last_sent_times = {}
 
+    def _cooldown_key(self, event_type, cam_id, meta):
+        """
+        쿨다운을 event_type 단위가 아니라, 대상(사람/흉기종류)별로 
+        세분화하기 위한 키 생성.
+        - WANTED_PERSON: cam_id + matchedDbId 조합 (같은 카메라에서 
+          다른 사람이 잡히면 별개로 취급)
+        - WEAPON: cam_id + weaponType 조합 (matchedDbId가 없을 수 
+          있어서 흉기 종류로 구분)
+        """
+        matched_id = meta.get('matchedDbId') if meta else None
+        weapon_type = meta.get('weaponType') if meta else None
+
+        if event_type == 'WANTED_PERSON' and matched_id:
+            return f"{event_type}_{cam_id}_{matched_id}"
+        elif event_type == 'WEAPON' and weapon_type:
+            return f"{event_type}_{cam_id}_{weapon_type}"
+        else:
+            # matchedDbId/weaponType 둘 다 없는 예외 케이스는
+            # 기존 방식(event_type 단위)으로 폴백
+            return f"{event_type}_{cam_id}"
+
     def send_event(self, event_type, confidence=0.0, bbox=None, cam_id='CAM_01', meta=None, frame=None):
         now = time.time()
         if meta is None:
             meta = {}
 
-        # 쿨다운 검사
-        if event_type in self.last_sent_times:
-            if now - self.last_sent_times[event_type] < self.cooldown_sec:
+        # 쿨다운 검사 - event_type이 아니라 대상별 세분화된 키로 확인
+        cooldown_key = self._cooldown_key(event_type, cam_id, meta)
+        if cooldown_key in self.last_sent_times:
+            if now - self.last_sent_times[cooldown_key] < self.cooldown_sec:
                 return False
 
         # 게이트웨이 규격 [x, y, w, h] 변환
@@ -49,7 +71,7 @@ class EventPublisher:
         try:
             headers = {'Content-Type': 'application/json', 'X-API-Key': 'omecca-dev-key-2026'}
             res = requests.post(self.endpoint, json=payload, headers=headers, timeout=0.5)
-            self.last_sent_times[event_type] = now
+            self.last_sent_times[cooldown_key] = now
             success = res.status_code in (200, 201)
 
             # 실측용 콘솔 로깅 (isArmed E2E 검증용)
@@ -70,7 +92,7 @@ class EventPublisher:
 
             return success
         except Exception as e:
-            self.last_sent_times[event_type] = now
+            self.last_sent_times[cooldown_key] = now
             print(f"[EVENT FAILED] {event_type} | 게이트웨이(8080) 연결 실패: {e}")
             return False
 

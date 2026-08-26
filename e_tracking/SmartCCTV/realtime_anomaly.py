@@ -113,6 +113,7 @@ import os
 import sys
 import json
 import time
+import uuid
 import multiprocessing as mp
 from queue import Empty
 
@@ -227,6 +228,58 @@ EVENT_LOG_PATH = os.path.join(_THIS_DIR, "ai_map_events.log")  # 지도 연동�
 # 그대로 broadcast한다. 서버 포트를 바꿨다면 여기도 같이 바꿔야 한다.
 MAP_SERVER_EVENTS_URL = "http://localhost:4000/api/map/events"
 MAP_SERVER_TIMEOUT_SEC = 1.0  # 서버가 느리거나 꺼져 있어도 AI 처리 루프가 멈추지 않도록 짧게 잡는다
+
+# ================================================================
+# 3B) 사건 전/후 캡쳐 이미지 - a_core/yolo_infer.py의 save_capture() 관례를 그대로
+#    따른다: b_dashboard/public/captures/에 JPEG로 저장하고, payload/DB/프론트에는
+#    b_dashboard가 정적 파일로 서빙하는 루트-절대 경로("/captures/<uuid>.jpg")만
+#    넘긴다. 이 파일(e_tracking/SmartCCTV/)은 프로젝트 루트 기준 b_dashboard까지
+#    두 단계 위(../../)로 올라가야 한다 - a_core와 같은 폴더를 공유해서 쓴다.
+# ================================================================
+CAPTURES_DIR = os.path.join(_THIS_DIR, "..", "..", "b_dashboard", "public", "captures")
+os.makedirs(CAPTURES_DIR, exist_ok=True)
+
+# 이상운전(예: 음주운전 의심 지그재그 주행) 감지 "직전" 상황을 보여주는 "사전" 캡쳐용으로,
+# 최근 몇 초간의 원본 프레임을 계속 들고 있는다(= 낙하물 탐지의 first_frame/before_frame과
+# 같은 역할). anomaly_detection.py는 건드릴 수 없어서 "언제부터 이상 패턴이 시작됐는지"는
+# 알 수 없으므로, 이벤트가 실제로 발생(handle_anomaly → map_event_handler 호출)한 시점
+# 기준으로 "최근 BEFORE_CAPTURE_SECONDS초 전" 프레임을 사전 캡쳐로 대신 사용한다.
+BEFORE_CAPTURE_SECONDS = 2.0
+
+# ================================================================
+# 3C) 번호판 인식(d_lpr 연동)
+#    이 파이프라인이 이미 뽑아 놓은 차량 박스를 그대로 d_lpr 의 LPR 파이프라인에
+#    넘겨 번호판을 읽는다(lpr_bridge.py). 읽은 번호판은 지도 이벤트 payload 의
+#    "plate" 로 실려 나가고, server/gatewayForward.js 가 b_gateway 이벤트의
+#    meta.plateNumber 로 옮겨 담는다 → 대시보드 이벤트 리포트의 "차량 번호판".
+#
+#    anomaly_detection.py 는 여전히 한 줄도 건드리지 않는다 - 이 기능은
+#    "이미 나온 박스" 를 옆에서 한 번 더 읽는 것뿐이다.
+#
+#    OMECCA_ENABLE_LPR=0 으로 끌 수 있다(CPU가 부족해 프레임 처리가 밀릴 때).
+#    끄면 예전과 똑같이 plate=None 으로 나간다.
+# ================================================================
+ENABLE_PLATE_RECOGNITION = os.environ.get("OMECCA_ENABLE_LPR", "1") not in ("0", "false", "False")
+PLATE_LPR_MOCK = os.environ.get("OMECCA_LPR_MOCK", "0") in ("1", "true", "True")
+PLATE_READ_INTERVAL = int(os.environ.get("OMECCA_LPR_INTERVAL", "5"))  # track당 몇 프레임마다 읽을지
+
+
+def save_capture(frame, source_id, tag):
+    """a_core/yolo_infer.py의 save_capture()와 동일한 패턴. JPEG로 저장하고
+    b_dashboard가 그대로 서빙할 수 있는 "/captures/<uuid>.jpg" 경로를 돌려준다.
+    frame이 없거나 저장에 실패하면 None을 돌려준다 - 프론트는 None이면 그냥
+    "이미지 없음"으로 표시하면 되고, 여기서 예외를 던져 AI 탐지 루프를 멈추지 않는다.
+    """
+    if frame is None:
+        print(f"[CAPTURE] {source_id}/{tag}: frame이 없어 캡쳐를 저장하지 않습니다.")
+        return None
+    filename = f"{uuid.uuid4().hex}.jpg"
+    filepath = os.path.join(CAPTURES_DIR, filename)
+    ok = cv2.imwrite(filepath, frame)
+    if not ok:
+        print(f"[CAPTURE] {source_id}/{tag}: 캡쳐 이미지 저장 실패 ({filepath})")
+        return None
+    return f"/captures/{filename}"
 
 
 # ================================================================
@@ -436,9 +489,34 @@ def run_source_loop(
         os.path.join(_THIS_DIR, config["path"])
     )
 
+    # 번호판 인식기 - 이 소스(=이 프로세스) 전용. d_lpr 이 없거나 모델/EasyOCR 이
+    # 빠져 있으면 available=False 로 조용히 꺼진 채 동작한다(탐지에는 영향 없음).
+    plate_reader = None
+    if ENABLE_PLATE_RECOGNITION:
+        from lpr_bridge import PlateReader
+
+        plate_reader = PlateReader(
+            mock=PLATE_LPR_MOCK,
+            interval=PLATE_READ_INTERVAL,
+            log_prefix=f"[LPR {source_id}]",
+        )
+        if not plate_reader.available:
+            plate_reader = None
+
     def map_event_handler(event):
         now = time.time()
         vehicle_id = DEMO_VEHICLE_ID if is_demo else f"{source_id}-{event.track_id}"
+
+        # 사건 전/후 캡쳐 - 낙하물 탐지(a_core)와 동일한 패턴: "전"은 이벤트가 발생하기
+        # 전(최근 BEFORE_CAPTURE_SECONDS초) 프레임, "후"는 이벤트가 발생한 바로 이 순간의
+        # 프레임. frame_buffer/frame은 run_source_loop의 while 루프가 이 함수가 호출되는
+        # 시점까지 채워둔 값을 클로저로 그대로 참조한다(아래에서 정의됨 - 함수 정의 시점이
+        # 아니라 "호출 시점"에 값을 읽으므로 순서상 문제없다).
+        before_frame = frame_buffer[0] if frame_buffer else None
+        after_frame = frame.copy() if frame is not None else None
+        frame_ref_before = save_capture(before_frame, source_id, "before")
+        frame_ref_after = save_capture(after_frame, source_id, "after")
+
         # 섹션 11 규격(source_type/source_id/latitude/longitude/anomaly 등) +
         # map.js EventManager가 이벤트 카드/팝업에 쓰는 부가 필드(reason/track_id/plate/confidence)
         payload = {
@@ -455,9 +533,18 @@ def run_source_loop(
             "event_type": "ABNORMAL_DRIVING",
             "track_id": event.track_id,
             "reason": event.message,
-            "plate": None,  # 이 파이프라인은 번호판을 인식하지 않는다 (D 모듈 담당) - 값을 지어내지 않는다
+            # 번호판: d_lpr(D 모듈) 의 LPR 파이프라인이 이 track 에서 확정한 값.
+            # 아직 확정 전(프레임 다수결 미달)이거나 인식기가 꺼져 있으면 None -
+            # 예전과 동일하게 값을 지어내지 않는다. gatewayForward.js 가 이 값을
+            # b_gateway 이벤트의 meta.plateNumber 로 옮겨 담는다.
+            "plate": (plate_reader.plate_of(source_id, event.track_id)
+                      if plate_reader is not None else None),
+            "plate_confidence": (plate_reader.confidence_of(source_id, event.track_id)
+                                 if plate_reader is not None else None),
             "confidence": None,  # detect_weaving()은 규칙 기반 판정이라 수치형 신뢰도가 없다
             "video_position_px": {"x": event.position[0], "y": event.position[1]},
+            "frame_ref_before": frame_ref_before,
+            "frame_ref_after": frame_ref_after,
         }
         event_queue.put(payload)
 
@@ -477,6 +564,13 @@ def run_source_loop(
     # ad.HOLD_WARNING_SECONDS(초 단위 설정값)는 그대로 재사용하고, 프레임 환산만 다시 한다.
     src_fps = grabber.fps
     ad.HOLD_WARNING_FRAMES = max(1, round(ad.HOLD_WARNING_SECONDS * src_fps))
+
+    # 사건 "전" 캡쳐용 최근 프레임 버퍼 - 이 소스의 실제 fps 기준으로 최근
+    # BEFORE_CAPTURE_SECONDS초에 해당하는 프레임 수만큼만 들고 있는다(오래된 프레임은
+    # deque가 자동으로 버림). 프로세스마다(소스마다) 완전히 독립된 지역 변수이므로
+    # 이 파일의 멀티프로세스 격리 원칙과도 그대로 맞는다.
+    from collections import deque
+    frame_buffer = deque(maxlen=max(1, round(src_fps * BEFORE_CAPTURE_SECONDS)))
 
     ai_fps_meter = FpsMeter()
     frame_idx = 0
@@ -500,6 +594,8 @@ def run_source_loop(
             last_seq = seq
             frame_idx += 1
             process_counter += 1
+
+            frame_buffer.append(frame.copy())  # 사건 "전" 캡쳐용 - 매 프레임마다 채워둔다
 
             annotated = frame.copy()
 
@@ -534,6 +630,15 @@ def run_source_loop(
                         ad.update_track(track_id, center, frame_idx)  # 원본 그대로
                         ad.handle_anomaly(annotated, (x1, y1, x2, y2), track_id, frame_idx, src_fps)  # 원본 그대로
 
+                        # 번호판 읽기 - 위에서 이미 나온 박스를 그대로 넘긴다(차량
+                        # 검출을 다시 하지 않는다). 내부에서 track 당 호출 간격을
+                        # 두고, 확정된 track 은 건너뛴다. 예외는 밖으로 안 나온다.
+                        if plate_reader is not None:
+                            plate_reader.update(
+                                source_id, track_id, (x1, y1, x2, y2),
+                                frame, frame_no=frame_idx,
+                            )
+
                         if ad.is_abnormal_active(track_id, frame_idx):
                             anomaly_count_seen = len(
                                 [tid for tid, st in ad.track_states.items() if ad.is_abnormal_active(tid, frame_idx)]
@@ -551,6 +656,9 @@ def run_source_loop(
                     break
     finally:
         grabber.stop()
+        if plate_reader is not None:
+            print(f"{log_prefix} 번호판 인식 결과: {plate_reader.stats}")
+            plate_reader.prune(ttl_sec=0.0)
         ad._event_handlers.remove(map_event_handler)  # 이 소스 전용 핸들러만 제거 (console_event_handler 등은 유지)
         print(f"{log_prefix} {name} 종료 ({status})")
 

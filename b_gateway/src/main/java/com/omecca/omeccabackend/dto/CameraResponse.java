@@ -18,6 +18,8 @@ public class CameraResponse {
     private String streamFormat;
     private Boolean debrisDetectionEnabled;
     private Boolean violationDetectionEnabled;
+    private Boolean uturnDetectionEnabled;
+    private Boolean signalDetectionEnabled;
     private LocalDateTime createdAt;
 
     public static CameraResponse from(Camera camera) {
@@ -30,6 +32,8 @@ public class CameraResponse {
                 .streamFormat(camera.getStreamFormat())
                 .debrisDetectionEnabled(camera.getDebrisDetectionEnabled())
                 .violationDetectionEnabled(camera.getViolationDetectionEnabled())
+                .uturnDetectionEnabled(camera.getUturnDetectionEnabled())
+                .signalDetectionEnabled(camera.getSignalDetectionEnabled())
                 .createdAt(camera.getCreatedAt())
                 .build();
     }

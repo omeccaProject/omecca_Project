@@ -57,6 +57,22 @@ public class EventController {
         return java.util.Map.of("trackId", trackId, "deletedCount", deletedCount);
     }
 
+    // [추가] map.js가 "CCTV 영상 보기"로 연결된 영상에서 캡쳐한 사전/사후 이미지를
+    // e_tracking/server가 저장한 뒤 호출하는 endpoint. 이 trackId의 가장 최근 이벤트에
+    // frameRefBefore/frameRefAfter만 채워 넣는다(이벤트 자체는 새로 만들지 않음).
+    // body: { frameRefBefore?, frameRefAfter? } - 둘 중 하나만 와도 된다.
+    @PatchMapping("/by-track/{trackId}/captures")
+    public EventResponse updateCaptures(
+            @PathVariable String trackId,
+            @RequestBody java.util.Map<String, String> body
+    ) {
+        return eventService.updateCapturesByTrackId(
+                trackId,
+                body != null ? body.get("frameRefBefore") : null,
+                body != null ? body.get("frameRefAfter") : null
+        );
+    }
+
     // 대시보드 "📄 PDF 리포트 생성" 버튼이 호출하는 엔드포인트. b_report를 그 자리에서
     // 실행해 실제 PDF를 만들고(이미 만들어진 적 있으면 그걸 재사용), 완성된 PDF 바이너리를
     // 바로 응답으로 돌려준다 - 프론트는 이 응답 하나로 즉시 다운로드를 트리거하면 된다.

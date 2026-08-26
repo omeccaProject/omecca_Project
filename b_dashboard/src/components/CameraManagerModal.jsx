@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { fetchCameras, createCamera, updateCamera, deleteCamera, fetchCameraCatalog, uploadCameraVideo } from '../api'
 
-const EMPTY_FORM = { camId: '', name: '', streamUrl: '', streamFormat: 'HLS', debrisDetectionEnabled: false, violationDetectionEnabled: false }
+const EMPTY_FORM = { camId: '', name: '', streamUrl: '', streamFormat: 'HLS', debrisDetectionEnabled: false, uturnDetectionEnabled: false, signalDetectionEnabled: false }
 
 // 카메라 마스터 데이터 관리 모달. CctvGrid 헤더의 "카메라 관리" 버튼으로 연다.
 // 실제 설치된 카메라 목록(cam_id/이름/실시간 영상 URL)을 여기서 등록·수정·삭제한다 —
@@ -122,7 +122,9 @@ export default function CameraManagerModal({ onClose, onChanged }) {
         streamUrl: form.streamUrl.trim() || undefined,
         streamFormat: form.streamUrl.trim() ? form.streamFormat : undefined,
         debrisDetectionEnabled: form.debrisDetectionEnabled,
-        violationDetectionEnabled: form.violationDetectionEnabled,
+        uturnDetectionEnabled: form.uturnDetectionEnabled,
+        signalDetectionEnabled: form.signalDetectionEnabled,
+        violationDetectionEnabled: form.uturnDetectionEnabled || form.signalDetectionEnabled,
       })
       setForm(EMPTY_FORM)
       setSuggestions([])
@@ -151,14 +153,27 @@ export default function CameraManagerModal({ onClose, onChanged }) {
     }
   }
 
-  const handleToggleViolation = async (cam) => {
+  const handleToggleUturn = async (cam) => {
     setBusyId(cam.id)
     try {
-      await updateCamera(cam.id, { violationDetectionEnabled: !cam.violationDetectionEnabled })
+      await updateCamera(cam.id, { uturnDetectionEnabled: !cam.uturnDetectionEnabled })
       load()
       onChanged?.()
     } catch (err) {
-      alert(err.message || '위반감지 설정 변경에 실패했습니다.')
+      alert(err.message || '불법유턴 감지 설정 변경에 실패했습니다.')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const handleToggleSignal = async (cam) => {
+    setBusyId(cam.id)
+    try {
+      await updateCamera(cam.id, { signalDetectionEnabled: !cam.signalDetectionEnabled })
+      load()
+      onChanged?.()
+    } catch (err) {
+      alert(err.message || '신호위반 감지 설정 변경에 실패했습니다.')
     } finally {
       setBusyId(null)
     }
@@ -311,10 +326,18 @@ export default function CameraManagerModal({ onClose, onChanged }) {
           <label className="cam-mgr-checkbox">
             <input
               type="checkbox"
-              checked={form.violationDetectionEnabled}
-              onChange={(e) => setForm((prev) => ({ ...prev, violationDetectionEnabled: e.target.checked }))}
+              checked={form.uturnDetectionEnabled}
+              onChange={(e) => setForm((prev) => ({ ...prev, uturnDetectionEnabled: e.target.checked }))}
             />
-            <span>신호위반/유턴 감지 사용</span>
+            <span>불법유턴 감지 사용</span>
+          </label>
+          <label className="cam-mgr-checkbox">
+            <input
+              type="checkbox"
+              checked={form.signalDetectionEnabled}
+              onChange={(e) => setForm((prev) => ({ ...prev, signalDetectionEnabled: e.target.checked }))}
+            />
+            <span>신호위반 감지 사용</span>
           </label>
           <button type="submit" className="cam-mgr-submit-btn" disabled={submitting || uploading}>
             {submitting ? '등록 중...' : uploading ? '영상 업로드 중...' : '등록'}
@@ -355,7 +378,8 @@ export default function CameraManagerModal({ onClose, onChanged }) {
                 <div className="cam-mgr-row-title">
                   {cam.name} <span className="cam-mgr-row-camid">{cam.camId}</span>
                   {cam.debrisDetectionEnabled && <span className="cam-tag-debris">(낙하물)</span>}
-                  {cam.violationDetectionEnabled && <span className="cam-tag-debris">(위반감지)</span>}
+                  {cam.uturnDetectionEnabled && <span className="cam-tag-debris">(불법유턴)</span>}
+                  {cam.signalDetectionEnabled && <span className="cam-tag-debris">(신호위반)</span>}
                 </div>
                 <div className="cam-mgr-row-sub">
                   {cam.status === 'ACTIVE' ? '운영 중' : '비활성'}
@@ -374,9 +398,17 @@ export default function CameraManagerModal({ onClose, onChanged }) {
                 type="button"
                 className="cam-mgr-toggle-btn"
                 disabled={busyId === cam.id}
-                onClick={() => handleToggleViolation(cam)}
+                onClick={() => handleToggleUturn(cam)}
               >
-                {cam.violationDetectionEnabled ? '위반감지 끄기' : '위반감지 켜기'}
+                {cam.uturnDetectionEnabled ? '불법유턴 끄기' : '불법유턴 켜기'}
+              </button>
+              <button
+                type="button"
+                className="cam-mgr-toggle-btn"
+                disabled={busyId === cam.id}
+                onClick={() => handleToggleSignal(cam)}
+              >
+                {cam.signalDetectionEnabled ? '신호위반 끄기' : '신호위반 켜기'}
               </button>
               <button
                 type="button"

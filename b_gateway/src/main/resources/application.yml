@@ -2,6 +2,16 @@ server:
   port: 8080
   error:
     include-message: always
+  # [버그 수정: "영상 업로드에 실패했습니다"] POST /api/cameras/upload(CameraController.upload,
+  # MultipartFile)가 이 값을 설정하지 않으면 Spring Boot 기본값(max-file-size 1MB /
+  # max-request-size 10MB)이 그대로 적용된다 - CCTV용 mp4는 보통 이보다 훨씬 크므로
+  # 파일이 조금만 커도 MaxUploadSizeExceededException으로 500이 나고, 프론트(api.js의
+  # uploadCameraVideo → parseErrorMessage)는 그 응답이 JSON이 아니라서 파싱에 실패해
+  # 화면엔 그냥 "영상 업로드에 실패했습니다."라는 일반 문구만 뜬다(실제 원인은 용량 제한).
+  # Tomcat 자체의 max-swallow-size도 별도 기본값(2MB)이 있어서, multipart 쪽만 늘리면
+  # 업로드 도중 커넥션이 끊기는 경우가 생길 수 있어 같이 늘려준다.
+  tomcat:
+    max-swallow-size: 500MB
 
 gateway:
   api-key: ${GATEWAY_API_KEY}
@@ -30,22 +40,19 @@ report:
 spring:
   application:
     name: omecca-backend
-
-  # 카메라 관리에서 시연용 영상을 올릴 때 쓴다.
-  #   기본값이 파일 1MB / 요청 10MB 라 10초짜리 720p mp4(2~7MB)도 막힌다.
-  #   한도를 넘으면 서버가 연결을 끊어 버려서 브라우저에는 413 이 아니라
-  #   **"Failed to fetch"** 로만 보인다 — 용량 문제인 줄 알기 어렵다.
   servlet:
     multipart:
-      max-file-size: 200MB
-      max-request-size: 200MB
+      # 위 server.tomcat.max-swallow-size와 짝을 이루는 설정 - 이게 없으면 아무리
+      # tomcat 쪽을 늘려도 Spring 쪽에서 먼저 1MB/10MB로 막는다.
+      max-file-size: 500MB
+      max-request-size: 500MB
 
-  # 팀이 올린 환경변수 방식으로 정리했다 (stash 충돌 해결, 2026-08-22).
-  #   기본값은 로컬 MySQL. 카페24 공용 DB 를 쓰려면 .env 에 아래를 넣는다.
-  #       DB_HOST=thebrains27.cafe24.com
-  #       DB_NAME=thebrains27
-  #   주소를 코드에 박아 두면 팀원마다 파일을 고쳐야 해서 매번 충돌이 난다.
   datasource:
+    # [버그 수정] 예전에 깃 merge conflict를 풀면서 실수로 카페24 주소가 하드코딩돼서
+    # .env에서 DB_HOST/DB_PORT/DB_NAME을 아무리 바꿔도(로컬 DB로 전환해도) 항상 카페24로만
+    # 접속하려던 문제가 있었다. C_실행가이드.md 원래 설계대로 환경변수 미설정 시
+    # localhost:3306/omecca(로컬)로 기본 접속하고, DB_HOST 등을 넣으면(카페24 공용 DB 테스트 시)
+    # 그 값을 쓰도록 복원.
     url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:omecca}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=UTF-8
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}

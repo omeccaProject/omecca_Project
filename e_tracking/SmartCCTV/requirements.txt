@@ -6,6 +6,7 @@ ultralytics>=8.3.0
 opencv-python>=4.9.0
 Pillow>=10.0.0
 numpy>=1.26.0
+python-dotenv>=1.0.0  # test_suspicious_driving.py가 .env 로딩에 사용
 
 # torch는 GPU 유무에 따라 설치 방법이 다르다.
 #

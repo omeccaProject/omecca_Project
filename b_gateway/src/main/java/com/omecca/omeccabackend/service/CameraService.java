@@ -54,7 +54,13 @@ public class CameraService {
                 .streamUrl(hasStream ? request.getStreamUrl().trim() : null)
                 .streamFormat(StringUtils.hasText(request.getStreamFormat()) ? request.getStreamFormat().trim() : null)
                 .debrisDetectionEnabled(Boolean.TRUE.equals(request.getDebrisDetectionEnabled()))
-                .violationDetectionEnabled(Boolean.TRUE.equals(request.getViolationDetectionEnabled()))
+                .violationDetectionEnabled(Boolean.TRUE.equals(request.getViolationDetectionEnabled())
+                        || Boolean.TRUE.equals(request.getUturnDetectionEnabled())
+                        || Boolean.TRUE.equals(request.getSignalDetectionEnabled()))
+                .uturnDetectionEnabled(Boolean.TRUE.equals(request.getUturnDetectionEnabled())
+                        || (request.getUturnDetectionEnabled() == null && Boolean.TRUE.equals(request.getViolationDetectionEnabled())))
+                .signalDetectionEnabled(Boolean.TRUE.equals(request.getSignalDetectionEnabled())
+                        || (request.getSignalDetectionEnabled() == null && Boolean.TRUE.equals(request.getViolationDetectionEnabled())))
                 .build();
 
         return CameraResponse.from(cameraRepository.save(camera));
@@ -87,6 +93,24 @@ public class CameraService {
         }
         if (request.getViolationDetectionEnabled() != null) {
             camera.setViolationDetectionEnabled(request.getViolationDetectionEnabled());
+            if (request.getUturnDetectionEnabled() == null) {
+                camera.setUturnDetectionEnabled(request.getViolationDetectionEnabled());
+            }
+            if (request.getSignalDetectionEnabled() == null) {
+                camera.setSignalDetectionEnabled(request.getViolationDetectionEnabled());
+            }
+        }
+        if (request.getUturnDetectionEnabled() != null) {
+            camera.setUturnDetectionEnabled(request.getUturnDetectionEnabled());
+            camera.setViolationDetectionEnabled(
+                    Boolean.TRUE.equals(camera.getUturnDetectionEnabled()) || Boolean.TRUE.equals(camera.getSignalDetectionEnabled())
+            );
+        }
+        if (request.getSignalDetectionEnabled() != null) {
+            camera.setSignalDetectionEnabled(request.getSignalDetectionEnabled());
+            camera.setViolationDetectionEnabled(
+                    Boolean.TRUE.equals(camera.getUturnDetectionEnabled()) || Boolean.TRUE.equals(camera.getSignalDetectionEnabled())
+            );
         }
 
         return CameraResponse.from(camera);

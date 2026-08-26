@@ -20,7 +20,12 @@
     --show       실시간 창으로 본다 (q 로 중단)
     --save PATH  판정 결과를 그려 넣은 영상을 저장한다
     --events P   이벤트 JSON 저장 경로 (기본 output/uturn_events.json)
-    --lpr        번호판 인식까지 같이 돌린다 (느려진다)
+    --lpr        번호판 인식까지 같이 돌린다 (느려진다). 인식된 번호판은
+                 게이트웨이 이벤트의 meta.plateNumber 로 실려 대시보드
+                 이벤트 리포트의 "차량 번호판" 칸에 뜬다
+    --plate-weights PATH  번호판 검출 가중치 (기본 models/plate_det.pt)
+    --lpr-mock   모델 없이 더미 번호판으로 흐름만 확인 (실제 번호 아님)
+    --plate-hold SEC      번호판 확정 전이면 이만큼 기다렸다 전송 (기본 2초)
 
 준비물
     1) config_zones.json 에 이 카메라의 중앙선이 있어야 한다 → draw_roi.py 로 그린다
@@ -33,10 +38,35 @@ import argparse
 import json
 import sys
 import time
+import uuid
 from pathlib import Path
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
 
 BASE = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE))
+
+CAPTURES_DIR = BASE.parent / "b_dashboard" / "public" / "captures"
+try:
+    CAPTURES_DIR.mkdir(parents=True, exist_ok=True)
+except Exception:
+    pass
+
+
+def save_capture(cv2, frame, cam_id, tag):
+    """사건 전/후 캡처 이미지를 b_dashboard/public/captures에 저장하고 경로 반환."""
+    if frame is None:
+        return None
+    filename = f"{cam_id}_{tag}_{uuid.uuid4().hex[:8]}.jpg"
+    try:
+        ok = cv2.imwrite(str(CAPTURES_DIR / filename), frame)
+        if ok:
+            return f"/captures/{filename}"
+    except Exception as e:
+        print(f"  ⚠ 캡처 이미지 저장 오류: {e}")
+    return None
 
 from app.core.schemas import ViolationType                       # noqa: E402
 from app.violation.engine import ViolationEngine                 # noqa: E402
@@ -134,6 +164,81 @@ def draw_signal(cv2, frame, signal, cz, ts):
 
 
 # --------------------------------------------------------------------------
+def build_lpr_pipeline(weights: str = "", force_mock: bool = False):
+    """실제 학습 모델을 물린 LPR 파이프라인을 만든다.
+
+    `ViolationEngine` 이 인자 없이 만드는 기본 `LPRPipeline()` 은
+    config.yaml 의 `lpr.mock`(시연용 더미)을 따르고, 학습해 둔
+    `models/plate_det.pt` 도 물지 않는다. 실제 번호판을 읽으려면 검출기와
+    인식기를 실사용 설정으로 만들어 넣어 줘야 한다.
+
+    가중치 파일이 없거나 ultralytics/EasyOCR 이 설치돼 있지 않아도 여기서
+    죽지 않는다 — `PlateDetector` 는 CV 폴백으로, `PlateRecognizer` 는
+    Mock 으로 각자 내려가고 파이프라인은 계속 돈다. 시연 도중 한 부분이
+    빠졌다고 위반 감지 전체가 멈추는 것이 더 나쁘기 때문이다.
+    """
+    from app.lpr.detector import PlateDetector      # noqa: E402
+    from app.lpr.pipeline import LPRPipeline        # noqa: E402
+    from app.lpr.recognizer import PlateRecognizer  # noqa: E402
+
+    if force_mock:
+        print("번호판 인식: MOCK (더미 값 — 실제 번호가 아닙니다)")
+        return LPRPipeline(detector=PlateDetector(mock=True),
+                           recognizer=PlateRecognizer(mock=True))
+
+    path = Path(weights) if weights else (BASE / "models" / "plate_det.pt")
+    if path.exists():
+        print(f"번호판 인식: 실제 모델 ({path.name})")
+    else:
+        print(f"번호판 검출 가중치 없음({path}) → CV 폴백으로 진행합니다.")
+        print("  전용 모델을 쓰려면 python install_model.py --check 로 먼저 확인하세요.")
+
+    # easyocr 가 없으면 PlateRecognizer.read() 가 **조용히** Mock 으로 내려간다.
+    # 에러가 안 나기 때문에, 대시보드에 그럴듯한 가짜 번호판이 뜨는데도 "실제로
+    # 인식되고 있다"고 착각하기 쉽다. 여기서 한 번 크게 알려 준다.
+    try:
+        import easyocr  # noqa: F401
+    except ImportError:
+        print("  ⚠ easyocr 미설치 → 번호판 문자는 **더미 값**으로 나갑니다(실제 번호 아님).")
+        print("     실제 인식:  pip install easyocr torch  후  python install_model.py --check")
+
+    detector = PlateDetector(weights=str(path) if path.exists() else None, mock=False)
+    recognizer = PlateRecognizer(mock=False)
+    return LPRPipeline(detector=detector, recognizer=recognizer)
+
+def lerp_point(start, end, ratio):
+    return (
+        start[0] + (end[0] - start[0]) * ratio,
+        start[1] + (end[1] - start[1]) * ratio,
+    )
+
+
+def update_demo_moving_roi(cz, ts, spec):
+    start_sec = float(spec["start_sec"])
+    end_sec = float(spec["end_sec"])
+
+    if end_sec <= start_sec:
+        cz.demo_moving_roi_active = False
+        return
+
+    # 이동 구간에서만 RedLightDetector가 이동 ROI 방식으로 계산한다.
+    cz.demo_moving_roi_active = start_sec <= ts <= end_sec
+
+    ratio = (ts - start_sec) / (end_sec - start_sec)
+    ratio = max(0.0, min(1.0, ratio))
+
+    for line_id, key in (("stop_1", "stop_line"), ("exit_1", "exit_line")):
+        line = cz.line(line_id)
+        motion = spec.get(key)
+
+        if line is None or motion is None:
+            continue
+
+        line.p1 = lerp_point(motion["p1_start"], motion["p1_end"], ratio)
+        line.p2 = lerp_point(motion["p2_start"], motion["p2_end"], ratio)
+
+
+# --------------------------------------------------------------------------
 def main() -> None:
     ap = argparse.ArgumentParser(description="불법 유턴 감지 실행기")
     ap.add_argument("--video", default="", help="입력 영상 (--fake 면 생략 가능)")
@@ -157,7 +262,51 @@ def main() -> None:
     ap.add_argument("--gateway", default="", metavar="URL",
                     help="b_gateway 로도 전송 (예: http://localhost:8080)")
     ap.add_argument("--lpr", action="store_true", help="번호판 인식도 함께 (느림)")
+    ap.add_argument("--plate-weights", default="", metavar="PATH",
+                    help="번호판 검출 YOLO 가중치. 비워 두면 models/plate_det.pt 를 쓰고, "
+                         "그 파일이 없으면 CV 폴백으로 내려간다 (--lpr 일 때만 의미 있음)")
+    ap.add_argument("--lpr-mock", action="store_true",
+                    help="모델·EasyOCR 없이 더미 번호판으로 화면 흐름만 확인한다 "
+                         "(실제 번호가 아니므로 단속/발표 수치에 쓰지 말 것)")
+    ap.add_argument("--plate-hold", type=float, default=2.0, metavar="SEC",
+                    help="위반이 잡혔는데 번호판이 아직 확정 전이면 이만큼(영상 시각 기준 초) "
+                         "기다렸다 전송한다. 0 이면 기다리지 않고 예전처럼 즉시 보낸다")
+    ap.add_argument("--mode", choices=["all", "uturn", "signal"], default="all",
+                    help="감지 모드 (all: 불법유턴+신호위반, uturn: 불법유턴만, signal: 신호위반만)")
+    ap.add_argument(
+        "--demo-moving-roi",
+        default="",
+        metavar="JSON",
+        help="1인칭 게임 신호위반 데모 전용 이동 ROI 설정 파일. "
+            "정지선/진출선에만 적용하며 불법유턴 ROI에는 적용하지 않음.",
+    )
     a = ap.parse_args()
+
+    if a.mode == "uturn":
+        watched_types = (ViolationType.ILLEGAL_UTURN,)
+    elif a.mode == "signal":
+        watched_types = (ViolationType.RED_LIGHT,)
+    else:
+        watched_types = (ViolationType.ILLEGAL_UTURN, ViolationType.RED_LIGHT)
+
+    # 1인칭 게임 신호위반 데모 전용 이동 ROI 설정
+    moving_roi = None
+
+    if a.demo_moving_roi:
+        moving_path = Path(a.demo_moving_roi)
+
+        if not moving_path.exists():
+            sys.exit(f"이동 ROI 설정 파일이 없습니다: {moving_path}")
+
+        moving_roi = json.loads(moving_path.read_text(encoding="utf-8"))
+
+        if moving_roi.get("camera_id") != a.cam:
+            sys.exit(
+                "이동 ROI 설정의 camera_id와 --cam 값이 다릅니다. "
+                "다른 영상에 적용되는 것을 막기 위해 종료합니다."
+            )
+
+        print(f"게임 신호위반 데모 이동 ROI 사용: {moving_path.name}")
 
     try:
         import cv2
@@ -195,6 +344,10 @@ def main() -> None:
     else:
         print("교차로(정지선) 없음 → 신호 위반은 판정하지 않습니다.")
 
+    if a.mode == "uturn" and not centers:
+        sys.exit(f"'{a.cam}' 에 중앙선 ROI가 없습니다. draw_roi.py 로 중앙선을 먼저 그려주세요.")
+    if a.mode == "signal" and not cz.intersections:
+        sys.exit(f"'{a.cam}' 에 정지선/교차로 ROI가 없습니다. draw_roi.py 로 정지선(3)/진출선(4)을 먼저 그려주세요.")
     if not centers and not cz.intersections:
         sys.exit(f"'{a.cam}' 에 중앙선도 정지선도 없습니다.\n"
                  f"  draw_roi.py 로 중앙선(1·2) 또는 정지선·진출선(3·4)을 그려 주세요.")
@@ -229,14 +382,36 @@ def main() -> None:
         print("  주의: 녹화 영상 + 실시간 API 는 시각이 맞지 않습니다.")
         print("        녹화본 판정에는 --signal 타임라인을 쓰세요.")
 
+    # --- 번호판 인식 -------------------------------------------------
+    # ViolationEngine 은 lpr=None 이면 기본 LPRPipeline() 을 스스로 만든다.
+    # 그 기본값은 config.yaml 의 lpr.mock(=시연용 더미)을 따르고 학습된 가중치도
+    # 물지 않는다. --lpr 을 켰을 때만 실제 모델을 물린 파이프라인을 만들어 주입한다
+    # — 안 켰을 때의 동작은 예전과 완전히 같다.
+    lpr_pipeline = None
+    if a.lpr:
+        lpr_pipeline = build_lpr_pipeline(a.plate_weights, a.lpr_mock)
+
     # --- 엔진 --------------------------------------------------------
-    engine = ViolationEngine(zones=zones, signal_provider=signal)
+    engine = ViolationEngine(zones=zones, signal_provider=signal, lpr=lpr_pipeline)
 
     gw = None
+    forwarder = None
     if a.gateway:
         gw = GatewayClient(base_url=a.gateway).start()
-        gw.subscribe_to_bus()
-        print(f"게이트웨이 전송: {gw.url}")
+        if a.lpr and a.plate_hold > 0:
+            # 위반은 라인을 넘는 "그 순간" 확정되고, 번호판은 여러 프레임을 모아
+            # 확정된다. 즉시 보내면 이벤트 리포트의 "차량 번호판"이 빈 채로 굳는다.
+            # subscribe_to_bus() 와 둘 다 붙이면 같은 이벤트가 두 번 나가므로 하나만.
+            from app.core.plate_hold import PlateHoldForwarder  # noqa: E402
+
+            forwarder = PlateHoldForwarder(
+                gateway=gw, lpr=engine.lpr, matcher=engine.matcher,
+                hold_sec=a.plate_hold,
+            ).attach()
+            print(f"게이트웨이 전송: {gw.url}  (번호판 확정 대기 {a.plate_hold:g}초)")
+        else:
+            gw.subscribe_to_bus()
+            print(f"게이트웨이 전송: {gw.url}")
 
     # --- 차량 검출 ---------------------------------------------------
     if a.fake:
@@ -270,10 +445,20 @@ def main() -> None:
 
     for frame_no, ts, frame, dets in src.frames():
         processed += 1
+
+        # 1인칭 게임 신호위반 데모일 때만 stop/exit ROI를 이동한다.
+        # center ROI는 건드리지 않으므로 불법유턴 판정에는 영향이 없다.
+        if moving_roi is not None:
+            update_demo_moving_roi(cz, ts, moving_roi)
+
         if writer is None and a.save:
             Path(a.save).parent.mkdir(parents=True, exist_ok=True)
-            writer = cv2.VideoWriter(a.save, cv2.VideoWriter_fourcc(*"mp4v"),
-                                     src.fps / a.stride, src.size)
+            writer = cv2.VideoWriter(
+                a.save,
+                cv2.VideoWriter_fourcc(*"mp4v"),
+                src.fps / a.stride,
+                src.size,
+            )
 
         watching: dict[int, tuple] = {}
         for d in dets:
@@ -283,16 +468,33 @@ def main() -> None:
                     or any(k[1] == d.track_id for k in engine.red_light._pending))
             state = "watch" if pend else "car"
             for ev in evs:
-                if ev.violation_type not in WATCHED:
+                if ev.violation_type not in watched_types:
                     continue          # 고위험 차량 경보 등은 엔진이 따로 처리
                 state = "violation"
-                events.append(ev.to_payload())
+                payload = ev.to_payload()
+                if frame is not None:
+                    tag = "uturn" if ev.violation_type == ViolationType.ILLEGAL_UTURN else "signal"
+                    cap_path = save_capture(cv2, frame, a.cam, tag)
+                    if cap_path:
+                        payload["frame_before"] = cap_path
+                        payload["frame_after"] = cap_path
+                        # forwarder의 pending item에도 캡처 경로 주입
+                        if forwarder is not None:
+                            for item in forwarder._pending:
+                                if item.track_id == ev.track_id:
+                                    item.payload["frame_before"] = cap_path
+                                    item.payload["frame_after"] = cap_path
+                events.append(payload)
                 label = (SUBTYPE_KO.get(ev.subtype) or VTYPE_EN[ev.violation_type])
                 banner = (f"[{label}] track #{ev.track_id}  t={ts:.1f}s", ts + 2.0)
                 print(f"\n  ★ {VTYPE_KO[ev.violation_type]}  t={ts:6.2f}s  "
                       f"track=#{ev.track_id}  "
                       f"{ev.subtype or ev.zone_id}  {ev.detail}")
             watching[d.track_id] = (d.bbox, state)
+
+        # 보류 중인 위반 이벤트 중 번호판이 확정됐거나 대기 시간을 넘긴 건을 내보낸다.
+        if forwarder is not None:
+            forwarder.tick(ts)
 
         if banner and ts > banner[1]:
             banner = None
@@ -316,6 +518,11 @@ def main() -> None:
         api_signal.stop()
         print(f"\n신호 API 폴링 {api_signal.stats['polls']}회 "
               f"(성공 {api_signal.stats['ok']} / 실패 {api_signal.stats['failed']})")
+    if forwarder is not None:
+        # 영상이 끝나는 순간까지 보류돼 있던 건은 있는 그대로라도 반드시 내보낸다.
+        forwarder.flush()
+        forwarder.detach()
+        print(f"번호판 대기 결과: {forwarder.stats}")
     if gw is not None:
         gw.stop(drain=True)
         print(f"게이트웨이 전송 결과: {gw.stats}")

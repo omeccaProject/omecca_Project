@@ -57,6 +57,10 @@ public class CctvDetectionController {
     public static class Detection {
         private Integer trackId;
         private Bbox bbox;
+        // [신규] 음주운전(지그재그 주행 등) 의심 판정된 차량인지 여부 - true면 프론트에서
+        // 박스를 빨간색으로 그린다(test_suspicious_driving.py의 로컬 cv2 창과 동일하게).
+        // 필드가 없으면(구버전 Python 스크립트) Boolean 기본값 null -> 프론트에서 false로 취급.
+        private Boolean alert;
     }
 
     @Data

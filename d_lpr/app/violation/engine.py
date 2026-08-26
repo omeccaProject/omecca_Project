@@ -48,6 +48,7 @@ class ViolationEngine:
         self.matcher = matcher or VehicleMatcher(repo=self.repo)
         self.tracks = TrackStore(history=cfg.track_history)
         self.cooldown_sec = cfg.cooldown_sec if cooldown_sec is None else cooldown_sec
+        self._last_emitted_by_camera: dict[tuple[str, str], float] = {}
 
         self.red_light = RedLightDetector(self.signal)
         # 유턴 판정도 신호를 본다 (유턴 허용 구간에서 좌회전 화살표 확인용)
@@ -107,11 +108,18 @@ class ViolationEngine:
         assert vtype is not None
         now = track.last.ts if track.last else 0.0
 
+        camera_key = (track.cam_id, vtype.value)
+        camera_last = self._last_emitted_by_camera.get(camera_key)
+        if camera_last is not None and now - camera_last < self.cooldown_sec:
+            return None
+
         # 동일 track의 같은 위반이 연속 발행되지 않도록 쿨다운
         last = track.last_emitted.get(vtype.value)
         if last is not None and now - last < self.cooldown_sec:
             return None
+
         track.last_emitted[vtype.value] = now
+        self._last_emitted_by_camera[camera_key] = now
 
         plate_no = track.plate_no or self.lpr.confirmed_plate(track.cam_id, track.track_id) or ""
         conf = track.plate_confidence or self.lpr.confidence_of(track.cam_id, track.track_id)

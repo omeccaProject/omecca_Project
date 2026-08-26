@@ -78,20 +78,37 @@ class RedLightDetector:
 
     # ------------------------------------------------------------------
     @staticmethod
-    def _cross(track: Track, line, p_cur) -> Optional[int]:
-        """상태를 유지하며 라인 통과 방향을 판정한다.
+    def _cross(
+        track: Track,
+        line,
+        p_cur,
+        moving_roi: bool = False,
+    ) -> Optional[int]:
+        """차량 또는 데모용 이동 ROI의 선 통과를 판정한다."""
 
-        차량 좌표가 라인 위에 정확히 놓이는 프레임이 있어도 통과를 놓치지 않도록
-        마지막으로 부호가 확정된 지점을 track에 보관해 두고 비교한다.
-        """
         s_cur = line.side(p_cur)
+
         if s_cur == 0:
-            return None  # 라인 위 → 판정 보류(직전 상태 유지)
+            return None
+
         st = track.line_state.get(line.line_id)
         track.line_state[line.line_id] = (s_cur, p_cur)
+
         if st is None:
             return None
+
         prev_side, prev_pt = st
+
+        # 1인칭 게임 데모:
+        # 이전 프레임의 ROI 기준 부호와 현재 ROI 기준 부호가 바뀌면,
+        # 차량이 아니라 이동한 ROI가 차량 기준점을 지나간 것으로 판단한다.
+        # 고정 CCTV에서는 이 분기가 절대 실행되지 않는다.
+        if moving_roi:
+            if prev_side == s_cur:
+                return None
+            return 1 if prev_side > 0 else -1
+
+        # 실제 CCTV: 기존 고정 ROI 교차 판정
         return line.crossed_from(prev_pt, prev_side, p_cur)
 
     # ------------------------------------------------------------------
@@ -112,8 +129,16 @@ class RedLightDetector:
             exit_line = cz.line(spec.get("exit_line", "")) if spec.get("exit_line") else None
 
             # 상태 갱신은 매 프레임 수행해야 하므로 두 라인 모두 먼저 평가한다
-            stop_cross = self._cross(track, stop_line, p_cur)
-            exit_cross = self._cross(track, exit_line, p_cur) if exit_line else None
+            moving_roi = cz.demo_moving_roi_active
+
+            stop_cross = self._cross(
+                track, stop_line, p_cur, moving_roi=moving_roi
+            )
+
+            exit_cross = (
+                self._cross(track, exit_line, p_cur, moving_roi=moving_roi)
+                if exit_line else None
+            )
 
             # --- 1) 정지선 통과 감지 -----------------------------------
             if stop_cross is not None and stop_line.is_forward(stop_cross):

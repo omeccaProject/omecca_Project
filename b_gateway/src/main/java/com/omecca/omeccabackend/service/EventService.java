@@ -134,6 +134,32 @@ public class EventService {
         return deletedCount;
     }
 
+    // [추가] map.js가 "CCTV 영상 보기"로 연결한 영상에서 사전/사후 프레임을 캡쳐해 서버에
+    // 올리면(server/routes/mapEvents.js POST /api/map/captures → gatewayForward.js), 이
+    // trackId의 가장 최근 이벤트를 찾아 frameRefBefore/frameRefAfter만 채워 넣는다.
+    // 이벤트 생성 시점엔 아직 캡쳐가 없을 수 있으므로(사용자가 나중에 영상을 열어야
+    // 캡쳐되는 구조) create()와 분리된 "덧붙이기" 용도의 갱신이다. null이 아닌 값만
+    // 덮어쓴다 - 사전/사후 중 하나만 캡쳐에 성공해도 나머지 기존 값을 지우지 않는다.
+    @Transactional
+    public EventResponse updateCapturesByTrackId(String trackId, String frameRefBefore, String frameRefAfter) {
+        if (trackId == null || trackId.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "trackId is required");
+        }
+        Event event = eventRepository.findFirstByTrackIdOrderByOccurredAtDesc(trackId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "event not found for trackId: " + trackId));
+
+        if (frameRefBefore != null) {
+            event.setFrameRefBefore(frameRefBefore);
+        }
+        if (frameRefAfter != null) {
+            event.setFrameRefAfter(frameRefAfter);
+        }
+        Event saved = eventRepository.save(event);
+        EventResponse response = EventResponse.from(saved, objectMapper);
+        messagingTemplate.convertAndSend("/topic/events", response);
+        return response;
+    }
+
     private String emptyToNull(String value) {
         return (value == null || value.isBlank()) ? null : value;
     }

@@ -110,6 +110,9 @@ class CameraZones:
     # 교차로 정의: {intersection_id: {"stop_line": id, "exit_line": id, "signal_id": id}}
     intersections: dict[str, dict[str, str]] = field(default_factory=dict)
     location: Optional[tuple[float, float]] = None   # (lat, lon)
+    # 1인칭 게임 신호위반 데모에서만 True.
+    # 일반 CCTV와 불법유턴 ROI에는 기본값 False가 유지된다.
+    demo_moving_roi_active: bool = False
 
     def line(self, line_id: str) -> Optional[VirtualLine]:
         return self.lines.get(line_id)

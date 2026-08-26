@@ -174,12 +174,15 @@ class PlateRecognizer:
         hint: Optional[str] = None,
     ) -> Optional[PlateResult]:
         """전처리된 이미지에서 번호판 문자열을 읽는다."""
-        if self.mock or image is None:
+        if self.mock:
             return self._read_mock(bbox, cam_id, track_id, hint)
+
+        if image is None:
+            return None
 
         reader = get_reader(settings.lpr.ocr_lang, self.gpu)
         if reader is None:
-            return self._read_mock(bbox, cam_id, track_id, hint)
+            return None
 
         # 자리별 인식 우선 시도. 배치를 못 읽으면 단일 패스로 되돌아간다.
         if self.structured:
