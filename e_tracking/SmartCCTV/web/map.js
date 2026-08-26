@@ -1483,6 +1483,23 @@ class RouteManager {
     if (last && last[0] === latlng[0] && last[1] === latlng[1]) return;
     currentSegment.push(latlng);
 
+    this._redrawRealJourneySegments();
+  }
+
+  // [신규: animateAlong() 이식용] animateAlong()의 onFrame은 appendRealJourneyPoint()
+  // 처럼 점을 하나씩 이어붙이는 게 아니라, "지나온 좌표 + 지금 보간 중인 좌표"
+  // 전체 배열을 매 프레임 통째로 넘겨준다(setRealJourneyPoints와 같은 전체
+  // 재그리기 방식). 그래서 지금 그리고 있는 마지막 선분(segment)의 내용만
+  // 매 프레임 통째로 교체해서 다시 그린다 - 사각지대 이전에 이미 완성된
+  // 선분들은 건드리지 않는다(startNewRealJourneySegment()로 분리해둔 덕분).
+  setCurrentRealJourneySegment(points) {
+    if (!this.realJourneySegments) this.realJourneySegments = [];
+    if (this.realJourneySegments.length === 0) this.realJourneySegments.push([]);
+    this.realJourneySegments[this.realJourneySegments.length - 1] = points.slice();
+    this._redrawRealJourneySegments();
+  }
+
+  _redrawRealJourneySegments() {
     // 선분이 하나도 2점 이상이 안 되면(막 시작한 선분 하나뿐) 아직 그릴 게 없다.
     const drawable = this.realJourneySegments.filter((seg) => seg.length >= 2);
     if (drawable.length === 0) return;
@@ -1786,10 +1803,8 @@ class RealVehicleMarker {
     this.marker = null;
     this._animFrameId = null;
     this._frameLogCounter = 0;
-    this._pathQueue = [];
     this._isAnimating = false;
     this._label = null;
-    this._onProgress = null;
   }
 
   _createIcon() {
@@ -1844,6 +1859,11 @@ class RealVehicleMarker {
       this.marker.setLatLng([lat, lng]);
     }
 
+    // [main에서 이식] 위치가 갱신될 때마다 지도도 함께 따라간다("실시간으로
+    // 보기" 버튼과 연동, mapManager.panFollow()/resumeFollow() 패턴은
+    // VehicleManager와 동일 - 사용자가 지도를 직접 드래그하면 자동으로 멈춘다).
+    this.mapManager.panFollow(lat, lng);
+
     if (label) {
       this.marker.bindTooltip(
         String(label),
@@ -1853,101 +1873,97 @@ class RealVehicleMarker {
       );
     }
 
-    // [신규] "안 보이는 구간" 연출(hide()) 이후 다시 setPosition()이 호출되면
-    // (=다음 카메라에서 재감지) 마커가 다시 보여야 하므로 항상 불투명도를
-    // 되돌려놓는다. hide() 상태가 아니었을 때는 아무 효과 없다.
+    // [유지: 사각지대 연출] "안 보이는 구간" 연출(hide()) 이후 다시
+    // setPosition()이 호출되면(=재등장) 마커가 다시 보여야 하므로 항상
+    // 불투명도를 되돌려놓는다. hide() 상태가 아니었을 때는 아무 효과 없다.
     this.marker.setOpacity(1);
   }
 
-  // [신규] 카메라 사이 "사각지대" 구간(예: 동교동삼거리) 연출용 - 마커를 지도에서
-  // 완전히 떼어내지 않고 투명하게만 만든다. remove()와 달리 다음 setPosition()
-  // 호출로 그대로 이어서 다시 보이게 할 수 있다(_isAnimating/_pathQueue를
-  // 건드리지 않는다 - 이 메서드는 followPath()의 애니메이션 큐와는 무관하게
-  // 쓰인다).
-  hide() {
-    if (this.marker) this.marker.setOpacity(0);
-  }
-
-  // [신규] followPath()의 _pathQueue에 이미 쌓여있는 다음 구간 애니메이션들을
-  // 전부 비운다. 사각지대(gap) 진입이 확정된 순간 호출해야 한다 - 그렇지
-  // 않으면, beforeGap 애니메이션이 끝나 hide()가 호출된 바로 다음 줄에서
-  // _consumeQueue()가 큐에 남아있던 다음 구간(예: 합정역->양화대교북단)을
-  // 곧바로 이어서 재생하면서 setPosition()을 호출해버려 opacity가 다시
-  // 1로 돌아가고, 결과적으로 마커가 눈에 보이게 사라지는 순간이 없어진다.
-  clearQueue() {
-    this._pathQueue = [];
-  }
-
-  followPath(points, label, onComplete, onProgress) {
+  // [main에서 이식: "이상감지 차량이 지도 위에서 실시간으로 움직이면서
+  // 폴리라인이 실시간으로 그려져야해"]
+  //
+  // 예전 followPath()/_consumeQueue()는 payload가 올 때마다 애니메이션을
+  // "큐"에 쌓았다 - 파이썬이 구간을 여러 번(직선 → 도로경로로 교체) 빠르게
+  // 보내면 큐가 쌓여서, 파이썬을 이미 끈 뒤에도 오래된 애니메이션이 한참
+  // 재생되며 지그재그로 겹쳐 그려지는 문제가 있었다(main에서 이미 고친 버그).
+  //
+  // 지금은 큐가 없다 - payload가 새로 오면 진행 중이던 애니메이션을 즉시
+  // 취소하고(_cancelAnimation) 마커의 "현재 실제 화면 위치"에서 새 points
+  // 배열 쪽으로 바로 이어서 애니메이션을 다시 시작한다.
+  //
+  // [사각지대 연출을 위해 main 대비 추가] onComplete 콜백 - 이번 호출에
+  // 넘긴 points를 끝까지 다 소진하고 애니메이션이 멈췄을 때 1번 호출된다.
+  // 사각지대 진입 지점(REAL_JOURNEY_GAP_WAYPOINT) 직전까지만 잘라서 넘긴
+  // 뒤, 실제로 거기 도착한 시점에 마커를 숨기기 위해 필요하다
+  // (RealVehicleJourneyListener 콜백 참고).
+  animateAlong(points, label, onFrame, onComplete) {
     if (!points || points.length === 0) return;
-
     this._label = label;
-    if (onProgress) this._onProgress = onProgress;
 
-    if (points.length === 1) {
-      if (!this._isAnimating && this._pathQueue.length === 0) {
-        this.setPosition(points[0][0], points[0][1], label);
-        if (this._onProgress) this._onProgress(points[0][0], points[0][1]);
+    this._cancelAnimation();
+
+    // 현재 마커 위치에서 새 points 배열상 가장 가까운 지점을 찾아 그 지점부터
+    // 이어서 애니메이션한다 - 뒤로 순간이동하는 부자연스러운 점프를 막는다.
+    let startIdx = 0;
+    if (this.marker) {
+      const cur = this.marker.getLatLng();
+      let bestDist = Infinity;
+      for (let i = 0; i < points.length; i++) {
+        const d = haversineMeters([cur.lat, cur.lng], points[i]);
+        if (d < bestDist) {
+          bestDist = d;
+          startIdx = i;
+        }
       }
+    }
+
+    const passedPoints = points.slice(0, startIdx + 1);
+    const remaining = points.slice(startIdx);
+
+    if (remaining.length <= 1) {
+      // 더 이동할 구간이 없다 - 위치만 즉시 맞추고 폴리라인은 전체 좌표로 그린다.
+      const [lat, lng] = points[points.length - 1];
+      this.setPosition(lat, lng, label);
+      if (onFrame) onFrame(points);
       if (onComplete) onComplete();
       return;
     }
 
-    this._pathQueue.push({ points, onComplete });
-
-    if (!this._isAnimating) {
-      this._consumeQueue();
-    }
+    this._isAnimating = true;
+    this._runAnimatedSegments(remaining, passedPoints, label, onFrame, onComplete);
   }
 
-  _consumeQueue() {
-    if (this._pathQueue.length === 0) {
-      this._isAnimating = false;
-      return;
-    }
-    this._isAnimating = true;
-
-    const { points, onComplete } = this._pathQueue.shift();
-    const label = this._label;
+  _runAnimatedSegments(remaining, passedPoints, label, onFrame, onComplete) {
     const self = this;
-
-    console.log("[REAL JOURNEY] 🚗 새 구간 이동 시작", points);
-
     const segLengths = [];
-    let totalLen = 0;
-    for (let i = 1; i < points.length; i++) {
-      const d = haversineMeters(points[i - 1], points[i]);
-      segLengths.push(d);
-      totalLen += d;
+    for (let i = 1; i < remaining.length; i++) {
+      segLengths.push(haversineMeters(remaining[i - 1], remaining[i]));
     }
-    if (totalLen <= 0) totalLen = 1;
 
     const SPEED_METERS_PER_SEC = 300;
     let segIdx = 0;
 
     const runSegment = () => {
       if (segIdx >= segLengths.length) {
-        console.log("[REAL JOURNEY] 🚗 새 구간 이동 완료");
+        console.log("[REAL JOURNEY] 🚗 애니메이션 구간 이동 완료");
         self._animFrameId = null;
+        self._isAnimating = false;
         if (onComplete) onComplete();
-        self._consumeQueue();
         return;
       }
 
-      const from = points[segIdx];
-      const to = points[segIdx + 1];
-      const segLen = segLengths[segIdx];
+      const from = remaining[segIdx];
+      const to = remaining[segIdx + 1];
+      const segLen = segLengths[segIdx] || 1;
       const segDuration = Math.max(200, (segLen / SPEED_METERS_PER_SEC) * 1000);
       const segStart = performance.now();
-
-      console.log("[REAL JOURNEY] 🚗 새 경로 구간", from, "->", to);
 
       const step = (now) => {
         const t = Math.min(1, (now - segStart) / segDuration);
         const lat = from[0] + (to[0] - from[0]) * t;
         const lng = from[1] + (to[1] - from[1]) * t;
         self.setPosition(lat, lng, label);
-        if (self._onProgress) self._onProgress(lat, lng);
+        if (onFrame) onFrame(passedPoints.concat([[lat, lng]]));
 
         self._frameLogCounter += 1;
         if (self._frameLogCounter % 10 === 0) {
@@ -1957,6 +1973,7 @@ class RealVehicleMarker {
         if (t < 1) {
           self._animFrameId = requestAnimationFrame(step);
         } else {
+          passedPoints.push(to);
           segIdx += 1;
           runSegment();
         }
@@ -1967,13 +1984,25 @@ class RealVehicleMarker {
     runSegment();
   }
 
-  remove() {
+  _cancelAnimation() {
     if (this._animFrameId) {
       cancelAnimationFrame(this._animFrameId);
       this._animFrameId = null;
     }
-    this._pathQueue = [];
     this._isAnimating = false;
+  }
+
+  // [유지: 사각지대 연출] 카메라 사이 "사각지대" 구간(예: 동교동삼거리)
+  // 연출용 - 마커를 지도에서 완전히 떼어내지 않고 투명하게만 만든다.
+  // remove()와 달리 다음 setPosition() 호출로 그대로 이어서 다시 보이게
+  // 할 수 있다. 큐가 없어졌으므로(clearQueue() 불필요) _cancelAnimation()과도
+  // 무관하게 독립적으로 호출하면 된다.
+  hide() {
+    if (this.marker) this.marker.setOpacity(0);
+  }
+
+  remove() {
+    this._cancelAnimation();
 
     if (this.marker) {
       const map = this.mapManager.getMap();
@@ -3702,10 +3731,13 @@ document.addEventListener("DOMContentLoaded", () => {
         const gapIdx = findGapWaypointIndex(newSegment);
 
         if (gapIdx === -1) {
-          // 사각지대 없음 - 기존처럼 도로 경로를 따라 마커와 폴리라인을 함께
-          // 실시간으로 채워나간다(마커가 움직이는 매 프레임마다 선도 같이 자람).
-          realVehicleMarker.followPath(newSegment, label, null, (lat, lng) => {
-            routeManager.appendRealJourneyPoint([lat, lng]);
+          // 사각지대 없음 - animateAlong()으로 마커와 폴리라인을 함께 실시간
+          // 으로 채워나간다(마커가 움직이는 매 프레임마다 선도 같이 자람).
+          // [main에서 이식] 큐가 없으므로 새 payload가 오면 이전 애니메이션은
+          // 즉시 취소되고 마커의 현재 위치에서 이어서 재시작된다 - 밀려서
+          // 몰아 재생되는 문제가 구조적으로 생기지 않는다.
+          realVehicleMarker.animateAlong(newSegment, label, (framePoints) => {
+            routeManager.setCurrentRealJourneySegment(framePoints);
           });
         } else {
           // 사각지대 발견 - 그 지점까지만 애니메이션하고, 거기서 멈춘 뒤
@@ -3713,21 +3745,18 @@ document.addEventListener("DOMContentLoaded", () => {
           // (양화대교북단)로 애니메이션 없이 바로 이동시킨다.
           const beforeGap = newSegment.slice(0, gapIdx + 1);
 
-          // [수정: 레이스 컨디션 버그] realJourneySuppressed를 onComplete
-          // 안에서(=beforeGap 애니메이션이 다 끝난 뒤에) true로 바꾸면 그
-          // 사이(수 초간 이어지는 애니메이션 도중) 도착하는 다음 payload가
-          // realJourneySuppressed를 아직 false로 보고 자기 구간을 그대로
-          // followPath()에 큐잉해버린다. 그러면 beforeGap이 끝나고 hide()가
-          // 호출된 바로 다음 줄(_consumeQueue())에서 큐에 쌓여있던 그 다음
-          // 구간이 곧장 재생되며 setPosition()이 opacity를 다시 1로 되돌려서
-          // 마커가 사라지는 순간이 실제로는 보이지 않았다(0프레임짜리 숨김).
-          // 그래서 gap을 발견한 이 시점에 즉시 suppress 플래그를 켜고, 혹시
-          // 이미 큐에 쌓여있을 수도 있는 이전 구간들도 비워서 beforeGap
-          // 애니메이션만 단독으로 재생되도록 한다.
+          // [유지: 레이스 컨디션 버그 수정] gap을 발견한 이 시점에 즉시
+          // suppress 플래그를 켜둔다 - beforeGap 애니메이션이 재생되는 몇 초
+          // 사이 도착하는 다음 payload가 realJourneySuppressed를 아직 false로
+          // 보고 자기 구간을 별도로 재생해버리는 걸 막는다. [main 이식 이후]
+          // animateAlong()은 애초에 큐가 없어서(clearQueue() 호출 불필요) 이
+          // 시점 이후 들어오는 모든 payload는 아래 realJourneySuppressed
+          // 분기에서 그냥 무시되고, 새 애니메이션이 걸릴 일 자체가 없다.
           realJourneySuppressed = true;
-          realVehicleMarker.clearQueue();
 
-          realVehicleMarker.followPath(beforeGap, label, () => {
+          realVehicleMarker.animateAlong(beforeGap, label, (framePoints) => {
+            routeManager.setCurrentRealJourneySegment(framePoints);
+          }, () => {
             console.log(
               `[REAL JOURNEY] 🕳️ 동교동삼거리 부근 도달 - 마커 ${REAL_JOURNEY_GAP_HIDE_MS}ms 숨김`
             );
@@ -3756,8 +3785,6 @@ document.addEventListener("DOMContentLoaded", () => {
               realJourneySuppressed = false;
               realJourneyGapTimer = null;
             }, REAL_JOURNEY_GAP_HIDE_MS);
-          }, (lat, lng) => {
-            routeManager.appendRealJourneyPoint([lat, lng]);
           });
         }
       }
