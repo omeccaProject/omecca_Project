@@ -142,8 +142,13 @@ function SidebarRow({ icon, label, count, tone, active, onClick }) {
 // 정중앙에 뜨는 알림 팝업. 예전엔 오른쪽 "AI 관제 이벤트" 리스트에서 카드를 직접 찾아
 // 클릭해야만 지도에서 그 차량을 볼 수 있었는데, 그러다 보니 대시보드가 아닌 다른 화면을
 // 보고 있을 땐 새 차량 이벤트가 온 걸 놓치기 쉬웠다. 이제는 어떤 화면을 보고 있든 이 팝업이
-// 바로 뜨고, 클릭 한 번으로 "추적 차량" 뷰 + 지도 포커스까지 한 번에 이동한다.
-function VehicleAlertPopup({ event, onFocus, onDismiss }) {
+// 바로 뜨고, 클릭 한 번으로 "추적 차량" 뷰 + 지도 포커스 + CCTV 전환 + DUI 폴리라인
+// 재생 시작까지 한 번에 이루어진다.
+// [수정: "버튼이 2개인데 하나로 합쳐달라"] 예전엔 "지도에서 실시간으로 보기"와
+// "CCTV 바로가기"가 별개 버튼이었다 - 사용자 입장에서 뭘 눌러야 하는지 헷갈리고,
+// "지도에서 실시간으로 보기"만 눌렀을 땐 DUI 폴리라인 버퍼가 안 풀려서 아무것도
+// 안 그려지는 문제가 있었다. 이제 버튼 하나(onGo)가 두 동작을 전부 한다.
+function VehicleAlertPopup({ event, onGo, onDismiss }) {
   if (!event) return null
 
   const risk = EVENT_RISK[event.eventType] || 1
@@ -164,8 +169,8 @@ function VehicleAlertPopup({ event, onFocus, onDismiss }) {
             <tr><th>감지 시각</th><td>{fmtTime(event.occurredAt)}</td></tr>
           </tbody>
         </table>
-        <button type="button" className="vehicle-alert-focus-btn" onClick={onFocus}>
-          🗺️ 지도에서 실시간으로 보기 →
+        <button type="button" className="vehicle-alert-focus-btn" onClick={onGo}>
+          📹 CCTV 바로가기 →
         </button>
       </div>
     </div>
@@ -218,6 +223,11 @@ export default function MainDashboard({
   useEffect(() => {
     localStorage.setItem('omecca_right_panel_tab', rightPanelTab)
   }, [rightPanelTab])
+  // [신규] 지도(iframe)에서 "연결된 CCTV" 클릭으로 넘어온 camId. DashboardCctvPanel이
+  // 그 시점에 마운트돼 있지 않을 수도 있어서(다른 화면/탭을 보고 있던 경우), 여기
+  // MainDashboard에서 대신 들고 있다가 prop으로 내려준다 - 자세한 흐름은 아래
+  // 'cctv:select' 메시지 처리 부분 주석 참고.
+  const [requestedCamId, setRequestedCamId] = useState(null)
   const mapIframeRef = useRef(null)
   const mapReadyRef = useRef(false)
   // onMessage 핸들러는 darkMode가 바뀔 때만 재구독되므로, activeView를 직접 클로저로
@@ -243,11 +253,14 @@ export default function MainDashboard({
           { type: 'omecca-theme', theme: darkMode ? 'dark' : 'light' },
           '*',
         )
-        // 지도가 막 로드된 시점의(최신) activeView 기준으로 패널 모드도 바로 맞춰준다
-        // (예: 새로고침 직후 바로 "추적 차량" 뷰였던 경우).
+        // [수정: "추적 차량 화면의 '실시간 CCTV' 패널을 없애달라"] map.js 자체의
+        // video-panel(iframe 내부, "추적 차량" 화면 전용)은 이제 항상 꺼둔다.
+        // 그 안에서 하던 "연결된 CCTV 클릭 → 영상 표시" 기능은 없어진 게 아니라
+        // 아래 'cctv:select' 처리로 옮겨져서, 관제 화면의 CCTV 사이드바
+        // (DashboardCctvPanel)에서 대신 보여준다.
         const currentView = activeViewRef.current
         mapIframeRef.current?.contentWindow?.postMessage(
-          { type: 'omecca-view-mode', showVideoPanel: currentView === 'tracking' },
+          { type: 'omecca-view-mode', showVideoPanel: false },
           '*',
         )
         if (currentView === 'tracking') {
@@ -268,6 +281,21 @@ export default function MainDashboard({
       if (event.data?.type === 'omecca-request-tracking-view') {
         onChangeView('tracking')
       }
+
+      // [신규: "실시간 CCTV 패널 제거 + 그 기능을 관제 화면 사이드바로"]
+      // 지도(iframe) 안에서 "연결된" CCTV를 클릭하면(UticCameraManager.selectRecord,
+      // 또는 추적 차량 팝업의 "CCTV 영상 보기" 버튼) map.js가 이 메시지를 보낸다.
+      // Real Journey의 "CCTV 바로가기"와 완전히 같은 메시지 타입이다 - 어느 경로로
+      // 왔든 지금 어떤 화면을 보고 있든 상관없이, "관제 화면" + "CCTV" 탭으로
+      // 전환해서 그 카메라가 바로 보이게 한다. camId는 requestedCamId로 내려서
+      // DashboardCctvPanel이 아직 마운트 안 돼 있어도(예: 지금 "추적 차량" 화면인
+      // 경우) 놓치지 않고 적용하게 한다.
+      if (event.data?.type === 'cctv:select' && event.data?.camId) {
+        onChangeView('dashboard')
+        setRightPanelTab('cctv')
+        setRightCollapsed(false)
+        setRequestedCamId(event.data.camId)
+      }
     }
     window.addEventListener('message', onMessage)
     return () => window.removeEventListener('message', onMessage)
@@ -286,7 +314,8 @@ export default function MainDashboard({
   // 떠 있는 추적 차량으로 포커스 이동 + 팝업을 열어달라고도 함께 요청한다.
   useEffect(() => {
     if (activeView !== 'dashboard' && activeView !== 'map' && activeView !== 'tracking') return
-    postToMap({ type: 'omecca-view-mode', showVideoPanel: activeView === 'tracking' })
+    // showVideoPanel은 이제 항상 false - 위 handshake 쪽 주석 참고.
+    postToMap({ type: 'omecca-view-mode', showVideoPanel: false })
     if (activeView === 'tracking') {
       postToMap({ type: 'omecca-focus-tracked-vehicle' })
     }
@@ -383,11 +412,23 @@ export default function MainDashboard({
     }
   }
 
-  // 화면 중앙 차량 알림 팝업의 "지도에서 실시간으로 보기" 버튼: 이벤트 카드를 직접 클릭한 것과
-  // 똑같이 동작시키고(포커스 + 추적 차량 뷰 전환 + 지도 포커스 메시지), 팝업은 닫는다.
-  const handleVehicleAlertFocus = () => {
+  // [수정: "팝업 버튼 2개를 하나로 합쳐달라"] 예전엔 "지도에서 실시간으로
+  // 보기"(포커스 + 추적 차량 뷰 전환)와 "CCTV 바로가기"(CCTV 탭 전환 + DUI 버퍼
+  // 해제)가 별개 버튼이었다. 이제 버튼 하나가 이 둘을 전부 한다: 이벤트 카드를
+  // 직접 클릭한 것과 동일하게 포커스 + 추적 차량 뷰로 전환하고, camId가 있으면
+  // 오른쪽 패널을 CCTV 탭으로 전환하면서 DUI 버퍼도 함께 풀어준다("CCTV
+  // 바로가기"를 눌렀을 때와 같은 신호 - 지도(iframe)의 map.js가 이 버튼을 누르기
+  // 전까지 DUI payload를 버퍼에만 쌓아두고 있다가, 이 신호를 받아야 원래 간격
+  // 그대로 재생을 시작해서 폴리라인이 실시간으로 그려진다).
+  const handleVehicleAlertGo = () => {
     if (!vehicleAlert) return
     handleEventCardClick(vehicleAlert)
+    if (vehicleAlert.camId) {
+      setRightPanelTab('cctv')
+      setRightCollapsed(false)
+      setRequestedCamId(vehicleAlert.camId)
+      postToMap({ type: 'omecca-release-dui-journey' })
+    }
     onDismissVehicleAlert?.()
   }
 
@@ -508,7 +549,7 @@ export default function MainDashboard({
             </div>
 
             {rightPanelTab === 'cctv' ? (
-              <DashboardCctvPanel focusedEvent={focusedEvent} />
+              <DashboardCctvPanel focusedEvent={focusedEvent} requestedCamId={requestedCamId} />
             ) : (
             <div className="control-events-list">
               {events.length === 0 && (
@@ -653,7 +694,11 @@ export default function MainDashboard({
         )}
       </div>
 
-      <VehicleAlertPopup event={vehicleAlert} onFocus={handleVehicleAlertFocus} onDismiss={onDismissVehicleAlert} />
+      <VehicleAlertPopup
+        event={vehicleAlert}
+        onGo={handleVehicleAlertGo}
+        onDismiss={onDismissVehicleAlert}
+      />
       <EventDetailModal event={detailEvent} onClose={() => setDetailEvent(null)} />
     </div>
   )

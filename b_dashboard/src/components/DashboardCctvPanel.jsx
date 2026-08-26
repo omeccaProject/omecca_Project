@@ -7,7 +7,7 @@ import LiveHlsVideoWithDetections from './LiveHlsVideoWithDetections'
 // 넣기엔 너무 빽빽해지므로, 여기서는 카메라 하나를 크게 보여주고
 // 드롭다운으로 바꾸는 방식으로 따로 만든다.
 // 데이터 소스(카메라 관리에 등록된 목록)는 CctvGrid와 동일하다.
-export default function DashboardCctvPanel({ focusedEvent }) {
+export default function DashboardCctvPanel({ focusedEvent, requestedCamId }) {
   const [cameras, setCameras] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedCamId, setSelectedCamId] = useState(null)
@@ -50,6 +50,23 @@ export default function DashboardCctvPanel({ focusedEvent }) {
       setSelectedCamId(focusedEvent.camId)
     }
   }, [focusedEvent, cameras])
+
+  // [신규] 지도(map.js)에서 "연결된 CCTV" 클릭 → MainDashboard가 'cctv:select'
+  // postMessage를 받아 이 컴포넌트가 마운트되도록 화면/탭을 먼저 전환해준 뒤,
+  // 그 camId를 requestedCamId prop으로 내려준다. 여기서는 그걸 실제 선택값으로
+  // 반영하기만 하면 된다 - 예전엔 이 패널이 직접 'message' 이벤트를 들었지만,
+  // 이 패널이 아직 마운트되지 않은 시점(다른 화면을 보고 있던 경우)에는 메시지를
+  // 놓쳤다. MainDashboard가 항상 마운트돼 있어 대신 받아준다.
+  useEffect(() => {
+    if (!requestedCamId) return
+    if (
+      cameras.some(
+        (c) => c.camId === requestedCamId
+      )
+    ) {
+      setSelectedCamId(requestedCamId)
+    }
+  }, [requestedCamId, cameras])
 
   // =========================================================
   // Real Journey → CCTV 바로가기
