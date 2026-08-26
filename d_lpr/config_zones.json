@@ -274,8 +274,8 @@
       "intersections": []
     },
     {
-      "cam_id": "L010264-TEST",
-      "name": "L010264-TEST",
+      "cam_id": "L010321",
+      "name": "L010321",
       "lines": [
         {
           "line_id": "stop_1",
@@ -301,7 +301,7 @@
       "zones": [],
       "intersections": [
         {
-          "intersection_id": "INT-L010264-TEST",
+          "intersection_id": "INT-L010321",
           "stop_line": "stop_1",
           "exit_line": "exit_1",
           "signal_id": "SIG-1"
