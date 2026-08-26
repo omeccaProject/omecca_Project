@@ -364,6 +364,46 @@
       ],
       "zones": [],
       "intersections": []
+    },
+    {
+      "cam_id": "L010263",
+      "name": "L010263",
+      "lines": [
+        {
+          "line_id": "center_1",
+          "name": "중앙선 · 유턴 금지",
+          "p1": [
+            641,
+            146
+          ],
+          "p2": [
+            596,
+            711
+          ],
+          "direction": "both",
+          "line_type": "center",
+          "uturn_allowed": false,
+          "signal_id": "SIG-1"
+        },
+        {
+          "line_id": "center_2",
+          "name": "중앙선 · 유턴 금지",
+          "p1": [
+            693,
+            714
+          ],
+          "p2": [
+            648,
+            150
+          ],
+          "direction": "both",
+          "line_type": "center",
+          "uturn_allowed": false,
+          "signal_id": "SIG-1"
+        }
+      ],
+      "zones": [],
+      "intersections": []
     }
   ]
 }

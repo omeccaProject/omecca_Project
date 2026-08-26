@@ -218,6 +218,11 @@ export default function MainDashboard({
   useEffect(() => {
     localStorage.setItem('omecca_right_panel_tab', rightPanelTab)
   }, [rightPanelTab])
+  // [신규] 지도(iframe)에서 "연결된 CCTV" 클릭으로 넘어온 camId. DashboardCctvPanel이
+  // 그 시점에 마운트돼 있지 않을 수도 있어서(다른 화면/탭을 보고 있던 경우), 여기
+  // MainDashboard에서 대신 들고 있다가 prop으로 내려준다 - 자세한 흐름은 아래
+  // 'cctv:select' 메시지 처리 부분 주석 참고.
+  const [requestedCamId, setRequestedCamId] = useState(null)
   const mapIframeRef = useRef(null)
   const mapReadyRef = useRef(false)
   // onMessage 핸들러는 darkMode가 바뀔 때만 재구독되므로, activeView를 직접 클로저로
@@ -243,11 +248,14 @@ export default function MainDashboard({
           { type: 'omecca-theme', theme: darkMode ? 'dark' : 'light' },
           '*',
         )
-        // 지도가 막 로드된 시점의(최신) activeView 기준으로 패널 모드도 바로 맞춰준다
-        // (예: 새로고침 직후 바로 "추적 차량" 뷰였던 경우).
+        // [수정: "추적 차량 화면의 '실시간 CCTV' 패널을 없애달라"] map.js 자체의
+        // video-panel(iframe 내부, "추적 차량" 화면 전용)은 이제 항상 꺼둔다.
+        // 그 안에서 하던 "연결된 CCTV 클릭 → 영상 표시" 기능은 없어진 게 아니라
+        // 아래 'cctv:select' 처리로 옮겨져서, 관제 화면의 CCTV 사이드바
+        // (DashboardCctvPanel)에서 대신 보여준다.
         const currentView = activeViewRef.current
         mapIframeRef.current?.contentWindow?.postMessage(
-          { type: 'omecca-view-mode', showVideoPanel: currentView === 'tracking' },
+          { type: 'omecca-view-mode', showVideoPanel: false },
           '*',
         )
         if (currentView === 'tracking') {
@@ -268,6 +276,21 @@ export default function MainDashboard({
       if (event.data?.type === 'omecca-request-tracking-view') {
         onChangeView('tracking')
       }
+
+      // [신규: "실시간 CCTV 패널 제거 + 그 기능을 관제 화면 사이드바로"]
+      // 지도(iframe) 안에서 "연결된" CCTV를 클릭하면(UticCameraManager.selectRecord,
+      // 또는 추적 차량 팝업의 "CCTV 영상 보기" 버튼) map.js가 이 메시지를 보낸다.
+      // Real Journey의 "CCTV 바로가기"와 완전히 같은 메시지 타입이다 - 어느 경로로
+      // 왔든 지금 어떤 화면을 보고 있든 상관없이, "관제 화면" + "CCTV" 탭으로
+      // 전환해서 그 카메라가 바로 보이게 한다. camId는 requestedCamId로 내려서
+      // DashboardCctvPanel이 아직 마운트 안 돼 있어도(예: 지금 "추적 차량" 화면인
+      // 경우) 놓치지 않고 적용하게 한다.
+      if (event.data?.type === 'cctv:select' && event.data?.camId) {
+        onChangeView('dashboard')
+        setRightPanelTab('cctv')
+        setRightCollapsed(false)
+        setRequestedCamId(event.data.camId)
+      }
     }
     window.addEventListener('message', onMessage)
     return () => window.removeEventListener('message', onMessage)
@@ -286,7 +309,8 @@ export default function MainDashboard({
   // 떠 있는 추적 차량으로 포커스 이동 + 팝업을 열어달라고도 함께 요청한다.
   useEffect(() => {
     if (activeView !== 'dashboard' && activeView !== 'map' && activeView !== 'tracking') return
-    postToMap({ type: 'omecca-view-mode', showVideoPanel: activeView === 'tracking' })
+    // showVideoPanel은 이제 항상 false - 위 handshake 쪽 주석 참고.
+    postToMap({ type: 'omecca-view-mode', showVideoPanel: false })
     if (activeView === 'tracking') {
       postToMap({ type: 'omecca-focus-tracked-vehicle' })
     }
@@ -508,7 +532,7 @@ export default function MainDashboard({
             </div>
 
             {rightPanelTab === 'cctv' ? (
-              <DashboardCctvPanel focusedEvent={focusedEvent} />
+              <DashboardCctvPanel focusedEvent={focusedEvent} requestedCamId={requestedCamId} />
             ) : (
             <div className="control-events-list">
               {events.length === 0 && (

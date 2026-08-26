@@ -1340,6 +1340,26 @@ class UticCameraManager {
       this.videoManager.switchTo(vm, { force });
     }
 
+    // [수정: "추적 차량 화면의 '실시간 CCTV' 패널을 없애고, 그 기능(연결된 CCTV를
+    // 클릭하면 영상이 뜨는 것)만 관제 화면 오른쪽 CCTV 사이드바로 옮겨달라"]
+    // 예전엔 여기서 videoManager.switchTo()만 호출했다 - 그 결과가 보이려면 map.js
+    // 자신의 <section class="video-panel">("추적 차량" 화면 전용, iframe 내부)이
+    // 떠 있어야 했다. 이제 그 패널은 대시보드(React)에서 더 이상 띄우지 않으므로,
+    // Real Journey의 "CCTV 바로가기"와 동일한 경로(window.__appGoToJourneyStartCctv →
+    // postMessage cctv:select)로 부모 대시보드에 알려서, 관제 화면의 CCTV 사이드바가
+    // 이 카메라로 전환되게 한다.
+    // [버그 수정] 처음엔 this.videoSourceRegistry.getSource(record.cam_id)가 있을 때만
+    // (실시간 UTIC HLS 스트림 303건 중 일부에만 연결된) 보냈는데, 그러면 우리가 실제로
+    // "CCTV 관리"(/api/cameras)에 등록해서 쓰는 데모 카메라 4대(L010111 등, AI
+    // 이상운전 감지가 실제로 이 카메라들을 대상으로 함)는 그 UTIC 스트림 레지스트리에는
+    // 없어서 조건을 통과 못 하고 조용히 씹혔다 - "화면 정중앙 알림 → 지도에서 실시간으로
+    // 보기를 눌러도 CCTV 화면으로 안 넘어간다"는 문제의 원인이었다. "정말 연결됐는지"의
+    // 최종 판단은 어차피 받는 쪽(DashboardCctvPanel)이 자기 카메라 목록으로 다시
+    // 확인하므로(못 찾으면 조용히 무시), 여기서는 그냥 항상 보낸다.
+    if (switchVideo && window.__appGoToJourneyStartCctv) {
+      window.__appGoToJourneyStartCctv(record.cam_id);
+    }
+
     if (this.onCameraSelected) this.onCameraSelected(record);
   }
 
@@ -2449,6 +2469,12 @@ class EventManager {
 
   triggerAiEvent(record, eventData, options = {}) {
     const force = !!options.force;
+    // [신규: 사용자 요청 - "실시간으로 보기 누르면 폴리라인 그리는 차량에 포커싱 돼서
+    // 따라가게 해달라"] 기본값은 true(예전 그대로 - 카메라 핀으로 지도 확대/팝업)라서
+    // 다른 호출부(mock 이벤트 WebSocket 등)는 그대로 동작한다. Real Journey 흐름
+    // (omecca-track-vehicle-event 핸들러)에서만 false로 넘겨서, 카메라 핀이 아니라
+    // 실제로 움직이는 Real Journey 차량 마커 쪽에 포커스를 맡긴다.
+    const focusCameraPin = options.focusCameraPin !== false;
     const cameraViewModel = buildUticCameraViewModel(record, this.videoSourceRegistry);
     const normalized = Object.assign({ icon: "🚨", severity: "alert" }, eventData);
     const trackKey = eventData.trackId != null ? String(eventData.trackId) : null;
@@ -2459,10 +2485,19 @@ class EventManager {
     this.renderPanel();
 
     this.cameraManager.setAlert(cameraViewModel.id, true);
-    this.cameraManager.selectById(cameraViewModel.id, { openPopup: true, zoom: true, switchVideo: true, force });
+    this.cameraManager.selectById(cameraViewModel.id, {
+      openPopup: focusCameraPin,
+      zoom: focusCameraPin,
+      switchVideo: true,
+      force,
+    });
 
-    this.vehicleManager.spawnAtEvent(cameraViewModel, eventData);
-    this.trackedVehicleCount = 1;
+    // [삭제됨: 사용자 요청 - "중앙 화면 알림 팝업 클릭하면 저 TRACK.../추적 차량 팝업이
+    // 잡혀서 뜨는데, 저거 안 뜨게 없애줘"] 예전엔 여기서 vehicleManager.spawnAtEvent()로
+    // 지도 위에 별도의 "🚗 추적 차량" 마커+상세 팝업(번호판/Track ID/원인/현재 위치/
+    // 감지 시간 등)을 항상 만들었다. CCTV 전환(위 selectById switchVideo:true)과
+    // 카메라 핀 강조(setAlert)만으로도 "지도에서 실시간으로 보기" 요구사항은 충분히
+    // 충족되므로, 더 이상 이 별도 마커/팝업을 만들지 않는다.
 
     this.alertDetectionCount += 1;
     this._markTrackActive(trackKey, cameraViewModel.id);
@@ -2696,9 +2731,11 @@ class EventManager {
     let entry = this._realJourneyLogEntry;
 
     if (!entry) {
+      // [신규: "음주운전이랑 관심대상 기능 합치기"] payload.reason("DUI"/"TARGET")에
+      // 맞춰 카드 문구도 알림 카드/팝업과 동일한 기준으로 바꾼다.
       const normalized = {
-        icon: "🚨",
-        type: "이상운전 감지",
+        icon: payload.reason === "TARGET" ? "🎯" : "🚨",
+        type: payload.reason === "TARGET" ? "관심 차량 감지" : "이상운전 감지",
         severity: "alert",
         time: new Date().toLocaleTimeString("ko-KR", { hour12: false }),
         sourceType: "REAL_JOURNEY", // renderPanel()의 클릭 분기 + plate 표시 분기에서 사용
@@ -2741,8 +2778,8 @@ class EventManager {
 
     const eventPayload = {
       id: `real-journey-${payload.currentCamId || "unknown"}-${Date.now()}`,
-      icon: "🚨",
-      type: "이상운전 감지",
+      icon: payload.reason === "TARGET" ? "🎯" : "🚨",
+      type: payload.reason === "TARGET" ? "관심 차량 감지" : "이상운전 감지",
       severity: "alert",
       time: new Date().toLocaleTimeString("ko-KR", { hour12: false }),
       camId: payload.currentCamId,
@@ -3092,7 +3129,7 @@ class RealJourneyAlertManager {
     document.head.appendChild(style);
   }
 
-  show({ camName, camId, plate, lat, lng }) {
+  show({ camName, camId, plate, lat, lng, reason }) {
     const isNew = !this.el;
     if (isNew) {
       this.el = document.createElement("div");
@@ -3100,9 +3137,15 @@ class RealJourneyAlertManager {
       document.body.appendChild(this.el);
     }
 
+    // [신규: "음주운전이랑 관심대상 기능 합치기"] 백엔드(test_suspicious_driving.py의
+    // journey.reason)가 이번 여정이 음주운전 확정 때문인지, 등록된 관심 차량
+    // 매칭 때문인지 함께 보내준다. 같은 프레임에 둘 다 감지되면 음주운전이
+    // 우선이므로 reason도 그 기준을 그대로 따른다 - 여기선 표시 문구만 바꾼다.
+    const title = reason === "TARGET" ? "🎯 관심 차량 감지" : "🚨 이상운전 차량 감지";
+
     const plateLabel = plate || PLATE_UNKNOWN_LABEL_MAP_JS;
     this.el.innerHTML = `
-      <div class="rja-title">🚨 이상운전 차량 감지</div>
+      <div class="rja-title">${title}</div>
       <div class="rja-row"><span class="rja-label">CCTV</span><span class="rja-value">${camName || "-"}</span></div>
       ${camId ? `<div class="rja-row"><span class="rja-label">CCTV ID</span><span class="rja-value">${camId}</span></div>` : ""}
       <div class="rja-row"><span class="rja-label">차량</span><span class="rja-value">${plateLabel}</span></div>
@@ -3156,11 +3199,14 @@ function buildRealJourneyPopupHtml(payload) {
   // 보낸다. 아직 OCR로 확정 전이면 null - 그 경우에만 대체 라벨을 쓴다(지어내지
   // 않음).
   const plate = payload.plate || PLATE_UNKNOWN_LABEL_MAP_JS;
+  // [신규: "음주운전이랑 관심대상 기능 합치기"] payload.reason("DUI"/"TARGET")에
+  // 맞춰 팝업 제목도 우상단 알림 카드와 동일한 기준으로 바꾼다.
+  const popupTitle = payload.reason === "TARGET" ? "🎯 관심 차량 감지" : "🚨 이상운전 감지";
   return `
     <div class="cctv-popup">
       <div class="cctv-popup__header">
         <div class="cctv-popup__title">
-          <span class="cctv-popup__name">🚨 이상운전 감지</span>
+          <span class="cctv-popup__name">${popupTitle}</span>
         </div>
       </div>
       <div class="cctv-popup__body">
@@ -3318,7 +3364,12 @@ document.addEventListener("DOMContentLoaded", () => {
       };
 
       if (record) {
-        eventManager.triggerAiEvent(record, eventData, { force: true });
+        // [수정: 사용자 요청 - "실시간으로 보기 누르면 다른 곳(카메라 핀)에 포커싱
+        // 된다, 폴리라인 그리는 차량에 포커싱 돼서 따라가게 해달라"] focusCameraPin:
+        // false를 넘겨서 CCTV 화면 전환(switchVideo)만 하고, 지도 확대/카메라 핀
+        // 팝업은 열지 않는다 - 포커스는 아래에서 실제로 움직이는 Real Journey 차량
+        // 마커(realVehicleMarker) 쪽으로 보낸다.
+        eventManager.triggerAiEvent(record, eventData, { force: true, focusCameraPin: false });
         scheduleBeforeAfterCapture(eventData.trackId);
       } else if (payload.lat != null && payload.lng != null) {
         const fallbackCam = {
@@ -3333,7 +3384,20 @@ document.addEventListener("DOMContentLoaded", () => {
         toastManager.showMessage("🚗 위치 정보가 없어 지도에 표시할 수 없습니다");
       }
 
-      vehicleManager.focusCurrent(mapManager, { openPopup: false });
+      // [신규] 폴리라인을 따라 실제로 움직이는 Real Journey 차량 마커로 지도를
+      // 이동시키고 그 마커의 상세 팝업을 연다 - 이벤트 리스트의 "Real Journey 카드"를
+      // 클릭했을 때(위 eventManager.onRealJourneyCardClick)와 동일한 동작이다.
+      // realVehicleMarker.marker가 아직 없으면(여정의 첫 좌표가 아직 안 왔으면)
+      // 아무 것도 하지 않는다 - mapManager.resumeFollow()로 이미 추적 모드는 켜져
+      // 있으므로, 다음 좌표가 도착하면(RealVehicleMarker.setPosition) 자동으로
+      // 따라가기 시작한다.
+      if (realVehicleMarker.marker) {
+        const { lat, lng } = realVehicleMarker.marker.getLatLng();
+        mapManager.focus(lat, lng);
+        realVehicleMarker.marker.openPopup();
+      } else {
+        vehicleManager.focusCurrent(mapManager, { openPopup: false });
+      }
     }
   });
   if (window.parent && window.parent !== window) {
@@ -3502,9 +3566,12 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   window.__appSelectCamera = (cameraId) => {
-    if (window.parent && window.parent !== window) {
-      window.parent.postMessage({ type: "omecca-request-tracking-view" }, "*");
-    }
+    // [수정: "실시간 CCTV 패널 제거"] 예전엔 "추적 차량" 화면(map.js 자체의
+    // video-panel)으로 강제 전환시켰다. 그 패널을 없앤 지금은, 아래
+    // uticCameraManager.selectById(..., switchVideo:true)가 알아서
+    // window.__appGoToJourneyStartCctv를 통해 관제 화면 CCTV 사이드바로
+    // 전환 요청을 보낸다(UticCameraManager.selectRecord 참고) - 여기서 따로
+    // "추적 차량 화면으로 가라"고 요청할 필요가 없어졌다.
 
     mapManager.resumeFollow();
 
@@ -3640,7 +3707,6 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  let realJourneyPrevPoints = [];
   // [신규: "CCTV 자동 전환이 안 됨"] 직전 payload의 currentCamId를 기억해뒀다가,
   // 실제로 카메라가 바뀐 시점에만 자동 전환을 트리거하기 위한 값이다.
   let realJourneyPrevCamId = null;
@@ -3804,7 +3870,6 @@ document.addEventListener("DOMContentLoaded", () => {
 
         realVehicleMarker.remove();
         routeManager.clearRealJourney();
-        realJourneyPrevPoints = [];
         realJourneyPrevCamId = null;
         if (realJourneyGapTimer) {
           clearTimeout(realJourneyGapTimer);
@@ -3834,6 +3899,7 @@ document.addEventListener("DOMContentLoaded", () => {
         plate: payload.plate,
         lat: payload.currentLat,
         lng: payload.currentLng,
+        reason: payload.reason,
       });
 
       const points = (payload.points || []).map(
@@ -3845,9 +3911,22 @@ document.addEventListener("DOMContentLoaded", () => {
         points
       );
 
-      const newSegment = extractNewJourneySegment(realJourneyPrevPoints, points);
-      realJourneyPrevPoints = points;
-
+      // [수정: 사용자 요청 - "이상감지 차량이 지도 위에서 실시간으로 움직이면서
+      // 폴리라인이 실시간으로 그려져야해"]
+      //
+      // 이전 단계에서는 정확도를 위해 payload가 올 때마다 즉시 스냅 + 전체
+      // 재그리기만 했다(애니메이션 없음) - 도로 위에 정확하게는 그려졌지만
+      // 차량이 "순간이동"처럼 보였다.
+      //
+      // 지금은 realVehicleMarker.animateAlong()으로 마커를 부드럽게 이동시키고,
+      // 매 애니메이션 프레임마다 onFrame 콜백에서 routeManager.setRealJourneyPoints()
+      // 로 "지나온 좌표 + 지금 보간 중인 좌표"를 항상 전체 다시 그린다. 즉:
+      //   - 폴리라인은 절대 append-only로 이어붙이지 않고 매 프레임 authoritative
+      //     좌표 기준으로 통째로 다시 그리므로, 오래된 직선이 안 지워지고 남는
+      //     문제가 재발하지 않는다(이전 단계에서 고친 버그 그대로 유지).
+      //   - 애니메이션은 큐에 쌓이지 않고 새 payload가 오면 즉시 취소 후
+      //     현재 위치에서 이어서 재시작하므로, 파이썬이 멈추면 화면도 그 다음
+      //     프레임에 바로 멈춘다(밀린 애니메이션이 나중에 재생되는 문제 없음).
       const label = payload.currentCamName || payload.currentCamId;
 
       if (realJourneySuppressed) {

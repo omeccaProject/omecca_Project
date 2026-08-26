@@ -14,6 +14,7 @@ import time
 import math
 import threading
 import requests
+import uuid
 
 from collections import deque
 from datetime import datetime
@@ -75,6 +76,16 @@ LPR_TEST_MOCK = False
 # 1개만 넣으면 거의 즉시 확정된다 - 대신 카메라에 잡히는 차량 전부가 이
 # 번호판으로 "인식"된다(진짜 OCR이 아니라 배선 확인용이라는 점 유의).
 LPR_TEST_MOCK_PLATES = ["12가3456"]
+
+# [신규: "test_suspicious_driving.py를 돌려도 대시보드 이벤트 리스트/화면 중앙 알림
+# 팝업/PDF 리포트가 하나도 안 뜬다"] 지금까지 이 스크립트는 JOURNEY_URL(지도 위 차량
+# 이동/팝업)과 GATEWAY_URL(CCTV 화면의 초록/빨강 박스 오버레이)에만 데이터를 보냈다.
+# 그런데 대시보드의 "이벤트" 리스트·화면 중앙 알림 팝업·PDF 리포트는 전부 세 번째로
+# 완전히 별개인 "공통 이벤트 스키마"(b_gateway의 POST /api/events, b_dashboard의
+# useEventSocket이 구독)로만 굴러간다 - 이 스크립트가 여태 그 endpoint를 호출한 적이
+# 없어서, 실제 음주운전 판정이 지도/CCTV 화면엔 보여도 이벤트 리스트·알림 팝업·리포트
+# 쪽에서는 존재 자체를 몰랐다. 아래 EVENTS_URL/send_ai_event()가 그 빠진 연결을 채운다.
+EVENTS_URL = _GATEWAY_HOST_ONLY + "/api/events"
 
 GATEWAY_API_KEY = os.getenv(
     "GATEWAY_API_KEY"
@@ -390,23 +401,56 @@ def load_model():
 # ============================================================
 # 10. 실시간 차량 이동 경로(Journey) 추적
 # ============================================================
-# [업데이트] 관심 차량 추적 데모용으로 경로 지명/좌표를 교체했다
-# (이대역-신촌-합정역-양화대교북단, 동교동삼거리는 카메라가 없어 제외).
-# 이동 상태 판단 로직(다음 CCTV 탐색, stale 처리 등) 자체는 그대로다 - 시작
-# 카메라를 항상 camera_order[0]으로 고정하던 부분만 실제 매칭 지점 기준으로 고쳤다.
-# "동교동삼거리 비감지 구간" 연출(마커 숨김/지연 재등장)은 여기(파이썬)가 아니라
-# web/map.js의 REAL_JOURNEY_BLIND_GAPS에서 처리한다 - 이 파일은 4개 카메라를
-# 순서대로 넘겨줄 뿐, 어느 구간이 "사각지대"인지는 신경 쓰지 않는다.
+# [병합: "음주운전 로직이랑 관심대상 기능을 합치고 싶다"] main 브랜치(음주운전
+# 감지가 여정을 그리는 원본, 보라매역→장승배기→상도→한강대교남단)와 이 브랜치
+# (관심 등록 차량 매칭이 여정을 그리는 버전, 이대역→신촌→합정역→양화대교북단)가
+# 같은 4개 camId(L010111/L010271/L010128/L010481)를 서로 다른 실제 장소로 각자
+# 라벨링해놓고 있었다 - 같은 데모 카메라 4대(A/B/C/D 영상 슬롯)를 어느 시나리오로
+# 보여주느냐에 따라 지도에 표시할 이름/좌표만 바뀌는 것이므로, 두 세트를 모두
+# 남겨두고 JOURNEY_ROUTE_PRESET 하나로 지금 쓸 세트를 고른다(요구사항: "카메라
+# 경로를 설정 가능하게 두 라인 다 지원"). 어떤 프리셋을 쓰든 트리거 조건(음주운전
+# 확정 vs 관심 차량 번호판 매칭)은 아래 update_journey_for_frame()이 그대로
+# 처리한다 - 프리셋은 "어느 지명으로 보여줄지"만 결정하고, "무엇이 여정을
+# 시작시키는지"와는 무관하다.
+#
+# "동교동삼거리 비감지 구간" 연출(마커 숨김/지연 재등장)은 web/map.js의
+# REAL_JOURNEY_GAP_WAYPOINT 쪽에서 처리한다 - TARGET 프리셋(이대역 라인)에서만
+# 의미가 있고, DUI 프리셋(보라매 라인)에는 해당 구간이 없다.
 
-CAMERA_LOCATIONS = {
+DUI_CAMERA_LOCATIONS = {
+    # 경로: 보라매역 -> 장승배기 -> 상도 -> 한강대교남단 (원본 음주운전 데모 경로,
+    # main 브랜치 기준 - 실제 UTIC camId/좌표와 정확히 일치한다)
+    "L010111": {"name": "보라매역",     "lat": 37.49976, "lng": 126.92007},
+    "L010271": {"name": "장승배기",     "lat": 37.5052,  "lng": 126.93955},
+    "L010128": {"name": "상도",         "lat": 37.50303, "lng": 126.9478},
+    "L010481": {"name": "한강대교남단", "lat": 37.51346, "lng": 126.95552},
+}
 
-    # 경로: 이대역 -> 신촌 -> (동교동삼거리, 카메라 없음/비감지 구간) -> 합정역 -> 양화대교북단
+TARGET_CAMERA_LOCATIONS = {
+    # 경로: 이대역 -> 신촌 -> (동교동삼거리, 카메라 없음/비감지 구간) -> 합정역
+    # -> 양화대교북단 (관심 대상 차량 추적 데모 경로 - 실제 UTIC camId와는 이름이
+    # 어긋나 있지만, 동교동삼거리 사각지대 연출이 이 라인 기준으로 만들어져 있다)
     "L010111": {"name": "이대역",       "lat": 37.55667, "lng": 126.94583},
     "L010271": {"name": "신촌",         "lat": 37.5596,  "lng": 126.9366},
     "L010128": {"name": "합정역",       "lat": 37.54917, "lng": 126.91361},
     "L010481": {"name": "양화대교북단", "lat": 37.5462,  "lng": 126.9125},
-
 }
+
+# "dui" 또는 "target" - 환경변수 JOURNEY_ROUTE_PRESET으로 실행 시점에 고를 수
+# 있다(예: JOURNEY_ROUTE_PRESET=dui python test_suspicious_driving.py). 기본값은
+# "target"으로 뒀다 - 동교동삼거리 사각지대/재등장/알림 팝업 번호판 표시가 전부
+# 이 라인 기준으로 만들어지고 테스트됐기 때문이다. 음주운전 데모(보라매 라인)를
+# 보여주고 싶으면 dui로 바꾸면 된다.
+JOURNEY_ROUTE_PRESET = os.environ.get("JOURNEY_ROUTE_PRESET", "target").strip().lower()
+
+CAMERA_LOCATIONS = (
+    DUI_CAMERA_LOCATIONS if JOURNEY_ROUTE_PRESET == "dui" else TARGET_CAMERA_LOCATIONS
+)
+
+# update_journey_for_frame()과 _advance_journey_to() 둘 다 이 하나의 순서를
+# 공유한다 - CAMERA_LOCATIONS의 키 순서를 그대로 따른다(두 프리셋 다 A→B→C→D
+# 순서로 이미 정의돼 있음).
+CAMERA_ORDER = list(CAMERA_LOCATIONS.keys())
 
 JOURNEY_STALE_SECONDS = 8.0
 
@@ -466,21 +510,40 @@ def strip_start_uturn(points):
     return points
 
 
-def get_road_segment(from_loc, to_loc, cache):
-    """두 CCTV 설치 좌표 사이의 실제 도로 경로(위경도 리스트)를 OSRM에서 받아온다."""
-    key = (from_loc["lat"], from_loc["lng"], to_loc["lat"], to_loc["lng"])
+def get_multi_point_road_route(cam_ids, cache):
+    """[신규: 사용자 요청 - "폴리라인이 도로 위에 완벽하게 그려져서 한 번에 끝나게
+    해달라, 구간별로 나눠서 그리는 로직은 다 지워달라"]
+
+    예전엔 카메라 사이를 한 구간씩(보라매역→장승배기, 장승배기→상도, ...) 따로따로
+    OSRM에 물어서 순서대로 이어붙였다. 이러면 지도 쪽에서 구간이 도착할 때마다
+    차량 아이콘이 그 구간을 실제로 "운전해서 지나가는" 애니메이션을 큐에 쌓아
+    재생했는데, 여러 구간이 한꺼번에 도착하면(=이 스크립트처럼 여러 카메라를 순식간에
+    따라잡을 때) 그 큐가 파이썬을 이미 끈 뒤에도 한참 재생되며 이상한 지그재그
+    모양으로 보이는 문제가 있었다.
+
+    이제는 카메라 여러 대(cam_ids, CAMERA_ORDER 순서 그대로)를 OSRM "다중 경유지"
+    요청 딱 한 번으로 물어서, 전체 경로를 완성된 하나의 좌표 리스트로 받는다.
+    프론트엔드는 이 결과를 그대로 한 번에 그리기만 하면 되므로, 구간별 분할/애니메이션
+    큐/뒤늦은 재생 문제가 원천적으로 없다.
+    """
+    if requests is None or len(cam_ids) < 2:
+        return None
+
+    key = tuple(cam_ids)
     if key in cache:
         return cache[key]
 
-    straight = [(from_loc["lat"], from_loc["lng"]), (to_loc["lat"], to_loc["lng"])]
-    bearing = compute_bearing_deg(from_loc["lat"], from_loc["lng"], to_loc["lat"], to_loc["lng"])
-    url = (
-        f"{OSRM_BASE_URL}/{from_loc['lng']},{from_loc['lat']};{to_loc['lng']},{to_loc['lat']}"
-        f"?overview=full&geometries=geojson&bearings={bearing},60;{bearing},60"
-    )
+    locs = [CAMERA_LOCATIONS.get(cid) for cid in cam_ids]
+    if any(loc is None for loc in locs):
+        return None
+
+    straight = [(loc["lat"], loc["lng"]) for loc in locs]
+
+    coords_param = ";".join(f"{loc['lng']},{loc['lat']}" for loc in locs)
+    url = f"{OSRM_BASE_URL}/{coords_param}?overview=full&geometries=geojson"
 
     try:
-        res = requests.get(url, timeout=5)
+        res = requests.get(url, timeout=8)
         res.raise_for_status()
         data = res.json()
         coords = data["routes"][0]["geometry"]["coordinates"]  # [[lng,lat], ...]
@@ -489,7 +552,7 @@ def get_road_segment(from_loc, to_loc, cache):
         cache[key] = path
         return path
     except Exception as e:
-        print(f"[JOURNEY] OSRM 도로 경로 조회 실패 - 직선으로 대체합니다: {e}")
+        print(f"[JOURNEY] OSRM 다중 경유지 경로 조회 실패 - 직선으로 대체합니다: {e}")
         cache[key] = straight
         return straight
 
@@ -508,8 +571,21 @@ class VehicleJourney:
         # 아직 OCR이 안 됐으면 None으로 두고, 다음 프레임들에서 값이 생기는
         # 대로 채워 넣는다(update_journey_for_frame 참고) - 한 번 채워지면
         # 여정이 끝날 때까지 그대로 유지한다(같은 차량이므로 번호판이 바뀔 일은
-        # 없음).
+        # 없음). 음주운전으로 시작된 여정은 등록된 관심 차량이 아닌 이상 보통
+        # None으로 남는다 - 정상이다.
         self.plate = None
+        # [신규: "음주운전이랑 관심대상 기능 합치기"] 이번 여정이 무엇 때문에
+        # 시작/진행되고 있는지 - "DUI"(음주운전 확정) 또는 "TARGET"(등록된 관심
+        # 차량 번호판 매칭). 알림 팝업 문구를 사유에 맞게 바꾸는 데 쓰인다
+        # (map.js). 같은 프레임에 둘 다 감지되면 음주운전이 우선이므로, 한 번
+        # "DUI"가 되면 그 여정은 끝날 때까지 "DUI"로 유지된다(update_journey_for_frame
+        # 참고).
+        self.reason = None
+        # [신규] "카메라 지날 때마다 알림 팝업/이벤트가 계속 뜬다" - 한 여정(같은 차량이
+        # 보라매역→장승배기→상도→한강대교남단을 지나가는 동안) 전체를 통틀어 알림을
+        # 딱 한 번만 보내기 위한 플래그. 여정이 처음 시작될 때(=첫 카메라에서 이상운전이
+        # 확정된 순간) True로 바뀌고, 여정이 끝나야(reset) 다시 False가 된다.
+        self.alert_sent = False
 
     def reset(self):
         self.active = False
@@ -517,7 +593,9 @@ class VehicleJourney:
         self.last_seen_at = 0.0
         self.points = []
         self.plate = None
+        self.reason = None
         self._journey_pending = False
+        self.alert_sent = False
 
 
 def send_journey_update(journey):
@@ -538,6 +616,9 @@ def send_journey_update(journey):
         # 확정되지 않았으면 None - 프론트엔드(map.js)가 "차량번호 확인 중"으로
         # 대체 표시한다.
         "plate": journey.plate if journey.active else None,
+        # [신규: "음주운전이랑 관심대상 기능 합치기"] "DUI" | "TARGET" | None -
+        # 프론트엔드가 알림 팝업 제목/아이콘을 사유에 맞게 바꾸는 데 쓴다.
+        "reason": journey.reason if journey.active else None,
     }
 
     headers = {
@@ -553,87 +634,284 @@ def send_journey_update(journey):
         print(f"[JOURNEY] 전송 실패(서버 미기동 등) - 지도 표시에는 영향 없음: {e}")
 
 
-def _extend_journey_async(journey, from_loc, to_loc, new_cam_id):
-    """OSRM 호출은 최대 몇 초 걸릴 수 있어서, 메인 검출 루프(30fps x 4캠)를 멈추지
-    않도록 별도 스레드에서 처리한다."""
+# [신규] "이벤트/알림 팝업이 뜨는 순간 캡처 이미지도 이미 들어가 있어야 한다" -
+# e_tracking/SmartCCTV/realtime_anomaly.py의 CAPTURES_DIR/save_capture()/
+# frame_buffer/BEFORE_CAPTURE_SECONDS 패턴을 그대로 재사용한다(요구사항: 로직 중복
+# 구현 금지). "전" 캡처는 사건 확정 직전 BEFORE_CAPTURE_SECONDS초 동안 카메라별로
+# 계속 채워둔 frame_buffer의 가장 오래된 프레임, "후"는 확정된 바로 이 프레임이다.
+# 예전에는 이 값들이 없어서 send_ai_event()가 frameRefBefore/frameRefAfter 없이
+# 이벤트를 만들었고, 대시보드는 사용자가 이벤트 카드를 클릭해야만(브라우저 쪽
+# scheduleBeforeAfterCapture) 뒤늦게 캡처를 채워 넣었다 - 그래서 알림 팝업이 뜨는
+# "그 순간"에는 항상 캡처가 비어 있었다.
+CAPTURES_DIR = os.path.join(
+    str(BASE_DIR), "..", "..", "b_dashboard", "public", "captures"
+)
+os.makedirs(CAPTURES_DIR, exist_ok=True)
+
+BEFORE_CAPTURE_SECONDS = 2.0
+
+
+def save_capture(frame, source_id, tag):
+    """프레임을 b_dashboard/public/captures/에 JPEG로 저장하고 대시보드가 바로
+    쓸 수 있는 "/captures/<파일명>.jpg" 상대 경로를 돌려준다. 저장 실패(frame이
+    없거나 imwrite 실패) 시 None을 돌려주며, 이 경우 send_ai_event()는 그냥
+    frameRefBefore/After를 비워서 보낸다(예전과 동일하게 동작 - 새 기능이
+    실패해도 이벤트 자체는 계속 올라간다)."""
+    if frame is None:
+        print(f"[CAPTURE] {source_id}/{tag}: frame이 없어 캡쳐를 저장하지 않습니다.")
+        return None
+
+    filename = f"{uuid.uuid4().hex}.jpg"
+    filepath = os.path.join(CAPTURES_DIR, filename)
+
+    ok = cv2.imwrite(filepath, frame)
+    if not ok:
+        print(f"[CAPTURE] {source_id}/{tag}: 캡쳐 이미지 저장 실패 ({filepath})")
+        return None
+
+    return f"/captures/{filename}"
+
+
+def send_ai_event(
+    cam_id,
+    camera_name,
+    track_id,
+    bbox_xyxy,
+    pattern,
+    frame_ref_before=None,
+    frame_ref_after=None,
+):
+    """[신규] 음주운전(지그재그) 패턴이 처음 확정된 순간(just_confirmed) 딱 한 번 호출된다.
+
+    b_gateway의 "공통 이벤트 스키마" POST /api/events로 보낸다 - 이게 있어야 대시보드
+    오른쪽 "이벤트" 리스트에 카드가 쌓이고, App.jsx가 화면 정중앙 알림 팝업을 띄우고,
+    "📄 PDF 리포트 생성" 버튼도 동작한다(EventCreateRequest 참고: camId/eventType/
+    objectClass/occurredAt만 필수, 나머지는 선택). eventType은 b_dashboard/src/
+    constants.js의 VEHICLE_TRACK_EVENT_TYPES에 이미 등록돼 있는 "DUI_PATTERN"을 쓴다.
+
+    trackId는 map.js가 나중에 이 이벤트를 클릭했을 때 사건 전/후 캡처 이미지를
+    PATCH /api/events/by-track/{trackId}/captures로 이어붙이는 매칭 키로도 쓰이므로,
+    같은 세션 안에서 다른 이벤트와 절대 안 겹치게 "카메라ID-트랙ID-타임스탬프"로 만든다
+    (YOLO track_id는 카메라별로 작은 정수라서 그냥 쓰면 다른 차/다른 카메라와 충돌한다).
+    """
+    if requests is None:
+        return None
+
+    loc = CAMERA_LOCATIONS.get(cam_id)
+    x1, y1, x2, y2 = bbox_xyxy
+    event_track_id = f"{cam_id}-{track_id}-{int(time.time() * 1000)}"
+
+    payload = {
+        "camId": cam_id,
+        "trackId": event_track_id,
+        "eventType": "DUI_PATTERN",
+        "objectClass": "VEHICLE",
+        "bbox": [int(x1), int(y1), int(x2 - x1), int(y2 - y1)],
+        "occurredAt": datetime.now().isoformat(timespec="milliseconds"),
+        "location": {"lat": loc["lat"], "lng": loc["lng"]} if loc else None,
+        # [신규] 아래 두 필드가 채워져 있으면 대시보드는 이벤트가 처음 뜨는 순간부터
+        # "이미지 없음" 대신 실제 사건 전/후 캡처를 바로 보여준다(EventCreateRequest에
+        # 이미 있던 선택 필드 - 지금까지는 아무도 채워서 보낸 적이 없었을 뿐).
+        "frameRefBefore": frame_ref_before,
+        "frameRefAfter": frame_ref_after,
+        "meta": {
+            "source": "ai",
+            "detailType": "car",
+            "cameraName": loc["name"] if loc else camera_name,
+            "reason": "차선 지그재그·급가감속 패턴 감지",
+            "trajectoryFeatures": True,
+            "lateralRange": pattern.get("lateral_range"),
+            "totalLateralMovement": pattern.get("total_lateral_movement"),
+            "directionReversals": pattern.get("reversals"),
+        },
+    }
+
+    headers = {
+        "X-API-Key": GATEWAY_API_KEY,
+        "Content-Type": "application/json",
+    }
+
+    try:
+        response = requests.post(EVENTS_URL, json=payload, headers=headers, timeout=1.0)
+        if response.ok:
+            print(f"🚨 [AI EVENT] 대시보드 이벤트 전송 성공 | camId={cam_id} | trackId={event_track_id}")
+        else:
+            print(f"❌ [AI EVENT] 전송 실패 | {response.status_code} | {response.text[:200]}")
+    except requests.RequestException as e:
+        print(f"❌ [AI EVENT] 전송 실패(서버 미기동 등) - CCTV/지도 표시엔 영향 없음: {e}")
+
+    return event_track_id
+
+
+def _advance_journey_to(journey, target_cam_id):
+    """[신규: 사용자 요청 - "중앙 화면 알림 팝업이 뜨면 폴리라인도 바로 그려지게
+    해달라" + "폴리라인이 도로 위에 완벽하게 그려져서 한 번에 끝나게 해달라, 구간별로
+    나눠서 애니메이션처럼 그리던 로직은 다 지워달라"]
+
+    여정을 target_cam_id까지 진행시키는 단 하나의 함수 - 이전엔 "한 구간씩 감지될
+    때마다 그 구간만 이어붙이는" 정상 흐름과 "알림이 뜬 카메라까지 한 번에 따라잡는"
+    흐름이 서로 다른 함수(각각 _extend_journey_async / fast_forward_journey_to)로
+    나뉘어 있었고, 둘 다 "구간을 하나씩 OSRM에 물어서 순서대로 이어붙이는" 방식이었다.
+    그런데 지도 쪽(map.js)은 구간이 도착할 때마다 차량 아이콘이 그 구간을 실제로
+    "운전해서 지나가는" 애니메이션을 큐에 쌓아 재생했고, 이 스크립트처럼 여러 구간이
+    한꺼번에 확정되면 그 큐가 파이썬을 이미 끈 뒤에도 한참 재생되며 지그재그로 겹쳐
+    그려지는 문제가 있었다.
+
+    이제는 딱 한 가지 방식만 남긴다: (여정이 아직 시작 안 한 채로 호출되는 경우엔
+    - 지금은 update_journey_for_frame()이 시작을 항상 먼저 처리하므로 실질적으로
+    발생하지 않는다 - CAMERA_ORDER[0]에서 시작시키는 폴백만 남겨뒀다) journey가
+    현재 있는 지점부터 target_cam_id까지 CAMERA_ORDER 순서를 그대로(중간 지점을
+    절대 건너뛰지 않고) 우선 직선으로 즉시 한 번에 이어그려서 바로 눈에 보이게
+    한 다음, 여정 시작점부터 target_cam_id까지 전체 구간을 OSRM "다중 경유지"
+    요청 딱 한 번으로 물어서 완성된 전체 경로를 받아 폴리라인을 통째로 딱 한 번만
+    교체한다. 구간별 분할도, 애니메이션 큐도, 뒤늦은 재생도 전부 없앴다 - 화면에는
+    "즉시 직선이 뜨고, 잠시 후 도로 모양으로 한 번에 딱 맞춰지는" 두 단계만 존재한다.
+    """
+    if target_cam_id not in CAMERA_ORDER:
+        return
+
+    target_index = CAMERA_ORDER.index(target_cam_id)
+
+    if not journey.active:
+        start_loc = CAMERA_LOCATIONS.get(CAMERA_ORDER[0])
+        if not start_loc:
+            return
+        journey.active = True
+        journey.last_cam_id = CAMERA_ORDER[0]
+        journey.points = [(start_loc["lat"], start_loc["lng"])]
+        journey.last_seen_at = time.time()
+        journey._journey_pending = False
+
+    current_index = (
+        CAMERA_ORDER.index(journey.last_cam_id)
+        if journey.last_cam_id in CAMERA_ORDER
+        else 0
+    )
+
+    if target_index <= current_index:
+        # 이미 지나왔거나 같은 지점 - 새로 할 일이 없다.
+        journey.last_seen_at = time.time()
+        return
+
+    if getattr(journey, "_journey_pending", False):
+        # 이미 다른 구간을 진행 중이면(예: 방금 다른 카메라에서도 알림이 떴음)
+        # 그 작업이 끝날 때까지 기다린다 - 동시에 두 번 진행시키지 않는다.
+        return
+
+    # 1) CAMERA_ORDER[0](여정 시작점)부터 target_cam_id까지 좌표 그대로 직선으로
+    #    즉시 이어그려서 바로 눈에 보이게 한다 (실제 도로 경로는 아래 2)에서
+    #    한 번에 교체됨).
+    start_loc = CAMERA_LOCATIONS[CAMERA_ORDER[0]]
+    straight_points = [(start_loc["lat"], start_loc["lng"])]
+    for i in range(1, target_index + 1):
+        loc = CAMERA_LOCATIONS.get(CAMERA_ORDER[i])
+        if loc:
+            straight_points.append((loc["lat"], loc["lng"]))
+
+    journey.points = straight_points
+    journey.last_cam_id = target_cam_id
+    journey.last_seen_at = time.time()
+    journey._journey_pending = True
+
+    send_journey_update(journey)
+
+    # 2) 여정 시작점부터 target_cam_id까지 전체 구간을 OSRM 다중 경유지 요청
+    #    "한 번"으로 계산해서, 완성되면 폴리라인 전체를 한 번에 교체한다.
+    cam_ids = CAMERA_ORDER[: target_index + 1]
 
     def worker():
         try:
-            road_points = get_road_segment(
-                from_loc,
-                to_loc,
-                journey.road_cache
-            )
-
-            journey.points.extend(
-                road_points[1:]
-            )
-
-            journey.last_cam_id = new_cam_id
-            journey.last_seen_at = time.time()
-
-            print(
-                f"[JOURNEY] "
-                f"{from_loc['name']} → {to_loc['name']} "
-                f"구간 도로 경로 추가 ({len(road_points)}개 점)"
-            )
-
-            send_journey_update(journey)
-
+            road_points = get_multi_point_road_route(cam_ids, journey.road_cache)
+            if road_points:
+                journey.points = road_points
+                journey.last_seen_at = time.time()
+                print(
+                    f"[JOURNEY] {CAMERA_LOCATIONS[cam_ids[0]]['name']} → "
+                    f"{CAMERA_LOCATIONS[cam_ids[-1]]['name']} 전체 경로를 "
+                    f"실제 도로 경로로 교체 ({len(road_points)}개 점)"
+                )
+                send_journey_update(journey)
         finally:
-            # 현재 구간 이동 완료 → 다음 CCTV 이동 허용
             journey._journey_pending = False
-        
 
     threading.Thread(target=worker, daemon=True).start()
 
 
-def update_journey_for_frame(journey, suspicious_vehicles_by_camera, plate_by_cam_id=None):
+def update_journey_for_frame(
+    journey,
+    suspicious_vehicles_by_camera,
+    target_matched_by_cam_id=None,
+    plate_by_cam_id=None,
+):
     """
-    다중 CCTV에서 동일 차량의 이상운전 여정을 지도에 표시한다.
+    다중 CCTV에서 동일 차량의 여정(음주운전 의심 또는 등록된 관심 차량 매칭)을
+    지도에 표시한다.
 
     데모 영상은 여러 CCTV 영상이 동시에 재생되기 때문에
-    A/B/C/D가 같은 순간에 모두 suspicious=True가 될 수 있다.
+    A/B/C/D가 같은 순간에 모두 활성화될 수 있다.
 
-    따라서 미리 정의한 CCTV 순서
-    A → B → C → D
-    를 기준으로 Journey를 진행한다.
+    따라서 미리 정의한 CCTV 순서(CAMERA_ORDER)를 기준으로 Journey를 진행한다.
 
-    plate_by_cam_id: [신규] {camId: 번호판} 형태 - 그 카메라에서 현재 매칭된
-    관심 차량의 번호판(target_matched_vehicles 기준, 없으면 생략 가능). 여정을
-    시작하거나 진행하는 동안 journey.plate를 채우는 데 쓰인다.
+    [병합: "음주운전 로직이랑 관심대상 기능을 합치고 싶다"] 이 함수는 이제 두
+    가지 트리거를 모두 받는다:
+      - suspicious_vehicles_by_camera: {camId: {track_id, ...}} - 음주운전
+        (지그재그) 패턴이 확정된 차량들.
+      - target_matched_by_cam_id: {camId: {track_id, ...}} - 등록된 관심 차량
+        번호판이 매칭된 차량들.
+    같은 프레임에 둘 다 활성 상태면 음주운전이 우선한다(사용자 확정 사항) -
+    이 프레임에서 Journey를 진행시킬 active_cam_ids/사유(reason)를 하나로
+    합친 뒤, 아래 로직은 예전과 동일하게 그 active_cam_ids만 본다.
+
+    plate_by_cam_id: {camId: 번호판} 형태 - 그 카메라에서 현재 매칭된 관심
+    차량의 번호판(target_matched_vehicles 기준, 없으면 생략 가능). TARGET
+    사유로 여정이 시작/진행될 때만 journey.plate를 채우는 데 쓰인다.
     """
 
     now = time.time()
 
-    active_cam_ids = [
+    target_matched_by_cam_id = target_matched_by_cam_id or {}
+
+    dui_active_cam_ids = [
         cam_id
         for cam_id, ids in suspicious_vehicles_by_camera.items()
         if ids
     ]
 
+    target_active_cam_ids = [
+        cam_id
+        for cam_id, ids in target_matched_by_cam_id.items()
+        if ids
+    ]
+
+    # [신규: "음주운전 우선"] 이번 프레임에 Journey 진행을 트리거할 카메라
+    # 목록과 사유를 하나로 정한다 - 음주운전이 하나라도 있으면 그걸 쓰고,
+    # 없을 때만 관심 차량 매칭을 본다.
+    if dui_active_cam_ids:
+        active_cam_ids = dui_active_cam_ids
+        frame_reason = "DUI"
+    elif target_active_cam_ids:
+        active_cam_ids = target_active_cam_ids
+        frame_reason = "TARGET"
+    else:
+        active_cam_ids = []
+        frame_reason = None
+
     # =========================================================
     # CCTV 이동 순서
     # =========================================================
 
-    camera_order = [
-        "L010111",  # CCTV-A / 이대역
-        "L010271",  # CCTV-B / 신촌
-        "L010128",  # CCTV-C / 합정역  (다음 양화대교북단까지가 "동교동삼거리 비감지 구간")
-        "L010481",  # CCTV-D / 양화대교북단
-    ]
+    camera_order = CAMERA_ORDER
 
     # =========================================================
     # 아직 Journey가 없으면
-    # [수정] camera_order[0]으로 무조건 고정하지 않는다 - 실제로 처음
-    # 매칭이 뜬 카메라가 camera_order 몇 번째든(예: 신촌에서 처음 등록/매칭
-    # 됐으면 신촌) 그 지점을 시작점으로 삼는다. camera_order 순서상 가장
-    # 앞선(=가장 먼저 지나갔을) 카메라를 우선한다.
+    # [유지] camera_order[0]으로 무조건 고정하지 않는다 - 실제로 처음
+    # 매칭이 뜬 카메라가 camera_order 몇 번째든 그 지점을 시작점으로 삼는다.
+    # camera_order 순서상 가장 앞선(=가장 먼저 지나갔을) 카메라를 우선한다.
     # =========================================================
 
     if not journey.active:
 
-        # 이상운전 차량이 하나도 없으면 대기
+        # 이번 프레임에 트리거할 게 하나도 없으면 대기
         if not active_cam_ids:
             return
 
@@ -661,17 +939,22 @@ def update_journey_for_frame(journey, suspicious_vehicles_by_camera, plate_by_ca
 
         journey.last_seen_at = now
 
-        # [신규] 시작 카메라에서 이미 번호판이 매칭돼 있으면 바로 채워 넣는다
-        # (아직 OCR 전이면 None으로 두고, 아래 진행 분기에서 채워진다).
+        journey.reason = frame_reason
+
+        # [유지] 시작 카메라에서 이미 번호판이 매칭돼 있으면 바로 채워 넣는다
+        # (아직 OCR 전이거나 DUI로 시작된 여정이면 None으로 두고, 아래 진행
+        # 분기에서 채워질 수 있다).
         journey.plate = (
-            plate_by_cam_id.get(start_cam_id) if plate_by_cam_id else None
+            plate_by_cam_id.get(start_cam_id)
+            if (frame_reason == "TARGET" and plate_by_cam_id)
+            else None
         )
 
         # 이동 처리 중 여부 초기화
         journey._journey_pending = False
 
         print(
-            f"[JOURNEY] 새 여정 시작: "
+            f"[JOURNEY] 새 여정 시작({frame_reason}): "
             f"{start_cam_id}({loc['name']})"
         )
 
@@ -679,6 +962,17 @@ def update_journey_for_frame(journey, suspicious_vehicles_by_camera, plate_by_ca
         send_journey_update(journey)
 
         return
+
+    # =========================================================
+    # [신규] 진행 중인 여정의 사유 갱신 - 음주운전이 우선이므로, TARGET으로
+    # 시작된 여정이라도 이후 프레임에서 DUI가 확정되면 그 순간부터 DUI로
+    # 바뀌고, 여정이 끝날 때까지 다시 TARGET으로 내려가지 않는다.
+    # =========================================================
+
+    if frame_reason == "DUI" and journey.reason != "DUI":
+        journey.reason = "DUI"
+        print(f"[JOURNEY] 진행 중인 여정이 음주운전 확정으로 전환됨: {journey.last_cam_id}")
+        send_journey_update(journey)
 
     # =========================================================
     # 현재 CCTV 위치 확인
@@ -693,14 +987,15 @@ def update_journey_for_frame(journey, suspicious_vehicles_by_camera, plate_by_ca
         )
 
     # =========================================================
-    # [신규] 시작 시점엔 아직 OCR이 안 돼서 번호판을 못 채웠을 수 있다 -
-    # 지금 카메라에서 번호판이 매칭됐는데 journey.plate가 아직 비어 있으면
-    # 채워 넣고, 알림 팝업/이벤트 카드가 곧바로 반영하도록 즉시 갱신 payload를
-    # 보낸다(다음 카메라 전환까지 기다리지 않는다).
+    # [유지] 시작 시점엔 아직 OCR이 안 돼서 번호판을 못 채웠을 수 있다 -
+    # (TARGET 사유일 때만) 지금 카메라에서 번호판이 매칭됐는데 journey.plate가
+    # 아직 비어 있으면 채워 넣고, 알림 팝업/이벤트 카드가 곧바로 반영하도록
+    # 즉시 갱신 payload를 보낸다(다음 카메라 전환까지 기다리지 않는다).
     # =========================================================
 
     if (
-        not journey.plate
+        journey.reason == "TARGET"
+        and not journey.plate
         and plate_by_cam_id
         and journey.last_cam_id in plate_by_cam_id
     ):
@@ -723,23 +1018,26 @@ def update_journey_for_frame(journey, suspicious_vehicles_by_camera, plate_by_ca
     # =========================================================
     # 다음 CCTV 탐색
     # =========================================================
+    # [유지: 사용자 요청 - "폴리라인이 이상한 곳을 그리고 있다, 정해진 순서대로
+    # 그리게 해달라"] current_index 다음부터 순서상 "가장 먼저 발견되는 활성
+    # 카메라"로 바로 건너뛰지 않는다. 4대 카메라는 각자 독립된 영상이라 재생
+    # 타이밍이 서로 다르기 때문에, 중간 카메라를 건너뛰면 지도 위 경로가 정해진
+    # 순서를 벗어난 이상한 길로 그려진다. 바로 다음 순번의 카메라 하나만
+    # 확인해서, 그 카메라가 아직 활성화되지 않았으면 기다리고(아래 "다음 CCTV가
+    # 아직 감지되지 않은 경우" 블록에서 처리), 순서를 건너뛰지 않는다.
 
     next_cam_id = None
 
-    if current_index >= 0:
+    if (
+        current_index >= 0
+        and current_index + 1 < len(camera_order)
+    ):
 
-        for i in range(
-            current_index + 1,
-            len(camera_order)
-        ):
+        candidate = camera_order[current_index + 1]
 
-            candidate = camera_order[i]
+        if candidate in active_cam_ids:
 
-            if candidate in active_cam_ids:
-
-                next_cam_id = candidate
-
-                break
+            next_cam_id = candidate
 
     # =========================================================
     # 다음 CCTV가 아직 감지되지 않은 경우
@@ -771,55 +1069,12 @@ def update_journey_for_frame(journey, suspicious_vehicles_by_camera, plate_by_ca
         return
 
     # =========================================================
-    # 이미 다음 CCTV로 이동 처리 중이면
-    # 중복 스레드 생성 방지
+    # 다음 CCTV 이동 - _advance_journey_to() 하나로 통일 (즉시 직선 이어그리기 +
+    # 전체 구간 OSRM 다중 경유지 요청 한 번으로 도로 경로 완성, 구간별 분할 없음).
+    # 이미 진행 중이면(_journey_pending) 함수 안에서 스스로 무시한다.
     # =========================================================
 
-    if getattr(
-        journey,
-        "_journey_pending",
-        False
-    ):
-
-        return
-
-    # =========================================================
-    # 출발 / 도착 CCTV 좌표
-    # =========================================================
-
-    from_loc = CAMERA_LOCATIONS.get(
-        journey.last_cam_id
-    )
-
-    to_loc = CAMERA_LOCATIONS.get(
-        next_cam_id
-    )
-
-    if not from_loc or not to_loc:
-        return
-
-    # =========================================================
-    # 다음 CCTV 이동 시작
-    # =========================================================
-
-    journey._journey_pending = True
-
-    print(
-        f"[JOURNEY] "
-        f"{from_loc['name']} → {to_loc['name']} "
-        f"이동 감지"
-    )
-
-    # =========================================================
-    # OSRM 도로 경로를 비동기로 계산
-    # =========================================================
-
-    _extend_journey_async(
-        journey,
-        from_loc,
-        to_loc,
-        next_cam_id
-    )
+    _advance_journey_to(journey, next_cam_id)
 
 
 # ============================================================
@@ -1024,6 +1279,12 @@ def open_cameras():
 
             "last_send_time":
                 0.0,
+
+            # [신규] 사건 "전" 캡처용 최근 프레임 버퍼 - 이 카메라의 실제 fps 기준
+            # BEFORE_CAPTURE_SECONDS초 분량만 들고 있는다(오래된 프레임은 deque가
+            # 자동으로 버림). realtime_anomaly.py의 frame_buffer와 동일한 패턴.
+            "frame_buffer":
+                deque(maxlen=max(1, round(fps * BEFORE_CAPTURE_SECONDS))),
 
         }
 
@@ -2713,6 +2974,11 @@ def main():
                 "frame_idx"
             ] += 1
 
+            # [신규] 사건 "전" 캡처용 - 매 프레임마다 채워둔다 (realtime_anomaly.py와
+            # 동일한 패턴). YOLO 추론 전에 원본 프레임을 그대로 넣어야
+            # 박스/텍스트가 그려지지 않은 깨끗한 캡처가 된다.
+            camera["frame_buffer"].append(frame.copy())
+
 
             # =================================================
             # YOLO + ByteTrack
@@ -2855,27 +3121,17 @@ def main():
 
 
                 # ------------------------------------------------
-                # [신규] 3초 강제 타이머 - 지그재그 패턴이 안 잡혀도 이 차량이
-                # 화면에 처음 등장한 뒤 FORCE_ALERT_AFTER_SECONDS(기본 3초)가
-                # 지나면 그냥 강제로 관심차량(빨간 박스)으로 전환한다.
-                # 지그재그가 먼저 잡히면(is_suspicious가 이미 True) 이 블록은
-                # 아무 일도 안 한다 - 진짜 판정이 항상 우선.
+                # [삭제됨: 사용자 요청 - "계속 엉뚱한 알림이 뜬다, 저거 그냥 없애"]
+                # 예전엔 지그재그 패턴이 전혀 안 잡혀도 차량이 화면에 등장한 뒤
+                # FORCE_ALERT_AFTER_SECONDS(3초)만 지나면 무조건 강제로
+                # 관심차량(빨간 박스) + DUI_PATTERN 이벤트를 만들었다. 그래서 카메라
+                # 4대 모두 영상을 켤 때마다(또는 새로 재생될 때마다) 실제 이상운전
+                # 여부와 무관하게 3초 뒤 항상 알림 팝업/이벤트가 떴다 - 이게 바로
+                # "엉뚱한 곳에 알림이 생겨서 포커싱된다"의 원인이었다. 이제는 아래
+                # check_suspicious_vehicle()의 진짜 지그재그·급가감속 패턴 판정
+                # 결과(is_suspicious/just_confirmed)만 그대로 쓴다 - 강제 타이머는
+                # 더 이상 개입하지 않는다.
                 # ------------------------------------------------
-
-                first_seen_at = (
-                    vehicle_first_seen[camera_name].setdefault(
-                        track_id,
-                        time.time()
-                    )
-                )
-
-                if (
-                    not is_suspicious
-                    and (time.time() - first_seen_at) >= FORCE_ALERT_AFTER_SECONDS
-                ):
-                    suspicious_vehicles[camera_name].add(track_id)
-                    is_suspicious = True
-                    just_confirmed = True
 
 
                 # =================================================
@@ -2931,6 +3187,62 @@ def main():
                         event
                     )
 
+                    # [신규: 사용자 요청 - "알림 팝업이 카메라 지날 때마다 뜬다, 처음
+                    # 잡혔을 때 한 번만 뜨게 해달라"] 지금까지는 카메라마다 각자
+                    # 독립적으로 지그재그 패턴을 판정하기 때문에, 같은 차량이
+                    # 보라매역→장승배기→상도→한강대교남단으로 이어지는 한 여정 동안
+                    # 카메라 4대 모두에서 just_confirmed가 각각 따로 발생해서 대시보드
+                    # 알림 팝업/이벤트가 카메라 수만큼 반복해서 떴다. 이제는 이번 여정
+                    # (journey)에서 이미 한 번 보냈으면(journey.alert_sent) 이후
+                    # 카메라들에서는 send_ai_event를 다시 호출하지 않는다 - 지도 위
+                    # 여정 추적(update_journey_for_frame)과 CCTV 박스 오버레이는
+                    # 이 플래그와 무관하게 그대로 계속된다.
+                    if journey.alert_sent:
+                        print(
+                            f"ℹ️  {camera_name}: 같은 여정에서 이미 알림을 보냈으므로 "
+                            "이벤트를 다시 만들지 않습니다 (여정 추적은 계속됩니다)."
+                        )
+                    else:
+                        journey.alert_sent = True
+
+                        # [수정: "음주운전이랑 관심대상 기능 합치기"] 예전엔 여기서
+                        # 곧바로 _advance_journey_to(journey, cam_id)를 호출해서
+                        # "중앙 화면 알림 팝업이 뜨는 것과 같은 프레임에 폴리라인도
+                        # 나타나게" 했었다. 이제는 update_journey_for_frame()이 DUI/
+                        # TARGET 두 트리거를 모두 받아서(음주운전 우선) 순서를
+                        # 건너뛰지 않고 진행시키므로, 여기서 직접 진행시키지 않는다
+                        # - 대신 이 프레임(같은 루프 안에서 카메라를 모두 처리한 뒤)
+                        # 끝에서 호출되는 update_journey_for_frame()이 suspicious_by_cam_id
+                        # 에 이 cam_id가 포함된 걸 보고 즉시 진행시킨다("같은 프레임에
+                        # 반영된다"는 요구사항은 그대로 만족한다). 여기서는 이 여정이
+                        # 음주운전 때문이라는 사유만 남겨서, 아직 시작 전이거나 다른
+                        # 사유로 진행 중이던 여정도 이번 확정을 계기로 DUI로 표시되게
+                        # 한다.
+                        journey.reason = "DUI"
+
+                        # [신규] 사건 전/후 캡처를 여기서 동기적으로 저장해서, 이벤트가
+                        # 대시보드에 뜨는 "그 순간"에 이미 이미지가 들어있게 한다. "전"은
+                        # frame_buffer에서 가장 오래된(=BEFORE_CAPTURE_SECONDS초 전) 프레임,
+                        # "후"는 방금 이 track_id가 확정된 지금 이 프레임 그대로.
+                        _frame_buffer = camera["frame_buffer"]
+                        _before_frame = _frame_buffer[0] if _frame_buffer else None
+                        _after_frame = frame.copy() if frame is not None else None
+                        _frame_ref_before = save_capture(_before_frame, cam_id, "before")
+                        _frame_ref_after = save_capture(_after_frame, cam_id, "after")
+
+                        # [신규] 대시보드 "이벤트" 리스트/화면 중앙 알림 팝업/PDF 리포트로
+                        # 이어지는 진짜 백엔드 이벤트 생성 - 위 events.append(event)는 이
+                        # 파이썬 프로세스 안에서만 쓰는 내부 로그용 리스트라 대시보드와는
+                        # 무관하다(그래서 여태 이벤트가 안 떴다).
+                        send_ai_event(
+                            cam_id,
+                            camera_name,
+                            track_id,
+                            info["bbox"],
+                            pattern,
+                            frame_ref_before=_frame_ref_before,
+                            frame_ref_after=_frame_ref_after,
+                        )
 
                     print()
                     print(
@@ -3123,7 +3435,15 @@ def main():
             if target_matched_vehicles[camera_name]
         }
 
-        update_journey_for_frame(journey, target_matched_by_cam_id, plate_by_cam_id)
+        # [수정: "음주운전이랑 관심대상 기능 합치기"] 이제 두 트리거를 모두
+        # 넘긴다 - 음주운전(suspicious_by_cam_id)이 우선, 없을 때만 관심 차량
+        # 매칭(target_matched_by_cam_id)을 본다(update_journey_for_frame 내부).
+        update_journey_for_frame(
+            journey,
+            suspicious_by_cam_id,
+            target_matched_by_cam_id,
+            plate_by_cam_id,
+        )
 
 
         # ====================================================
