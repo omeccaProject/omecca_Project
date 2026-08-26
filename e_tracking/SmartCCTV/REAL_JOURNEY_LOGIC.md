@@ -1,22 +1,39 @@
 # Real Journey 폴리라인/차량 마커 로직 (2026-08-24 확정본)
 
-> **[2026-08-26 갱신 안내]** 이 문서가 쓰여진 뒤, `feature/target-vehicle-journey`
-> 브랜치에서 "등록된 관심 차량(번호판) 매칭"이 여정을 트리거하는 기능이 추가됐고,
-> main과 merge하면서 두 트리거(음주운전 확정 / 관심 차량 매칭)를 한 여정에
-> 합쳤다. 아래 내용(도로 위에 정확히 그려지기, 실시간 애니메이션, 파이썬 종료 시
-> 즉시 멈춤, append-only 금지)은 여전히 유효하고 그대로 지켜지고 있다 - 다만:
-> - `CAMERA_LOCATIONS`가 이제 `DUI_CAMERA_LOCATIONS`(보라매역→장승배기→상도→
->   한강대교남단, 이 문서 기준)와 `TARGET_CAMERA_LOCATIONS`(이대역→신촌→합정역→
->   양화대교북단)로 나뉘었고, `JOURNEY_ROUTE_PRESET` 환경변수로 어느 걸 쓸지
->   고른다(기본값 "target").
-> - `update_journey_for_frame()`은 이제 음주운전 감지와 관심 차량 매칭을 모두
->   받아서, 같은 프레임에 둘 다 있으면 음주운전을 우선한다.
-> - `map.js`의 `RealJourneyAlertManager`/마커 팝업/이벤트 카드는 `payload.reason`
->   ("DUI" | "TARGET")에 따라 제목을 "🚨 이상운전 차량 감지" 또는 "🎯 관심 차량
->   감지"로 바꿔서 보여준다.
-> 이 문서에 없는 "동교동삼거리 사각지대"(마커 숨김/재등장) 기능은 TARGET
-> 프리셋(이대역 라인)에서만 의미가 있다 - `map.js`의 `REAL_JOURNEY_GAP_WAYPOINT`
-> 관련 코드 참고.
+> **[2026-08-26 갱신 안내 - 두 번째 수정]** 이 문서가 쓰여진 뒤,
+> `feature/target-vehicle-journey` 브랜치에서 "등록된 관심 차량(번호판) 매칭"이
+> 여정을 트리거하는 기능이 추가됐다. main과 merge하는 과정에서 처음에는 두
+> 트리거(음주운전 확정 / 관심 차량 매칭)를 "하나의 공유 여정 + 음주운전 우선
+> 순위"로 합쳤었는데, 이는 사용자가 명시적으로 반려한 잘못된 설계였다 -
+> **음주운전과 관심대상은 완전히 별개의, 동시에 활성일 수 있는 두 기능**이다:
+> - 음주운전: 보라매역 → 장승배기 → 상도 → 한강대교남단, 이 문서(위 본문) 기준
+>   그대로. 사각지대 연출 없음.
+> - 관심대상: 이대역 → 신촌 → (동교동삼거리, 사각지대) → 합정역 → 양화대교북단.
+>   동교동삼거리에서 마커가 사라졌다가 5초 후 합정역에서 재등장 + 폴리라인을
+>   조금 더 그리는 연출 포함.
+>
+> 아래 내용(도로 위에 정확히 그려지기, 실시간 애니메이션, 파이썬 종료 시 즉시
+> 멈춤, append-only 금지)은 여전히 유효하고 그대로 지켜지고 있다 - 다만 이제
+> **완전히 독립된 두 `VehicleJourney` 인스턴스**로 나뉘어 적용된다:
+> - `test_suspicious_driving.py`: `CAMERA_LOCATIONS`/`CAMERA_ORDER` 전역 하나
+>   대신, `DUI_CAMERA_LOCATIONS`/`DUI_CAMERA_ORDER`와
+>   `TARGET_CAMERA_LOCATIONS`/`TARGET_CAMERA_ORDER`가 각각 따로 있고,
+>   `main()`이 `dui_journey = VehicleJourney("DUI", DUI_CAMERA_LOCATIONS,
+>   DUI_CAMERA_ORDER)`와 `target_journey = VehicleJourney("TARGET", ...)`
+>   두 인스턴스를 만든다. `update_journey_for_frame(journey,
+>   active_vehicles_by_camera, plate_by_cam_id=None)`은 이제 단일 신호
+>   소스만 받고, 프레임마다 `dui_journey`/`target_journey`에 대해 각각 한
+>   번씩(총 두 번) 호출된다 - 우선순위/병합 로직은 없다.
+> - `map.js`: `RealVehicleMarker`/`RealJourneyAlertManager`도 DUI/TARGET
+>   각각 독립된 인스턴스(`duiVehicleMarker`/`targetVehicleMarker`,
+>   `duiAlertManager`/`targetAlertManager`)로 나뉘고, `RouteManager`의
+>   폴리라인 상태도 `journeyKey`("DUI"|"TARGET")별로 완전히 분리돼 있다
+>   (`setCurrentRealJourneySegment(journeyKey, points)` 등). STOMP로 오는
+>   payload는 `payload.reason`으로 어느 트랙에 속하는지 구분해서 라우팅된다.
+>   제목도 여전히 "🚨 이상운전 차량 감지" / "🎯 관심 차량 감지"로 나뉜다.
+> "동교동삼거리 사각지대"(마커 숨김/재등장) 기능은 TARGET 전용이다 - DUI
+> 트랙에는 이 로직 자체가 없다(`map.js`의 `REAL_JOURNEY_GAP_WAYPOINT` 관련
+> 코드는 TARGET 분기 안에서만 호출됨).
 
 이 문서는 GIS 지도에서 "이상감지 차량이 실시간으로 움직이고, 폴리라인이 도로 위에
 정확하게 + 실시간으로 그려지는" 기능의 **최종 확정 설계**를 기록한다.

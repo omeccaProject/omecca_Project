@@ -1464,22 +1464,35 @@ class RouteManager {
     this.trajectoryPoints = [];
   }
 
-  setRealJourneyPoints(points) {
+  // [수정: "음주운전이랑 관심대상은 서로 다른, 완전히 별개의 기능이다"] 예전엔
+  // 폴리라인 상태(realJourneySegments/realJourneyPolyline)가 RouteManager에
+  // 딱 하나만 있어서, 두 여정이 동시에 활성화되면 서로의 선을 덮어썼다. 이제는
+  // journeyKey("DUI"|"TARGET")별로 완전히 독립된 segments/polyline을 갖는다 -
+  // 아래 모든 메서드가 첫 인자로 journeyKey를 받는다.
+  _realJourneyState(journeyKey) {
+    if (!this._realJourneyStates) this._realJourneyStates = {};
+    if (!this._realJourneyStates[journeyKey]) {
+      this._realJourneyStates[journeyKey] = { segments: [], polyline: null };
+    }
+    return this._realJourneyStates[journeyKey];
+  }
+
+  setRealJourneyPoints(journeyKey, points) {
     // [참고] 지금은 아무도 호출하지 않는다(appendRealJourneyPoint()로 실시간
     // 누적 방식만 씀) - 혹시 필요해질 때를 위해 남겨둔다.
+    const state = this._realJourneyState(journeyKey);
     if (!points || points.length < 2) {
-      if (this.realJourneyPolyline) {
-        this.map.removeLayer(this.realJourneyPolyline);
-        this.realJourneyPolyline = null;
+      if (state.polyline) {
+        this.map.removeLayer(state.polyline);
+        state.polyline = null;
       }
       return;
     }
 
-    const routeColor =
-      getComputedStyle(document.documentElement).getPropertyValue("--accent-alert").trim() || "#ef4444";
+    const routeColor = this._realJourneyColor(journeyKey);
 
-    if (!this.realJourneyPolyline) {
-      this.realJourneyPolyline = L.polyline(points, {
+    if (!state.polyline) {
+      state.polyline = L.polyline(points, {
         color: routeColor,
         weight: 4,
         opacity: 0.85,
@@ -1487,14 +1500,24 @@ class RouteManager {
         lineJoin: "round",
       }).addTo(this.map);
     } else {
-      this.realJourneyPolyline.setLatLngs(points);
+      state.polyline.setLatLngs(points);
     }
   }
 
-  clearRealJourney() {
-    if (this.realJourneyPolyline) {
-      this.map.removeLayer(this.realJourneyPolyline);
-      this.realJourneyPolyline = null;
+  // DUI는 기존과 동일하게 빨간색(--accent-alert), TARGET은 시각적으로 구분되게
+  // 다른 색(--accent-warning, 없으면 주황)을 쓴다 - 두 여정이 동시에 지도 위에
+  // 그려질 수 있으므로 구분이 필요하다.
+  _realJourneyColor(journeyKey) {
+    const varName = journeyKey === "TARGET" ? "--accent-warning" : "--accent-alert";
+    const fallback = journeyKey === "TARGET" ? "#f59e0b" : "#ef4444";
+    return getComputedStyle(document.documentElement).getPropertyValue(varName).trim() || fallback;
+  }
+
+  clearRealJourney(journeyKey) {
+    const state = this._realJourneyState(journeyKey);
+    if (state.polyline) {
+      this.map.removeLayer(state.polyline);
+      state.polyline = null;
     }
     // [수정: "동교동삼거리 사각지대" 버그] 예전엔 좌표를 하나의 평평한 배열
     // (realJourneyPoints)에 계속 append만 했다 - 그런데 사각지대 구간에서는
@@ -1504,33 +1527,34 @@ class RouteManager {
     // 이제는 여러 개의 "끊어진 선분(segment)"을 따로 관리한다 - Leaflet의
     // L.polyline()은 좌표 배열의 배열([[..], [..]])을 주면 그 사이는 자동으로
     // 잇지 않고 각각 독립된 선으로 그린다(MultiPolyline).
-    this.realJourneySegments = [];
+    state.segments = [];
   }
 
   // [신규] 사각지대(예: 동교동삼거리) 통과 등, 지금까지 그린 선과 이어붙이면
   // 안 되는 지점에서 호출한다 - 다음 appendRealJourneyPoint()부터는 새 선분에
   // 쌓이기 시작해서, 이전 선분과 화면에서 자동으로 연결되지 않는다.
-  startNewRealJourneySegment() {
-    if (!this.realJourneySegments) this.realJourneySegments = [];
+  // (TARGET 여정 전용 - DUI 여정은 사각지대 연출이 없으므로 호출하지 않는다.)
+  startNewRealJourneySegment(journeyKey) {
+    const state = this._realJourneyState(journeyKey);
     if (
-      this.realJourneySegments.length === 0 ||
-      this.realJourneySegments[this.realJourneySegments.length - 1].length > 0
+      state.segments.length === 0 ||
+      state.segments[state.segments.length - 1].length > 0
     ) {
-      this.realJourneySegments.push([]);
+      state.segments.push([]);
     }
   }
 
-  appendRealJourneyPoint(latlng) {
-    if (!this.realJourneySegments) this.realJourneySegments = [];
-    if (this.realJourneySegments.length === 0) this.realJourneySegments.push([]);
+  appendRealJourneyPoint(journeyKey, latlng) {
+    const state = this._realJourneyState(journeyKey);
+    if (state.segments.length === 0) state.segments.push([]);
 
-    const currentSegment = this.realJourneySegments[this.realJourneySegments.length - 1];
+    const currentSegment = state.segments[state.segments.length - 1];
 
     const last = currentSegment[currentSegment.length - 1];
     if (last && last[0] === latlng[0] && last[1] === latlng[1]) return;
     currentSegment.push(latlng);
 
-    this._redrawRealJourneySegments();
+    this._redrawRealJourneySegments(journeyKey);
   }
 
   // [신규: animateAlong() 이식용] animateAlong()의 onFrame은 appendRealJourneyPoint()
@@ -1539,23 +1563,23 @@ class RouteManager {
   // 재그리기 방식). 그래서 지금 그리고 있는 마지막 선분(segment)의 내용만
   // 매 프레임 통째로 교체해서 다시 그린다 - 사각지대 이전에 이미 완성된
   // 선분들은 건드리지 않는다(startNewRealJourneySegment()로 분리해둔 덕분).
-  setCurrentRealJourneySegment(points) {
-    if (!this.realJourneySegments) this.realJourneySegments = [];
-    if (this.realJourneySegments.length === 0) this.realJourneySegments.push([]);
-    this.realJourneySegments[this.realJourneySegments.length - 1] = points.slice();
-    this._redrawRealJourneySegments();
+  setCurrentRealJourneySegment(journeyKey, points) {
+    const state = this._realJourneyState(journeyKey);
+    if (state.segments.length === 0) state.segments.push([]);
+    state.segments[state.segments.length - 1] = points.slice();
+    this._redrawRealJourneySegments(journeyKey);
   }
 
-  _redrawRealJourneySegments() {
+  _redrawRealJourneySegments(journeyKey) {
+    const state = this._realJourneyState(journeyKey);
     // 선분이 하나도 2점 이상이 안 되면(막 시작한 선분 하나뿐) 아직 그릴 게 없다.
-    const drawable = this.realJourneySegments.filter((seg) => seg.length >= 2);
+    const drawable = state.segments.filter((seg) => seg.length >= 2);
     if (drawable.length === 0) return;
 
-    const routeColor =
-      getComputedStyle(document.documentElement).getPropertyValue("--accent-alert").trim() || "#ef4444";
+    const routeColor = this._realJourneyColor(journeyKey);
 
-    if (!this.realJourneyPolyline) {
-      this.realJourneyPolyline = L.polyline(drawable, {
+    if (!state.polyline) {
+      state.polyline = L.polyline(drawable, {
         color: routeColor,
         weight: 4,
         opacity: 0.85,
@@ -1563,7 +1587,7 @@ class RouteManager {
         lineJoin: "round",
       }).addTo(this.map);
     } else {
-      this.realJourneyPolyline.setLatLngs(drawable);
+      state.polyline.setLatLngs(drawable);
     }
   }
 
@@ -2452,11 +2476,12 @@ class EventManager {
 
     this.demoOrder = ["A", "B", "C", "D"];
 
-    // [신규] Real Journey 이벤트 카드 - 지금 활성 상태인 Real Journey 카드를
-    // 하나만 참조로 들고 있는다(중복 카드 생성 방지용). RealVehicleMarker/
-    // RealVehicleJourneyListener와는 무관하게, 오직 "카드가 이미 있는가"만
-    // 판단하는 용도다 - upsertRealJourneyEvent()/resolveRealJourneyEvent() 참고.
-    this._realJourneyLogEntry = null;
+    // [수정: "음주운전이랑 관심대상은 서로 다른, 완전히 별개의 기능이다"] 지금
+    // 활성 상태인 Real Journey 카드를 DUI/TARGET 각각 하나씩(동시에 최대 2개)
+    // 참조로 들고 있는다(중복 카드 생성 방지용). RealVehicleMarker/
+    // RealVehicleJourneyListener와는 무관하게, 오직 "이 kind의 카드가 이미
+    // 있는가"만 판단하는 용도다 - upsertRealJourneyEvent()/resolveRealJourneyEvent() 참고.
+    this._realJourneyLogEntries = { DUI: null, TARGET: null };
     // Real Journey 이벤트 카드를 클릭했을 때 무엇을 할지는 EventManager가 직접
     // 알지 못한다(RealVehicleMarker 인스턴스를 갖고 있지 않으므로) - 초기화부에서
     // 콜백을 연결해준다.
@@ -2727,18 +2752,25 @@ class EventManager {
   // 삭제하지는 않음 - _forwardRealJourneyEventToGateway 메서드는 아래 그대로 남겨둠,
   // 더 이상 호출만 안 함), CCTV 바로가기 때 이미 성공적으로 쓰던 iframe→부모 React
   // 통신 방식(window.parent.postMessage)을 그대로 재사용한다.
+  // [수정: "음주운전이랑 관심대상은 서로 다른, 완전히 별개의 기능이다"] 예전엔
+  // "활성 Real Journey"가 시스템 전체에 하나(this._realJourneyLogEntry)뿐이라고
+  // 가정했다 - 이제는 DUI/TARGET이 동시에 활성일 수 있으므로, payload.reason별로
+  // 완전히 독립된 카드를 관리한다(this._realJourneyLogEntries = {DUI, TARGET}).
   upsertRealJourneyEvent(payload) {
-    let entry = this._realJourneyLogEntry;
+    const journeyKey = payload.reason === "TARGET" ? "TARGET" : "DUI";
+    if (!this._realJourneyLogEntries) this._realJourneyLogEntries = {};
+    let entry = this._realJourneyLogEntries[journeyKey];
 
     if (!entry) {
-      // [신규: "음주운전이랑 관심대상 기능 합치기"] payload.reason("DUI"/"TARGET")에
-      // 맞춰 카드 문구도 알림 카드/팝업과 동일한 기준으로 바꾼다.
+      // payload.reason("DUI"/"TARGET")에 맞춰 카드 문구도 알림 카드/팝업과
+      // 동일한 기준으로 바꾼다.
       const normalized = {
-        icon: payload.reason === "TARGET" ? "🎯" : "🚨",
-        type: payload.reason === "TARGET" ? "관심 차량 감지" : "이상운전 감지",
+        icon: journeyKey === "TARGET" ? "🎯" : "🚨",
+        type: journeyKey === "TARGET" ? "관심 차량 감지" : "이상운전 감지",
         severity: "alert",
         time: new Date().toLocaleTimeString("ko-KR", { hour12: false }),
         sourceType: "REAL_JOURNEY", // renderPanel()의 클릭 분기 + plate 표시 분기에서 사용
+        journeyKey, // renderPanel() 클릭 시 어느 마커/여정으로 포커싱할지 구분
         statusText: "이동 중",
       };
       const camera = {
@@ -2746,7 +2778,7 @@ class EventManager {
         id: payload.currentCamId,
       };
       entry = { camera, event: normalized };
-      this._realJourneyLogEntry = entry;
+      this._realJourneyLogEntries[journeyKey] = entry;
       this.log.unshift(entry);
       this.alertDetectionCount += 1; // "사건" 단위로 1회만 증가 - 이후 갱신은 카운트하지 않음
 
@@ -2847,11 +2879,15 @@ class EventManager {
 
   // active=false(여정 종료) payload가 오면 호출된다. 카드 자체는 로그에서 지우지 않고
   // (다른 이벤트들과 동일하게 "발생 이력"으로 남긴다) 상태 텍스트만 "종료됨"으로 바꾼다.
-  // this._realJourneyLogEntry 참조는 끊어서, 다음번 active=true는 새 카드로 취급되게 한다.
-  resolveRealJourneyEvent() {
-    if (this._realJourneyLogEntry) {
-      this._realJourneyLogEntry.event.statusText = "종료됨";
-      this._realJourneyLogEntry = null;
+  // this._realJourneyLogEntries[journeyKey] 참조는 끊어서, 다음번 active=true는 새
+  // 카드로 취급되게 한다. journeyKey를 반드시 지정해야 DUI/TARGET 중 끝난 쪽의
+  // 카드만 정리하고, 동시에 진행 중인 다른 쪽 카드는 건드리지 않는다.
+  resolveRealJourneyEvent(journeyKey) {
+    if (!this._realJourneyLogEntries) return;
+    const entry = this._realJourneyLogEntries[journeyKey];
+    if (entry) {
+      entry.event.statusText = "종료됨";
+      this._realJourneyLogEntries[journeyKey] = null;
       this.renderPanel();
     }
   }
@@ -2961,7 +2997,7 @@ class EventManager {
         // 연결해준 콜백(onRealJourneyCardClick)에 위임한다. cameraManager를
         // 통한 기존 클릭 동작은 손대지 않는다(else 분기 그대로).
         if (entry.event.sourceType === "REAL_JOURNEY") {
-          if (this.onRealJourneyCardClick) this.onRealJourneyCardClick();
+          if (this.onRealJourneyCardClick) this.onRealJourneyCardClick(entry.event.journeyKey);
           return;
         }
 
@@ -3092,8 +3128,24 @@ class AiWebSocketListener {
    표시한다(초기화부의 RealVehicleJourneyListener 콜백 참고).
 ================================================== */
 class RealJourneyAlertManager {
-  constructor(mapManager) {
+  // [수정: "카드 버튼 누르면 아직 도착 안 한 목적지 카메라 위치로 지도가 먼저
+  // 튀어서, 실제로 애니메이션 중인 차량 마커는 화면 밖에 있고 폴리라인도 안
+  // 그려진 것처럼 보임"] _advance_journey_to()(파이썬)는 다음 카메라로 넘어갈
+  // 때 journey.last_cam_id/currentCamId를 "즉시" 그 카메라로 바꾸고 그 좌표를
+  // payload.currentLat/Lng로 보낸다 - 실제 차량 마커는 아직 그 지점까지
+  // animateAlong()으로 이동/보간 중이다. 그래서 이 카드의 "지도에서 확인"
+  // 버튼이 payload 좌표(=아직 도착 안 한 목적지)로 포커스하면, 실제 마커와
+  // 자라나는 폴리라인은 화면 밖(이전 구간)에 남아있어서 아무것도 안 그려진
+  // 것처럼 보였다. realVehicleMarker를 넘겨받아서, 마커가 이미 존재하면 그
+  // "실제 현재 화면 위치"로 포커스한다 - 없을 때만 payload 좌표로 폴백한다.
+  // [수정: "음주운전이랑 관심대상은 서로 다른, 완전히 별개의 기능이다"] DUI/
+  // TARGET 카드가 동시에 뜰 수 있으므로, kind("DUI"|"TARGET")를 받아서 두
+  // 카드가 화면에서 서로 겹치지 않게 세로로 나눠 배치한다(TARGET 카드를 DUI
+  // 카드 아래에 둔다).
+  constructor(mapManager, realVehicleMarker, kind = "DUI") {
     this.mapManager = mapManager;
+    this.realVehicleMarker = realVehicleMarker || null;
+    this.kind = kind;
     this.el = null;
     this._injectStyleOnce();
   }
@@ -3134,6 +3186,11 @@ class RealJourneyAlertManager {
     if (isNew) {
       this.el = document.createElement("div");
       this.el.className = "real-journey-alert-card";
+      // DUI 카드는 기본 위치(top:84px), TARGET 카드는 그 아래로 내려서 두
+      // 카드가 동시에 떠도 서로 겹치지 않게 한다.
+      if (this.kind === "TARGET") {
+        this.el.style.top = "264px";
+      }
       document.body.appendChild(this.el);
     }
 
@@ -3155,7 +3212,16 @@ class RealJourneyAlertManager {
 
     const btn = this.el.querySelector(".rja-focus-btn");
     btn.onclick = () => {
-      if (lat != null && lng != null) this.mapManager.focus(lat, lng);
+      // 실제 차량 마커가 지도 위에 있으면(대부분의 경우) 그 "지금 실제 화면
+      // 위치"로 포커스한다 - payload 좌표는 아직 애니메이션이 도착하지 않은
+      // 목적지일 수 있다.
+      const liveMarker = this.realVehicleMarker && this.realVehicleMarker.marker;
+      if (liveMarker) {
+        const liveLatLng = liveMarker.getLatLng();
+        this.mapManager.focus(liveLatLng.lat, liveLatLng.lng);
+      } else if (lat != null && lng != null) {
+        this.mapManager.focus(lat, lng);
+      }
     };
 
     if (isNew) {
@@ -3225,7 +3291,11 @@ function buildRealJourneyPopupHtml(payload) {
         <button
           type="button"
           class="popup-btn real-journey-cctv-btn"
-          onclick="window.__appGoToJourneyStartCctv && window.__appGoToJourneyStartCctv('${payload.currentCamId || ""}')"
+          onclick="window.__appGoToJourneyStartCctv && window.__appGoToJourneyStartCctv('${payload.currentCamId || ""}');${
+            payload.reason === "TARGET"
+              ? ""
+              : " window.__appReleaseDuiJourney && window.__appReleaseDuiJourney();"
+          }"
         >
           📹 CCTV 바로가기
         </button>
@@ -3340,6 +3410,17 @@ document.addEventListener("DOMContentLoaded", () => {
       document.documentElement.classList.toggle("show-video-panel", !!data.showVideoPanel);
     }
 
+    // [신규: "클릭 전까지 프론트에서 버퍼링"] 대시보드의 중앙 알림팝업에서
+    // "CCTV 바로가기"를 누르면 이 메시지가 온다 - 그때까지 쌓아둔 DUI 버퍼를
+    // 원래 도착 간격 그대로 재생하기 시작한다(releaseDuiJourney는
+    // DOMContentLoaded 본문 안 클로저라 이 리스너보다 나중에 정의되지만,
+    // 이 콜백 자체는 메시지가 실제로 와야 실행되므로 안전하다).
+    if (data && data.type === "omecca-release-dui-journey") {
+      if (typeof releaseDuiJourney === "function") {
+        releaseDuiJourney();
+      }
+    }
+
     if (data && data.type === "omecca-focus-tracked-vehicle") {
       mapManager.resumeFollow();
       const focused = vehicleManager.focusCurrent(mapManager);
@@ -3387,14 +3468,16 @@ document.addEventListener("DOMContentLoaded", () => {
       // [신규] 폴리라인을 따라 실제로 움직이는 Real Journey 차량 마커로 지도를
       // 이동시키고 그 마커의 상세 팝업을 연다 - 이벤트 리스트의 "Real Journey 카드"를
       // 클릭했을 때(위 eventManager.onRealJourneyCardClick)와 동일한 동작이다.
-      // realVehicleMarker.marker가 아직 없으면(여정의 첫 좌표가 아직 안 왔으면)
-      // 아무 것도 하지 않는다 - mapManager.resumeFollow()로 이미 추적 모드는 켜져
-      // 있으므로, 다음 좌표가 도착하면(RealVehicleMarker.setPosition) 자동으로
-      // 따라가기 시작한다.
-      if (realVehicleMarker.marker) {
-        const { lat, lng } = realVehicleMarker.marker.getLatLng();
+      // [수정: "음주운전이랑 관심대상은 서로 다른, 완전히 별개의 기능이다"]
+      // eventData.reason("DUI"|"TARGET")에 맞는 마커를 골라야 두 여정이 동시에
+      // 활성일 때 엉뚱한 쪽으로 포커싱되지 않는다(duiVehicleMarker/
+      // targetVehicleMarker는 아래에서 초기화되지만, 이 콜백은 DOMContentLoaded
+      // 본문이 끝난 뒤 실행되므로 클로저로 안전하게 참조할 수 있다).
+      const focusMarker = eventData.reason === "TARGET" ? targetVehicleMarker : duiVehicleMarker;
+      if (focusMarker.marker) {
+        const { lat, lng } = focusMarker.marker.getLatLng();
         mapManager.focus(lat, lng);
-        realVehicleMarker.marker.openPopup();
+        focusMarker.marker.openPopup();
       } else {
         vehicleManager.focusCurrent(mapManager, { openPopup: false });
       }
@@ -3667,28 +3750,43 @@ document.addEventListener("DOMContentLoaded", () => {
   window.routeManager = routeManager;
   window.videoModalManager = videoModalManager;
 
-  const realVehicleMarker = new RealVehicleMarker(mapManager);
+  // [수정: "음주운전이랑 관심대상은 서로 다른, 완전히 별개의 기능이다"] 두
+  // 여정은 완전히 독립된 마커/알림 카드를 각자 갖는다 - 동시에 active여도
+  // 서로 절대 간섭하지 않는다.
+  const duiVehicleMarker = new RealVehicleMarker(mapManager);
+  const targetVehicleMarker = new RealVehicleMarker(mapManager);
 
   console.log(
-    "[REAL JOURNEY] RealVehicleMarker 생성 완료",
-    realVehicleMarker
+    "[REAL JOURNEY] RealVehicleMarker(DUI/TARGET) 생성 완료",
+    duiVehicleMarker,
+    targetVehicleMarker
   );
 
   // [수정: "알림 팝업 구현"] 오른쪽 이벤트 리스트 카드(EventManager.
   // upsertRealJourneyEvent())는 계속 유지하되, 예전에 꺼뒀던 화면 우상단 고정
   // 알림 카드(RealJourneyAlertManager)도 다시 켠다 - 이제는 번호판까지 표시
   // 한다. 여정이 새로 시작될 때 show(), 종료될 때 hide()를 호출한다
-  // (RealVehicleJourneyListener 콜백 참고).
-  const realJourneyAlertManager = new RealJourneyAlertManager(mapManager);
+  // (RealVehicleJourneyListener 콜백 참고). DUI/TARGET 각각 자신만의 알림
+  // 카드 인스턴스를 가지므로, 두 여정이 동시에 활성이면 카드도 각각(위치는
+  // CSS가 겹치지 않게 조정돼 있다는 전제 - style.css의 .real-journey-alert
+  // 참고, 필요하면 나중에 위치를 어긋나게 조정) 따로 뜬다.
+  const duiAlertManager = new RealJourneyAlertManager(mapManager, duiVehicleMarker, "DUI");
+  const targetAlertManager = new RealJourneyAlertManager(mapManager, targetVehicleMarker, "TARGET");
+
+  function markerForJourneyKey(journeyKey) {
+    return journeyKey === "TARGET" ? targetVehicleMarker : duiVehicleMarker;
+  }
 
   // [신규] 이벤트 리스트에서 Real Journey 카드를 클릭했을 때: 차량의 "지금" 위치로
-  // 지도를 이동하고, 그 차량 마커의 팝업을 연다. realVehicleMarker.marker가
-  // 아직 없으면(여정이 이미 끝나 마커가 제거된 경우 등) 아무것도 하지 않는다.
-  eventManager.onRealJourneyCardClick = () => {
-    if (!realVehicleMarker.marker) return;
-    const { lat, lng } = realVehicleMarker.marker.getLatLng();
+  // 지도를 이동하고, 그 차량 마커의 팝업을 연다. journeyKey로 DUI/TARGET 중 어느
+  // 카드가 클릭됐는지 구분해서 그에 맞는 마커를 쓴다. marker가 아직 없으면
+  // (여정이 이미 끝나 마커가 제거된 경우 등) 아무것도 하지 않는다.
+  eventManager.onRealJourneyCardClick = (journeyKey) => {
+    const marker = markerForJourneyKey(journeyKey);
+    if (!marker.marker) return;
+    const { lat, lng } = marker.marker.getLatLng();
     mapManager.focus(lat, lng);
-    realVehicleMarker.marker.openPopup();
+    marker.marker.openPopup();
   };
 
   // [신규] Real Journey 차량 마커에 상세 팝업을 동기화한다. RealVehicleMarker의
@@ -3697,19 +3795,46 @@ document.addEventListener("DOMContentLoaded", () => {
   // Leaflet이 마커 이동을 따라 팝업도 자동으로 옮겨주고, 마커 클릭 시 자동으로
   // 열리며, X 버튼은 Leaflet 기본 동작으로 팝업만 닫는다 - 여기서 새로 구현한
   // 것은 하나도 없다.
-  function syncRealJourneyPopup(payload) {
-    if (!realVehicleMarker.marker) return; // 아직 마커가 만들어지기 전(다음 payload 때 다시 시도됨)
+  function syncRealJourneyPopup(marker, payload) {
+    if (!marker.marker) return; // 아직 마커가 만들어지기 전(다음 payload 때 다시 시도됨)
     const html = buildRealJourneyPopupHtml(payload);
-    if (realVehicleMarker.marker.getPopup()) {
-      realVehicleMarker.marker.setPopupContent(html);
+    if (marker.marker.getPopup()) {
+      marker.marker.setPopupContent(html);
     } else {
-      realVehicleMarker.marker.bindPopup(html, { closeButton: true });
+      marker.marker.bindPopup(html, { closeButton: true });
     }
   }
 
   // [신규: "CCTV 자동 전환이 안 됨"] 직전 payload의 currentCamId를 기억해뒀다가,
-  // 실제로 카메라가 바뀐 시점에만 자동 전환을 트리거하기 위한 값이다.
-  let realJourneyPrevCamId = null;
+  // 실제로 카메라가 바뀐 시점에만 자동 전환을 트리거하기 위한 값이다. DUI/TARGET이
+  // 동시에 서로 다른 카메라 구간을 지나갈 수 있으므로 각자 따로 기억한다.
+  let duiPrevCamId = null;
+  let targetPrevCamId = null;
+
+  // [신규: "클릭 전까지 프론트에서 버퍼링 + 클릭하면 즉시 표시"] 백엔드는
+  // 예전과 똑같이 감지되는 즉시 실시간으로 DUI 여정을 진행시킨다(영상 FPS
+  // 페이싱 그대로) - 사용자가 알림팝업/버튼을 언제 누르는지 전혀 모른다.
+  // 그래서 DUI payload는 사용자가 "CCTV 바로가기"를 누르기 전까지 화면에
+  // 반영하지 않고 버퍼에만 쌓아둔다(단, 마커 자체는 최초 payload 도착 시
+  // "정지 상태"로 한 번 띄워서 중앙 알림팝업과 동시에 나타나 보이게 한다).
+  // ["음주운전은 실시간 차량 추적 느낌이어야 한다 - 버튼 누르면 즉시
+  // 그려지게"] 버튼을 누르는 순간 그동안 쌓인 진행 상황을 원래 간격대로
+  // "재생"하지 않고, 지금까지 진행된 폴리라인 전체를 곧바로 한 번에
+  // 그린다(releaseDuiJourney 참고) - 그 이후로 새로 도착하는 payload는
+  // 버퍼링 없이 실시간으로 바로바로 반영되니, 클릭 이후부터는 실제 "실시간
+  // 차량 추적" 그대로 이어진다.
+  //
+  // TARGET도 비슷한 문제가 생길 수 있다 - 백엔드의 gate_ready는 DUI가
+  // "백엔드 기준"으로 끝난 시점에 열리는데, 프론트가 DUI를 버퍼링하는 동안
+  // TARGET이 이미 화면에 그려지기 시작해버리면 두 여정이 동시에 움직이는
+  // 것처럼 보일 수 있다. 그래서 TARGET은 "DUI가 화면상 실제로 표시될
+  // 때까지"(duiVisuallyDone) 계속 버퍼링한다.
+  let duiJourneyReleased = false; // 사용자가 알림팝업의 "CCTV 바로가기"를 눌렀는가
+  let duiJourneyStartedAt = null; // 이번 DUI 여정의 첫 payload가 도착한 시각
+  let duiPendingPayloads = []; // { payload, delay } - 클릭 전까지 쌓이는 DUI 버퍼
+  let duiVisuallyDone = false; // 프론트에서 DUI 재생(버퍼 재생 포함)이 실제로 끝났는가
+  let targetJourneyStartedAt = null;
+  let targetPendingPayloads = []; // { payload, delay } - duiVisuallyDone 전까지 쌓이는 TARGET 버퍼
 
   // [수정: "동교동삼거리는 카메라 경계가 아니라 지리적으로 신촌↔합정역
   // 구간 도로 중간에 있다"] camId 쌍(A→B)으로 사각지대를 판정하던 방식은
@@ -3806,19 +3931,52 @@ document.addEventListener("DOMContentLoaded", () => {
   // 더 이동한) 뒤에야 그 지점을 잘라내는 인덱스를 반환한다. 아직 가장
   // 가까운 지점이 배열의 마지막 점이거나(더 지나친 데이터가 아직 없음),
   // 지나친 거리가 충분치 않으면 -1을 반환해 다음 payload를 기다린다.
+  // [수정: "동교동삼거리 한참 전에 마커가 사라져버린다"] REAL_JOURNEY_GAP_WAYPOINT의
+  // 좌표는 지도로 눈대중한 근사치라서, OSRM이 실제로 계산한 이대역→신촌 구간의
+  // 도로 경로가(신촌에 도착하기도 전인데) 우연히 이 좌표 반경(250m) 안을 스쳐
+  // 지나가면 거기서 바로 "가장 가까운 지점"으로 잡혀서 너무 일찍 사각지대로
+  // 판정돼버릴 수 있다 - 실제로 동교동삼거리는 신촌을 지난 뒤에나 나온다.
+  // 그래서 이제는 "여정 시작점(points[0], 이대역)부터 그 후보 지점까지 실제로
+  // 이동한 누적 거리"가 REAL_JOURNEY_GAP_MIN_TRAVELED_METERS 이상일 때만
+  // 후보로 인정한다 - 그보다 짧은 거리 안에서 우연히 반경에 걸리는 지점은
+  // 무시하고 계속 더 먼 지점을 찾는다.
+  const REAL_JOURNEY_GAP_MIN_TRAVELED_METERS = 600;
+
   function findGapWaypointIndex(points) {
     const waypoint = resolveGapWaypoint();
     const waypointLatLng = [waypoint.lat, waypoint.lng];
 
+    // points[i]까지의 여정 시작점 기준 누적 이동 거리를 먼저 전부 계산해둔다
+    // (매 후보를 검사할 때마다 다시 처음부터 합산하지 않기 위해).
+    const cumulativeFromStart = [0];
+    for (let i = 1; i < points.length; i++) {
+      cumulativeFromStart[i] =
+        cumulativeFromStart[i - 1] + haversineMeters(points[i - 1], points[i]);
+    }
+
     let closestIdx = -1;
     let closestDist = Infinity;
     for (let i = 0; i < points.length; i++) {
+      if (cumulativeFromStart[i] < REAL_JOURNEY_GAP_MIN_TRAVELED_METERS) {
+        // 아직 여정 시작점에서 너무 가깝다 - 동교동삼거리에 도달했을 리 없는
+        // 구간이므로, 우연히 반경 안에 들어와도 후보로 치지 않는다.
+        continue;
+      }
       const d = haversineMeters(points[i], waypointLatLng);
       if (d < closestDist) {
         closestDist = d;
         closestIdx = i;
       }
     }
+
+    console.log(
+      "[REAL JOURNEY:TARGET] 🕳️ 사각지대 탐색 - closestIdx:",
+      closestIdx,
+      "closestDist:",
+      closestIdx === -1 ? "-" : Math.round(closestDist) + "m",
+      "points.length:",
+      points.length
+    );
 
     if (closestIdx === -1 || closestDist > REAL_JOURNEY_GAP_WAYPOINT.radiusMeters) {
       return -1;
@@ -3853,32 +4011,121 @@ document.addEventListener("DOMContentLoaded", () => {
     return newPoints.slice(i - 1);
   }
 
-  const realJourneyListener = new RealVehicleJourneyListener(
-    CONFIG.REAL_JOURNEY_STOMP_URL,
-    (payload) => {
+  // [수정: "음주운전이랑 관심대상은 서로 다른, 완전히 별개의 기능이다"] 이
+  // 콜백은 이제 payload.reason("DUI"|"TARGET")으로 완전히 독립된 두 트랙 중
+  // 하나로 갈라져서 처리된다 - marker/alertManager/prevCamId 모두 그 여정의
+  // 것만 골라 쓰고, 사각지대(동교동삼거리) 연출은 TARGET일 때만 실행된다.
+  // 같은 프레임에 두 여정이 각자 payload를 보내도 서로의 상태를 전혀 건드리지
+  // 않는다.
+  // [신규: "클릭 전까지 프론트에서 버퍼링"] 여정이 끝났을 때(!payload.active)
+  // 다음 여정을 위해 버퍼링 상태를 초기화한다. DUI/TARGET 각각 따로 호출된다.
+  function resetDuiReplayState() {
+    duiJourneyReleased = false;
+    duiJourneyStartedAt = null;
+    duiPendingPayloads = [];
+    duiVisuallyDone = false;
+  }
+
+  function resetTargetReplayState() {
+    targetJourneyStartedAt = null;
+    targetPendingPayloads = [];
+  }
+
+  // 버튼 클릭 시 호출된다 - 쌓인 DUI 버퍼를 원래 도착 간격 그대로 재생한다.
+  // [수정: "음주운전은 실시간 추적하는 느낌이어야 한다 - CCTV 바로가기 누르면
+  // 즉시 폴리라인이 그려지게"] 예전엔 버튼을 누르면 버퍼에 쌓인 payload들을
+  // 원래 도착했던 간격 그대로 몇 초에 걸쳐 "재생"했다 - 그런데 그러면 클릭한
+  // 순간 폴리라인이 바로 안 보이고 한참 기다려야 다 그려져서, 사용자가 원하는
+  // "실시간 추적" 느낌과 안 맞았다. 지금까지 쌓인 payload의 points 배열은 매번
+  // "여정 시작부터 지금까지의 누적 좌표 전체"이므로, 그중 가장 마지막(=가장
+  // 많이 진행된) payload 하나만 즉시 처리해도 지금까지 진행된 폴리라인 전체가
+  // 한 번에 그려진다 - 그 뒤로 도착하는 새 payload는(버퍼링 없이) 원래처럼
+  // 실시간으로 바로바로 반영되니, 클릭 이후부터는 정말 "실시간 차량 추적"
+  // 그대로 이어진다.
+  function releaseDuiJourney() {
+    if (duiJourneyReleased) return;
+    duiJourneyReleased = true;
+
+    const buffered = duiPendingPayloads;
+    duiPendingPayloads = [];
+
+    console.log(
+      `[REAL JOURNEY:DUI] 🎬 버퍼 해제 - 지금까지 진행된 폴리라인 즉시 표시 (${buffered.length}개 대기 중이었음)`
+    );
+
+    if (buffered.length) {
+      const latest = buffered[buffered.length - 1].payload;
+      processRealJourneyPayload("DUI", false, latest);
+    }
+
+    // 폴리라인이 이미 화면에 나왔으니 TARGET도 더 기다릴 필요 없다.
+    duiVisuallyDone = true;
+    flushTargetBuffer();
+  }
+
+  // DUI 재생이 다 끝나면 호출된다 - 그때까지 쌓인 TARGET 버퍼를 마찬가지로
+  // 원래 도착 간격 그대로 재생한다.
+  function flushTargetBuffer() {
+    const buffered = targetPendingPayloads;
+    targetPendingPayloads = [];
+    if (!buffered.length) return;
+
+    console.log(
+      `[REAL JOURNEY:TARGET] 🎬 버퍼 재생 시작 (${buffered.length}개 payload)`
+    );
+    buffered.forEach(({ payload, delay }) => {
+      setTimeout(() => processRealJourneyPayload("TARGET", true, payload), delay);
+    });
+  }
+
+  // 실제 STOMP payload 처리 로직 - 예전 콜백 본문 그대로이며, 버퍼 재생일 때도
+  // 이 함수를 그대로 재사용한다.
+  function processRealJourneyPayload(journeyKey, isTarget, payload) {
+      const marker = isTarget ? targetVehicleMarker : duiVehicleMarker;
 
       console.log(
-        "[REAL JOURNEY] PAYLOAD 처리 시작:",
+        `[REAL JOURNEY:${journeyKey}] PAYLOAD 처리 시작:`,
         payload
       );
 
       if (!payload.active) {
 
         console.log(
-          "[REAL JOURNEY] 여정 종료"
+          `[REAL JOURNEY:${journeyKey}] 여정 종료`
         );
 
-        realVehicleMarker.remove();
-        routeManager.clearRealJourney();
-        realJourneyPrevCamId = null;
-        if (realJourneyGapTimer) {
-          clearTimeout(realJourneyGapTimer);
-          realJourneyGapTimer = null;
+        marker.remove();
+        routeManager.clearRealJourney(journeyKey);
+
+        if (isTarget) {
+          targetPrevCamId = null;
+          if (realJourneyGapTimer) {
+            clearTimeout(realJourneyGapTimer);
+            realJourneyGapTimer = null;
+          }
+          realJourneyGapToken += 1; // 대기 중인 OSRM 재등장 응답을 무효화
+          realJourneySuppressed = false;
+          resetTargetReplayState();
+        } else {
+          duiPrevCamId = null;
+          // [신규: "클릭 전까지 프론트에서 버퍼링"] 이번 DUI 여정이 끝났으니
+          // 다음 감지를 위해 버퍼링 상태를 전부 초기화한다 - 안 하면 다음
+          // 여정이 "이미 released된 상태"로 시작해서 버퍼링 없이 곧바로
+          // 실시간으로 그려져버린다.
+          resetDuiReplayState();
         }
-        realJourneyGapToken += 1; // 대기 중인 OSRM 재등장 응답을 무효화
-        // 이벤트 리스트 카드 정리 + 우상단 고정 알림 카드도 함께 닫는다.
-        eventManager.resolveRealJourneyEvent();
-        realJourneyAlertManager.hide();
+
+        // 이벤트 리스트 카드 정리 - journeyKey를 지정해서 DUI/TARGET 중 끝난
+        // 쪽만 정리하고, 동시에 진행 중인 다른 쪽은 그대로 둔다.
+        //
+        // [수정: "우상단 고정 알림 카드(DUI '🚨 이상운전 감지' / TARGET
+        // '🎯 관심 차량 감지') 완전히 삭제"] DUI는 이미 없앴고, 이제 TARGET도
+        // 똑같이 없앤다 - 두 여정 다 대시보드(b_dashboard)의 정중앙
+        // VehicleAlertPopup 하나로만 알림을 띄운다. alertManager
+        // (duiAlertManager/targetAlertManager) 인스턴스 자체는 아직 남아있지만
+        // 이제 아무도 show()를 호출하지 않으므로 항상 비어있는 상태로
+        // 유지된다 - hide()도 더 이상 호출할 필요가 없다.
+        eventManager.resolveRealJourneyEvent(journeyKey);
 
         return;
       }
@@ -3888,54 +4135,38 @@ document.addEventListener("DOMContentLoaded", () => {
       // "활성 Journey당 카드 1개"를 보장한다.
       eventManager.upsertRealJourneyEvent(payload);
 
-      // [신규: "알림 팝업 구현"] syncRealJourneyPopup()과 같은 방식으로, 매
-      // payload마다 우상단 고정 알림 카드 내용을 다시 그린다 - show()는 카드가
-      // 이미 떠 있으면 내용만 갱신하고 새로 만들지 않으므로(내부 isNew 분기),
-      // 카메라 전환이나(처음엔 None이었다가 나중에 OCR로 확정되는) 번호판 갱신도
-      // 자연스럽게 반영된다.
-      realJourneyAlertManager.show({
-        camName: payload.currentCamName,
-        camId: payload.currentCamId,
-        plate: payload.plate,
-        lat: payload.currentLat,
-        lng: payload.currentLng,
-        reason: payload.reason,
-      });
+      // [수정: "우상단 고정 알림 카드 완전히 삭제"] DUI/TARGET 둘 다 이 우상단
+      // 카드를 더 이상 띄우지 않는다 - 알림은 대시보드의 정중앙
+      // VehicleAlertPopup(🚗 새 차량 이벤트 감지) 하나로 통일한다. CCTV
+      // 바로가기도 그 팝업 쪽 버튼(및 아래 marker 팝업의 같은 버튼)에서
+      // window.__appGoToJourneyStartCctv 방식 그대로 처리한다.
 
       const points = (payload.points || []).map(
         (p) => [p.lat, p.lng]
       );
 
       console.log(
-        "[REAL JOURNEY] Polyline 좌표:",
+        `[REAL JOURNEY:${journeyKey}] Polyline 좌표:`,
         points
       );
 
-      // [수정: 사용자 요청 - "이상감지 차량이 지도 위에서 실시간으로 움직이면서
-      // 폴리라인이 실시간으로 그려져야해"]
-      //
-      // 이전 단계에서는 정확도를 위해 payload가 올 때마다 즉시 스냅 + 전체
-      // 재그리기만 했다(애니메이션 없음) - 도로 위에 정확하게는 그려졌지만
-      // 차량이 "순간이동"처럼 보였다.
-      //
-      // 지금은 realVehicleMarker.animateAlong()으로 마커를 부드럽게 이동시키고,
-      // 매 애니메이션 프레임마다 onFrame 콜백에서 routeManager.setRealJourneyPoints()
-      // 로 "지나온 좌표 + 지금 보간 중인 좌표"를 항상 전체 다시 그린다. 즉:
-      //   - 폴리라인은 절대 append-only로 이어붙이지 않고 매 프레임 authoritative
-      //     좌표 기준으로 통째로 다시 그리므로, 오래된 직선이 안 지워지고 남는
-      //     문제가 재발하지 않는다(이전 단계에서 고친 버그 그대로 유지).
-      //   - 애니메이션은 큐에 쌓이지 않고 새 payload가 오면 즉시 취소 후
-      //     현재 위치에서 이어서 재시작하므로, 파이썬이 멈추면 화면도 그 다음
-      //     프레임에 바로 멈춘다(밀린 애니메이션이 나중에 재생되는 문제 없음).
       const label = payload.currentCamName || payload.currentCamId;
 
-      if (realJourneySuppressed) {
+      if (!isTarget) {
+        // [수정: "음주운전이랑 관심대상은 서로 다른, 완전히 별개의 기능이다"]
+        // DUI 여정은 사각지대(동교동삼거리) 연출이 전혀 없다 - REAL_JOURNEY_LOGIC.md
+        // 확정본 그대로, payload가 올 때마다 애니메이션 + 매 프레임 폴리라인
+        // 전체 재그리기만 한다.
+        marker.animateAlong(points, label, (framePoints) => {
+          routeManager.setCurrentRealJourneySegment("DUI", framePoints);
+        });
+      } else if (realJourneySuppressed) {
         // 이미 사각지대에 들어가서 REAL_JOURNEY_GAP_HIDE_MS 타이머가 도는
         // 중이다 - 그 사이 도착하는 payload(예: 합정역→양화대교북단 이동
         // 감지)는 지도에 반영하지 않는다. 타이머가 끝나면 REAL_JOURNEY_GAP_REVEAL
         // 위치로 점프하므로 중간 좌표를 그릴 필요가 없다.
         console.log(
-          "[REAL JOURNEY] 🕳️ 사각지대 대기 중 - payload 무시:",
+          "[REAL JOURNEY:TARGET] 🕳️ 사각지대 대기 중 - payload 무시:",
           payload.currentCamId
         );
       } else {
@@ -3964,8 +4195,8 @@ document.addEventListener("DOMContentLoaded", () => {
           // 어차피 현재 마커 위치에서 가장 가까운 지점을 스스로 찾아 거기서
           // 부터 이어서 애니메이션하므로, 전체 좌표를 넘겨도 처음부터 다시
           // 움직이지 않는다.
-          realVehicleMarker.animateAlong(points, label, (framePoints) => {
-            routeManager.setCurrentRealJourneySegment(framePoints);
+          marker.animateAlong(points, label, (framePoints) => {
+            routeManager.setCurrentRealJourneySegment("TARGET", framePoints);
           });
         } else {
           // 사각지대 발견 - 그 지점까지만 애니메이션하고, 거기서 멈춘 뒤
@@ -3986,24 +4217,24 @@ document.addEventListener("DOMContentLoaded", () => {
           // 분기에서 그냥 무시되고, 새 애니메이션이 걸릴 일 자체가 없다.
           realJourneySuppressed = true;
 
-          realVehicleMarker.animateAlong(beforeGap, label, (framePoints) => {
-            routeManager.setCurrentRealJourneySegment(framePoints);
+          marker.animateAlong(beforeGap, label, (framePoints) => {
+            routeManager.setCurrentRealJourneySegment("TARGET", framePoints);
           }, () => {
             console.log(
-              `[REAL JOURNEY] 🕳️ 동교동삼거리 부근 도달 - 마커 ${REAL_JOURNEY_GAP_HIDE_MS}ms 숨김`
+              `[REAL JOURNEY:TARGET] 🕳️ 동교동삼거리 부근 도달 - 마커 ${REAL_JOURNEY_GAP_HIDE_MS}ms 숨김`
             );
-            routeManager.startNewRealJourneySegment();
-            realVehicleMarker.hide();
+            routeManager.startNewRealJourneySegment("TARGET");
+            marker.hide();
             const __gapHideStartedAt = Date.now();
             console.log(
-              `[REAL JOURNEY] ⏱️ 숨김 시작 (${new Date(__gapHideStartedAt).toLocaleTimeString()}) - ${REAL_JOURNEY_GAP_HIDE_MS}ms 후 재등장 예정`
+              `[REAL JOURNEY:TARGET] ⏱️ 숨김 시작 (${new Date(__gapHideStartedAt).toLocaleTimeString()}) - ${REAL_JOURNEY_GAP_HIDE_MS}ms 후 재등장 예정`
             );
 
             if (realJourneyGapTimer) clearTimeout(realJourneyGapTimer);
             realJourneyGapTimer = setTimeout(() => {
               const __elapsed = Date.now() - __gapHideStartedAt;
               console.log(
-                `[REAL JOURNEY] ⏱️ 재등장 (실제 경과 ${__elapsed}ms, 목표 ${REAL_JOURNEY_GAP_HIDE_MS}ms)`
+                `[REAL JOURNEY:TARGET] ⏱️ 재등장 (실제 경과 ${__elapsed}ms, 목표 ${REAL_JOURNEY_GAP_HIDE_MS}ms)`
               );
 
               // [수정: "정확히 CCTV 마커 위치에서 나오지 않음"] 하드코딩된
@@ -4023,8 +4254,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
               // 짠 하고 다시 나타난다 - 사각지대 진입 때와 마찬가지로 애니메이션
               // 없이 즉시 위치를 맞춘다(setPosition이 opacity도 1로 되돌린다).
-              realVehicleMarker.setPosition(revealLat, revealLng, revealLabel);
-              routeManager.appendRealJourneyPoint([revealLat, revealLng]);
+              marker.setPosition(revealLat, revealLng, revealLabel);
+              routeManager.appendRealJourneyPoint("TARGET", [revealLat, revealLng]);
               const myGapToken = ++realJourneyGapToken;
 
               // [수정: "도로 위에 그려지게"] 재등장 지점에 점 하나만 찍힌 채로
@@ -4050,16 +4281,16 @@ document.addEventListener("DOMContentLoaded", () => {
                     // 그 사이 다음 사각지대에 이미 들어갔거나 여정이 끝나서
                     // 더 이상 "같은 재등장"이 아니면 재생하지 않는다.
                     if (myGapToken !== realJourneyGapToken) return;
-                    realVehicleMarker.animateAlong(
+                    marker.animateAlong(
                       roadPath,
                       revealLabel,
                       (framePoints) => {
-                        routeManager.setCurrentRealJourneySegment(framePoints);
+                        routeManager.setCurrentRealJourneySegment("TARGET", framePoints);
                       }
                     );
                   })
                   .catch((err) => {
-                    console.warn("[REAL JOURNEY] 재등장 후 도로 경로 가져오기 실패:", err);
+                    console.warn("[REAL JOURNEY:TARGET] 재등장 후 도로 경로 가져오기 실패:", err);
                   });
               }
 
@@ -4072,7 +4303,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // [신규] 마커가 존재하면(대부분의 경우 이미 존재) 상세 팝업 내용을 최신
       // CCTV 정보로 동기화한다 - 팝업이 열려 있어도, 닫혀 있어도 안전하다.
-      syncRealJourneyPopup(payload);
+      syncRealJourneyPopup(marker, payload);
 
       // [신규: "오른쪽 CCTV에 자동으로 그 CCTV가 보여야 하는데 안 보임"]
       // 예전엔 사용자가 팝업의 "CCTV 바로가기" 버튼을 직접 눌러야만 오른쪽
@@ -4082,25 +4313,101 @@ document.addEventListener("DOMContentLoaded", () => {
       // 좌표만 갱신되고 카메라는 그대로인 payload가 초당 여러 번 올 수 있어서,
       // camId가 실제로 바뀐 경우에만(=여정 시작 포함) 보낸다 - 그래야 사용자가
       // 수동으로 다른 CCTV를 보고 있을 때 매 프레임 강제로 뺏어오지 않는다.
+      // DUI/TARGET이 동시에 서로 다른 카메라 구간에 있을 수 있으므로 prevCamId도
+      // 각자 따로 추적한다.
+      const prevCamId = isTarget ? targetPrevCamId : duiPrevCamId;
       if (
         payload.currentCamId &&
-        payload.currentCamId !== realJourneyPrevCamId
+        payload.currentCamId !== prevCamId
       ) {
-        realJourneyPrevCamId = payload.currentCamId;
+        if (isTarget) targetPrevCamId = payload.currentCamId;
+        else duiPrevCamId = payload.currentCamId;
         window.__appGoToJourneyStartCctv &&
           window.__appGoToJourneyStartCctv(payload.currentCamId);
       }
+  }
+
+  // [신규: "클릭 전까지 프론트에서 버퍼링"] STOMP에서 실제로 받는 콜백 -
+  // TARGET은 항상 그대로 처리하되, DUI는 클릭 전까지, TARGET은 DUI를 화면에서
+  // 다 보여주기 전까지 버퍼에만 쌓아둔다.
+  const realJourneyListener = new RealVehicleJourneyListener(
+    CONFIG.REAL_JOURNEY_STOMP_URL,
+    (payload) => {
+      const journeyKey = payload.reason === "TARGET" ? "TARGET" : "DUI";
+      const isTarget = journeyKey === "TARGET";
+
+      if (!isTarget && !duiJourneyReleased) {
+        if (duiJourneyStartedAt === null) {
+          duiJourneyStartedAt = Date.now();
+          // 최초 payload 도착 - 마커를 시작 위치에 "정지 상태"로 한 번
+          // 띄운다. 이게 곧 "이상운전감지 차량 마크가 지도에 뜨는" 시점이고,
+          // 대시보드의 중앙 알림팝업(send_ai_event 경로)도 거의 동시에 뜬다.
+          // 실제 이동/폴리라인은 버튼을 눌러야 재생된다.
+          const pts = (payload.points || []).map((p) => [p.lat, p.lng]);
+          const startPoint = pts[pts.length - 1] || pts[0] || null;
+          if (startPoint) {
+            duiVehicleMarker.setPosition(
+              startPoint[0],
+              startPoint[1],
+              payload.currentCamName || payload.currentCamId
+            );
+            syncRealJourneyPopup(duiVehicleMarker, payload);
+          }
+          eventManager.upsertRealJourneyEvent(payload);
+        }
+        duiPendingPayloads.push({
+          payload,
+          delay: Date.now() - duiJourneyStartedAt,
+        });
+        console.log(
+          `[REAL JOURNEY:DUI] ⏸️ 버퍼링 중 (${duiPendingPayloads.length}개 대기, 아직 CCTV 바로가기 클릭 전)`
+        );
+        return;
+      }
+
+      if (isTarget && !duiVisuallyDone) {
+        if (targetJourneyStartedAt === null) {
+          targetJourneyStartedAt = Date.now();
+        }
+        targetPendingPayloads.push({
+          payload,
+          delay: Date.now() - targetJourneyStartedAt,
+        });
+        console.log(
+          `[REAL JOURNEY:TARGET] ⏸️ 버퍼링 중 (${targetPendingPayloads.length}개 대기, DUI가 화면에서 아직 다 안 그려짐)`
+        );
+        return;
+      }
+
+      processRealJourneyPayload(journeyKey, isTarget, payload);
     }
   );
 
   realJourneyListener.start();
 
-  window.realVehicleMarker = realVehicleMarker;
+  // [신규: "음주운전 폴리라인이 전혀 안 그려짐" 수정] 대시보드 중앙
+  // VehicleAlertPopup의 "CCTV 바로가기" 버튼 말고도, 지도 위 차량 마커 자체를
+  // 클릭(또는 "지도에서 실시간으로 보기"로 포커스 이동 시 자동으로 열리는
+  // marker.marker.openPopup())하면 뜨는 이 파일의 buildRealJourneyPopupHtml()
+  // 팝업에도 똑같이 생긴 "CCTV 바로가기" 버튼이 하나 더 있다 - 그 버튼은 지금까지
+  // window.__appGoToJourneyStartCctv만 호출해서 CCTV 영상만 전환하고 DUI 버퍼는
+  // 전혀 풀어주지 않았다. 사용자가 이 팝업 쪽 버튼을 눌렀을 땐 버퍼가 영원히
+  // 안 풀려서 폴리라인이 계속 하나도 안 그려지는 문제가 있었다 - 그 팝업의
+  // onclick에서도 이 함수를 함께 호출하도록 전역으로 노출한다.
+  window.__appReleaseDuiJourney = releaseDuiJourney;
+
+  window.duiVehicleMarker = duiVehicleMarker;
+  window.targetVehicleMarker = targetVehicleMarker;
+  // [유지] 예전 디버그 콘솔/스크립트가 window.realVehicleMarker를 참조할 수
+  // 있으므로, DUI 마커를 기본값으로 그대로 노출해둔다(하위 호환용 - 새 코드는
+  // duiVehicleMarker/targetVehicleMarker를 직접 써야 한다).
+  window.realVehicleMarker = duiVehicleMarker;
   window.realJourneyListener = realJourneyListener;
   console.log(
   "[REAL JOURNEY] GLOBAL CHECK:",
   window === top,
   window.location.href,
-  window.realVehicleMarker
+  window.duiVehicleMarker,
+  window.targetVehicleMarker
  );
 });

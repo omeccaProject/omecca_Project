@@ -142,8 +142,13 @@ function SidebarRow({ icon, label, count, tone, active, onClick }) {
 // 정중앙에 뜨는 알림 팝업. 예전엔 오른쪽 "AI 관제 이벤트" 리스트에서 카드를 직접 찾아
 // 클릭해야만 지도에서 그 차량을 볼 수 있었는데, 그러다 보니 대시보드가 아닌 다른 화면을
 // 보고 있을 땐 새 차량 이벤트가 온 걸 놓치기 쉬웠다. 이제는 어떤 화면을 보고 있든 이 팝업이
-// 바로 뜨고, 클릭 한 번으로 "추적 차량" 뷰 + 지도 포커스까지 한 번에 이동한다.
-function VehicleAlertPopup({ event, onFocus, onDismiss }) {
+// 바로 뜨고, 클릭 한 번으로 "추적 차량" 뷰 + 지도 포커스 + CCTV 전환 + DUI 폴리라인
+// 재생 시작까지 한 번에 이루어진다.
+// [수정: "버튼이 2개인데 하나로 합쳐달라"] 예전엔 "지도에서 실시간으로 보기"와
+// "CCTV 바로가기"가 별개 버튼이었다 - 사용자 입장에서 뭘 눌러야 하는지 헷갈리고,
+// "지도에서 실시간으로 보기"만 눌렀을 땐 DUI 폴리라인 버퍼가 안 풀려서 아무것도
+// 안 그려지는 문제가 있었다. 이제 버튼 하나(onGo)가 두 동작을 전부 한다.
+function VehicleAlertPopup({ event, onGo, onDismiss }) {
   if (!event) return null
 
   const risk = EVENT_RISK[event.eventType] || 1
@@ -164,8 +169,8 @@ function VehicleAlertPopup({ event, onFocus, onDismiss }) {
             <tr><th>감지 시각</th><td>{fmtTime(event.occurredAt)}</td></tr>
           </tbody>
         </table>
-        <button type="button" className="vehicle-alert-focus-btn" onClick={onFocus}>
-          🗺️ 지도에서 실시간으로 보기 →
+        <button type="button" className="vehicle-alert-focus-btn" onClick={onGo}>
+          📹 CCTV 바로가기 →
         </button>
       </div>
     </div>
@@ -407,11 +412,23 @@ export default function MainDashboard({
     }
   }
 
-  // 화면 중앙 차량 알림 팝업의 "지도에서 실시간으로 보기" 버튼: 이벤트 카드를 직접 클릭한 것과
-  // 똑같이 동작시키고(포커스 + 추적 차량 뷰 전환 + 지도 포커스 메시지), 팝업은 닫는다.
-  const handleVehicleAlertFocus = () => {
+  // [수정: "팝업 버튼 2개를 하나로 합쳐달라"] 예전엔 "지도에서 실시간으로
+  // 보기"(포커스 + 추적 차량 뷰 전환)와 "CCTV 바로가기"(CCTV 탭 전환 + DUI 버퍼
+  // 해제)가 별개 버튼이었다. 이제 버튼 하나가 이 둘을 전부 한다: 이벤트 카드를
+  // 직접 클릭한 것과 동일하게 포커스 + 추적 차량 뷰로 전환하고, camId가 있으면
+  // 오른쪽 패널을 CCTV 탭으로 전환하면서 DUI 버퍼도 함께 풀어준다("CCTV
+  // 바로가기"를 눌렀을 때와 같은 신호 - 지도(iframe)의 map.js가 이 버튼을 누르기
+  // 전까지 DUI payload를 버퍼에만 쌓아두고 있다가, 이 신호를 받아야 원래 간격
+  // 그대로 재생을 시작해서 폴리라인이 실시간으로 그려진다).
+  const handleVehicleAlertGo = () => {
     if (!vehicleAlert) return
     handleEventCardClick(vehicleAlert)
+    if (vehicleAlert.camId) {
+      setRightPanelTab('cctv')
+      setRightCollapsed(false)
+      setRequestedCamId(vehicleAlert.camId)
+      postToMap({ type: 'omecca-release-dui-journey' })
+    }
     onDismissVehicleAlert?.()
   }
 
@@ -677,7 +694,11 @@ export default function MainDashboard({
         )}
       </div>
 
-      <VehicleAlertPopup event={vehicleAlert} onFocus={handleVehicleAlertFocus} onDismiss={onDismissVehicleAlert} />
+      <VehicleAlertPopup
+        event={vehicleAlert}
+        onGo={handleVehicleAlertGo}
+        onDismiss={onDismissVehicleAlert}
+      />
       <EventDetailModal event={detailEvent} onClose={() => setDetailEvent(null)} />
     </div>
   )
