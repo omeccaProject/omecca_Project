@@ -327,8 +327,8 @@ def _payload_from_bus(p: dict[str, Any]) -> dict[str, Any]:
             "evidenceFrames": p.get("evidence_frames") or None,
             "trajectory": p.get("trajectory") or None,
         },
-        "frameRefBefore": None,
-        "frameRefAfter": None,
+        "frameRefBefore": p.get("frame_before") or p.get("frameRefBefore") or None,
+        "frameRefAfter": p.get("frame_after") or p.get("frameRefAfter") or None,
     }
 
 

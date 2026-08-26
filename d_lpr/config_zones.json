@@ -364,6 +364,53 @@
       ],
       "zones": [],
       "intersections": []
+    },
+    {
+      "cam_id": "L010264-TEST",
+      "name": "L010264-TEST",
+      "lines": [
+        {
+          "line_id": "stop_1",
+          "name": "정지선",
+          "p1": [
+            1049,
+            418
+          ],
+          "p2": [
+            389,
+            412
+          ],
+          "direction": "both",
+          "line_type": "stop",
+          "uturn_allowed": false,
+          "signal_id": "SIG-1"
+        },
+        {
+          "line_id": "exit_1",
+          "name": "진출선",
+          "p1": [
+            999,
+            380
+          ],
+          "p2": [
+            397,
+            375
+          ],
+          "direction": "both",
+          "line_type": "exit",
+          "uturn_allowed": false,
+          "signal_id": "SIG-1"
+        }
+      ],
+      "zones": [],
+      "intersections": [
+        {
+          "intersection_id": "INT-L010264-TEST",
+          "stop_line": "stop_1",
+          "exit_line": "exit_1",
+          "signal_id": "SIG-1"
+        }
+      ]
     }
   ]
 }

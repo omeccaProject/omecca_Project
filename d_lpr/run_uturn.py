@@ -38,10 +38,35 @@ import argparse
 import json
 import sys
 import time
+import uuid
 from pathlib import Path
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
 
 BASE = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE))
+
+CAPTURES_DIR = BASE.parent / "b_dashboard" / "public" / "captures"
+try:
+    CAPTURES_DIR.mkdir(parents=True, exist_ok=True)
+except Exception:
+    pass
+
+
+def save_capture(cv2, frame, cam_id, tag):
+    """사건 전/후 캡처 이미지를 b_dashboard/public/captures에 저장하고 경로 반환."""
+    if frame is None:
+        return None
+    filename = f"{cam_id}_{tag}_{uuid.uuid4().hex[:8]}.jpg"
+    try:
+        ok = cv2.imwrite(str(CAPTURES_DIR / filename), frame)
+        if ok:
+            return f"/captures/{filename}"
+    except Exception as e:
+        print(f"  ⚠ 캡처 이미지 저장 오류: {e}")
+    return None
 
 from app.core.schemas import ViolationType                       # noqa: E402
 from app.violation.engine import ViolationEngine                 # noqa: E402
@@ -181,6 +206,37 @@ def build_lpr_pipeline(weights: str = "", force_mock: bool = False):
     recognizer = PlateRecognizer(mock=False)
     return LPRPipeline(detector=detector, recognizer=recognizer)
 
+def lerp_point(start, end, ratio):
+    return (
+        start[0] + (end[0] - start[0]) * ratio,
+        start[1] + (end[1] - start[1]) * ratio,
+    )
+
+
+def update_demo_moving_roi(cz, ts, spec):
+    start_sec = float(spec["start_sec"])
+    end_sec = float(spec["end_sec"])
+
+    if end_sec <= start_sec:
+        cz.demo_moving_roi_active = False
+        return
+
+    # 이동 구간에서만 RedLightDetector가 이동 ROI 방식으로 계산한다.
+    cz.demo_moving_roi_active = start_sec <= ts <= end_sec
+
+    ratio = (ts - start_sec) / (end_sec - start_sec)
+    ratio = max(0.0, min(1.0, ratio))
+
+    for line_id, key in (("stop_1", "stop_line"), ("exit_1", "exit_line")):
+        line = cz.line(line_id)
+        motion = spec.get(key)
+
+        if line is None or motion is None:
+            continue
+
+        line.p1 = lerp_point(motion["p1_start"], motion["p1_end"], ratio)
+        line.p2 = lerp_point(motion["p2_start"], motion["p2_end"], ratio)
+
 
 # --------------------------------------------------------------------------
 def main() -> None:
@@ -215,7 +271,42 @@ def main() -> None:
     ap.add_argument("--plate-hold", type=float, default=2.0, metavar="SEC",
                     help="위반이 잡혔는데 번호판이 아직 확정 전이면 이만큼(영상 시각 기준 초) "
                          "기다렸다 전송한다. 0 이면 기다리지 않고 예전처럼 즉시 보낸다")
+    ap.add_argument("--mode", choices=["all", "uturn", "signal"], default="all",
+                    help="감지 모드 (all: 불법유턴+신호위반, uturn: 불법유턴만, signal: 신호위반만)")
+    ap.add_argument(
+        "--demo-moving-roi",
+        default="",
+        metavar="JSON",
+        help="1인칭 게임 신호위반 데모 전용 이동 ROI 설정 파일. "
+            "정지선/진출선에만 적용하며 불법유턴 ROI에는 적용하지 않음.",
+    )
     a = ap.parse_args()
+
+    if a.mode == "uturn":
+        watched_types = (ViolationType.ILLEGAL_UTURN,)
+    elif a.mode == "signal":
+        watched_types = (ViolationType.RED_LIGHT,)
+    else:
+        watched_types = (ViolationType.ILLEGAL_UTURN, ViolationType.RED_LIGHT)
+
+    # 1인칭 게임 신호위반 데모 전용 이동 ROI 설정
+    moving_roi = None
+
+    if a.demo_moving_roi:
+        moving_path = Path(a.demo_moving_roi)
+
+        if not moving_path.exists():
+            sys.exit(f"이동 ROI 설정 파일이 없습니다: {moving_path}")
+
+        moving_roi = json.loads(moving_path.read_text(encoding="utf-8"))
+
+        if moving_roi.get("camera_id") != a.cam:
+            sys.exit(
+                "이동 ROI 설정의 camera_id와 --cam 값이 다릅니다. "
+                "다른 영상에 적용되는 것을 막기 위해 종료합니다."
+            )
+
+        print(f"게임 신호위반 데모 이동 ROI 사용: {moving_path.name}")
 
     try:
         import cv2
@@ -253,6 +344,10 @@ def main() -> None:
     else:
         print("교차로(정지선) 없음 → 신호 위반은 판정하지 않습니다.")
 
+    if a.mode == "uturn" and not centers:
+        sys.exit(f"'{a.cam}' 에 중앙선 ROI가 없습니다. draw_roi.py 로 중앙선을 먼저 그려주세요.")
+    if a.mode == "signal" and not cz.intersections:
+        sys.exit(f"'{a.cam}' 에 정지선/교차로 ROI가 없습니다. draw_roi.py 로 정지선(3)/진출선(4)을 먼저 그려주세요.")
     if not centers and not cz.intersections:
         sys.exit(f"'{a.cam}' 에 중앙선도 정지선도 없습니다.\n"
                  f"  draw_roi.py 로 중앙선(1·2) 또는 정지선·진출선(3·4)을 그려 주세요.")
@@ -350,10 +445,20 @@ def main() -> None:
 
     for frame_no, ts, frame, dets in src.frames():
         processed += 1
+
+        # 1인칭 게임 신호위반 데모일 때만 stop/exit ROI를 이동한다.
+        # center ROI는 건드리지 않으므로 불법유턴 판정에는 영향이 없다.
+        if moving_roi is not None:
+            update_demo_moving_roi(cz, ts, moving_roi)
+
         if writer is None and a.save:
             Path(a.save).parent.mkdir(parents=True, exist_ok=True)
-            writer = cv2.VideoWriter(a.save, cv2.VideoWriter_fourcc(*"mp4v"),
-                                     src.fps / a.stride, src.size)
+            writer = cv2.VideoWriter(
+                a.save,
+                cv2.VideoWriter_fourcc(*"mp4v"),
+                src.fps / a.stride,
+                src.size,
+            )
 
         watching: dict[int, tuple] = {}
         for d in dets:
@@ -363,10 +468,23 @@ def main() -> None:
                     or any(k[1] == d.track_id for k in engine.red_light._pending))
             state = "watch" if pend else "car"
             for ev in evs:
-                if ev.violation_type not in WATCHED:
+                if ev.violation_type not in watched_types:
                     continue          # 고위험 차량 경보 등은 엔진이 따로 처리
                 state = "violation"
-                events.append(ev.to_payload())
+                payload = ev.to_payload()
+                if frame is not None:
+                    tag = "uturn" if ev.violation_type == ViolationType.ILLEGAL_UTURN else "signal"
+                    cap_path = save_capture(cv2, frame, a.cam, tag)
+                    if cap_path:
+                        payload["frame_before"] = cap_path
+                        payload["frame_after"] = cap_path
+                        # forwarder의 pending item에도 캡처 경로 주입
+                        if forwarder is not None:
+                            for item in forwarder._pending:
+                                if item.track_id == ev.track_id:
+                                    item.payload["frame_before"] = cap_path
+                                    item.payload["frame_after"] = cap_path
+                events.append(payload)
                 label = (SUBTYPE_KO.get(ev.subtype) or VTYPE_EN[ev.violation_type])
                 banner = (f"[{label}] track #{ev.track_id}  t={ts:.1f}s", ts + 2.0)
                 print(f"\n  ★ {VTYPE_KO[ev.violation_type]}  t={ts:6.2f}s  "

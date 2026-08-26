@@ -54,11 +54,20 @@ public class Camera {
     @Builder.Default
     private Boolean debrisDetectionEnabled = Boolean.FALSE;
 
-    // 이 카메라에서 위반감지(신호위반/불법유턴, ⑦) 자동 감지를 돌릴지 여부. true면
-    // camera_watcher.py가 d_lpr/run_uturn.py를 이 카메라의 streamUrl로 자동으로 붙여서 돌린다.
+    // 이 카메라에서 위반감지(신호위반/불법유턴, ⑦) 자동 감지를 돌릴지 여부 (레거시 호환용)
     @Column(name = "violation_detection_enabled", nullable = false)
     @Builder.Default
     private Boolean violationDetectionEnabled = Boolean.FALSE;
+
+    // 이 카메라에서 불법유턴(ILLEGAL_UTURN) 자동 감지를 돌릴지 여부
+    @Column(name = "uturn_detection_enabled", nullable = false)
+    @Builder.Default
+    private Boolean uturnDetectionEnabled = Boolean.FALSE;
+
+    // 이 카메라에서 신호위반(SIGNAL_VIOLATION) 자동 감지를 돌릴지 여부
+    @Column(name = "signal_detection_enabled", nullable = false)
+    @Builder.Default
+    private Boolean signalDetectionEnabled = Boolean.FALSE;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

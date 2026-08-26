@@ -16,4 +16,6 @@ public class CameraUpdateRequest {
     private String streamFormat;
     private Boolean debrisDetectionEnabled;
     private Boolean violationDetectionEnabled;
+    private Boolean uturnDetectionEnabled;
+    private Boolean signalDetectionEnabled;
 }
