@@ -16,8 +16,12 @@ require("dotenv").config({ path: path.resolve(__dirname, "../.env") });
 const express = require("express");
 const cors = require("cors");
 const uticRouter = require("./routes/utic");
+const { createMapEventsModule } = require("./routes/mapEvents");
 const db = require("./db");
+const { deleteExistingDemoEvent } = require("./gatewayForward");
 
+// web/map.js의 CONFIG.DEMO_VEHICLE_ID와 반드시 동일한 문자열이어야 한다.
+const DEMO_VEHICLE_ID = "DEMO-DRUNK-001";
 
 const app = express();
 db.init(); // PostGIS 연결 시도 (실패해도 서버는 계속 뜸)
@@ -42,10 +46,18 @@ app.use("/api/utic", uticRouter);
 
 app.use(express.static(path.resolve(__dirname, "../web")));   // ← 추가: web/index.html을 "/"에서 서빙
 
+// realtime_anomaly.py(AI) → /api/map/events(POST) → WebSocket(/events) → web/map.js
+// [버그 수정: "/api/map/demo/reset이 404, ws://localhost:4000/events 연결 실패"]
+// 이 모듈을 만들기만 하고 실제로 app에 연결(app.use)/http 서버에 연결(attach)하는
+// 코드가 빠져 있었다 - 그래서 정적 파일(index.html/map.js)과 /api/health는 되는데
+// /api/map/* 라우트 전부와 /events WebSocket만 항상 404/연결실패였다.
+const mapEvents = createMapEventsModule();
+app.use("/api/map", mapEvents.router);
 
 // WebSocket은 express의 app.listen이 아니라 http.Server가 필요하므로,
 // app을 감싸는 http.Server를 직접 만들고 그 서버로 listen한다 (동작은 기존과 동일).
 const server = http.createServer(app);
+mapEvents.attach(server, "/events");
 
 const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => {
@@ -67,7 +79,13 @@ server.listen(PORT, () => {
 function shutdown(signal) {
   console.log(`\n[서버 종료] ${signal} 수신 - 서버를 종료합니다.`);
 
-  server.close(() => process.exit(0));
+  // [버그 수정] 주석엔 "종료 전에 게이트웨이의 데모 이벤트를 지운다"고 돼있었지만
+  // 실제로 그 호출이 빠져 있었다 - deleteExistingDemoEvent를 실제로 호출하도록 추가.
+  deleteExistingDemoEvent(DEMO_VEHICLE_ID)
+    .catch(() => {})
+    .finally(() => {
+      server.close(() => process.exit(0));
+    });
 
   // 3초 안에 종료되지 않으면 강제 종료
   setTimeout(() => process.exit(0), 3000).unref();

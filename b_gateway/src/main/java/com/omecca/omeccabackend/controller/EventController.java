@@ -73,6 +73,21 @@ public class EventController {
         );
     }
 
+    // [신규] e_tracking/test_suspicious_driving.py의 update_event_plate()가 호출한다 -
+    // DUI 이벤트가 이미 떠 있는 상태에서 번호판이 나중(다음 카메라)에 확정되면, 새
+    // 이벤트를 만들지 않고 이 trackId의 가장 최근 이벤트 meta.plateNumber만 채워 넣는다.
+    // body: { plate }.
+    @PatchMapping("/by-track/{trackId}/plate")
+    public EventResponse updatePlate(
+            @PathVariable String trackId,
+            @RequestBody java.util.Map<String, String> body
+    ) {
+        return eventService.updatePlateByTrackId(
+                trackId,
+                body != null ? body.get("plate") : null
+        );
+    }
+
     // 대시보드 "📄 PDF 리포트 생성" 버튼이 호출하는 엔드포인트. b_report를 그 자리에서
     // 실행해 실제 PDF를 만들고(이미 만들어진 적 있으면 그걸 재사용), 완성된 PDF 바이너리를
     // 바로 응답으로 돌려준다 - 프론트는 이 응답 하나로 즉시 다운로드를 트리거하면 된다.

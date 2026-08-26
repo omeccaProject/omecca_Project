@@ -3,6 +3,7 @@ package com.omecca.omeccabackend.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.omecca.omeccabackend.dto.EventCreateRequest;
 import com.omecca.omeccabackend.dto.EventResponse;
 import com.omecca.omeccabackend.entity.Event;
@@ -154,6 +155,44 @@ public class EventService {
         if (frameRefAfter != null) {
             event.setFrameRefAfter(frameRefAfter);
         }
+        Event saved = eventRepository.save(event);
+        EventResponse response = EventResponse.from(saved, objectMapper);
+        messagingTemplate.convertAndSend("/topic/events", response);
+        return response;
+    }
+
+    // [신규: "알림팝업/이벤트/PDF 리포트에 인식한 차량번호도 넣어달라"] DUI 이벤트가
+    // 이미 대시보드에 떠 있는 상태에서 번호판이 나중에(다음 카메라에서 LPR로) 확정되면,
+    // 새 이벤트를 만들지 않고 이미 떠 있는 이 trackId의 가장 최근 이벤트를 찾아
+    // meta.plateNumber만 채워 넣는다(updateCapturesByTrackId와 같은 패턴). meta의 다른
+    // 기존 키(source/detailType/cameraName/reason 등)는 그대로 보존한다.
+    @Transactional
+    public EventResponse updatePlateByTrackId(String trackId, String plate) {
+        if (trackId == null || trackId.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "trackId is required");
+        }
+        if (plate == null || plate.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "plate is required");
+        }
+        Event event = eventRepository.findFirstByTrackIdOrderByOccurredAtDesc(trackId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "event not found for trackId: " + trackId));
+
+        ObjectNode metaNode;
+        String existingMeta = event.getMeta();
+        if (existingMeta != null && !existingMeta.isBlank()) {
+            JsonNode parsed;
+            try {
+                parsed = objectMapper.readTree(existingMeta);
+            } catch (JsonProcessingException e) {
+                parsed = null;
+            }
+            metaNode = (parsed != null && parsed.isObject()) ? (ObjectNode) parsed : objectMapper.createObjectNode();
+        } else {
+            metaNode = objectMapper.createObjectNode();
+        }
+        metaNode.put("plateNumber", plate);
+        event.setMeta(metaNode.toString());
+
         Event saved = eventRepository.save(event);
         EventResponse response = EventResponse.from(saved, objectMapper);
         messagingTemplate.convertAndSend("/topic/events", response);
