@@ -503,12 +503,20 @@ class VehicleJourney:
         self.last_seen_at = 0.0
         self.points = []
         self.road_cache = {}
+        # [신규: "알림 팝업에 차량 번호까지 나오게"] 여정이 시작된 카메라에서
+        # 매칭된 번호판(target_matched_vehicles 기준)을 저장해둔다. 시작 시점에
+        # 아직 OCR이 안 됐으면 None으로 두고, 다음 프레임들에서 값이 생기는
+        # 대로 채워 넣는다(update_journey_for_frame 참고) - 한 번 채워지면
+        # 여정이 끝날 때까지 그대로 유지한다(같은 차량이므로 번호판이 바뀔 일은
+        # 없음).
+        self.plate = None
 
     def reset(self):
         self.active = False
         self.last_cam_id = None
         self.last_seen_at = 0.0
         self.points = []
+        self.plate = None
         self._journey_pending = False
 
 
@@ -526,6 +534,10 @@ def send_journey_update(journey):
         "currentLat": loc["lat"] if loc else None,
         "currentLng": loc["lng"] if loc else None,
         "points": [{"lat": p[0], "lng": p[1]} for p in journey.points],
+        # [신규] 알림 팝업에 차량 번호까지 표시하기 위해 전달한다. 아직 OCR로
+        # 확정되지 않았으면 None - 프론트엔드(map.js)가 "차량번호 확인 중"으로
+        # 대체 표시한다.
+        "plate": journey.plate if journey.active else None,
     }
 
     headers = {
@@ -576,7 +588,7 @@ def _extend_journey_async(journey, from_loc, to_loc, new_cam_id):
     threading.Thread(target=worker, daemon=True).start()
 
 
-def update_journey_for_frame(journey, suspicious_vehicles_by_camera):
+def update_journey_for_frame(journey, suspicious_vehicles_by_camera, plate_by_cam_id=None):
     """
     다중 CCTV에서 동일 차량의 이상운전 여정을 지도에 표시한다.
 
@@ -586,6 +598,10 @@ def update_journey_for_frame(journey, suspicious_vehicles_by_camera):
     따라서 미리 정의한 CCTV 순서
     A → B → C → D
     를 기준으로 Journey를 진행한다.
+
+    plate_by_cam_id: [신규] {camId: 번호판} 형태 - 그 카메라에서 현재 매칭된
+    관심 차량의 번호판(target_matched_vehicles 기준, 없으면 생략 가능). 여정을
+    시작하거나 진행하는 동안 journey.plate를 채우는 데 쓰인다.
     """
 
     now = time.time()
@@ -645,6 +661,12 @@ def update_journey_for_frame(journey, suspicious_vehicles_by_camera):
 
         journey.last_seen_at = now
 
+        # [신규] 시작 카메라에서 이미 번호판이 매칭돼 있으면 바로 채워 넣는다
+        # (아직 OCR 전이면 None으로 두고, 아래 진행 분기에서 채워진다).
+        journey.plate = (
+            plate_by_cam_id.get(start_cam_id) if plate_by_cam_id else None
+        )
+
         # 이동 처리 중 여부 초기화
         journey._journey_pending = False
 
@@ -669,6 +691,24 @@ def update_journey_for_frame(journey, suspicious_vehicles_by_camera):
         current_index = camera_order.index(
             journey.last_cam_id
         )
+
+    # =========================================================
+    # [신규] 시작 시점엔 아직 OCR이 안 돼서 번호판을 못 채웠을 수 있다 -
+    # 지금 카메라에서 번호판이 매칭됐는데 journey.plate가 아직 비어 있으면
+    # 채워 넣고, 알림 팝업/이벤트 카드가 곧바로 반영하도록 즉시 갱신 payload를
+    # 보낸다(다음 카메라 전환까지 기다리지 않는다).
+    # =========================================================
+
+    if (
+        not journey.plate
+        and plate_by_cam_id
+        and journey.last_cam_id in plate_by_cam_id
+    ):
+        journey.plate = plate_by_cam_id[journey.last_cam_id]
+        print(
+            f"[JOURNEY] 번호판 확인됨(진행 중 갱신): {journey.plate}"
+        )
+        send_journey_update(journey)
 
     # =========================================================
     # 마지막 CCTV(D)까지 도착한 경우
@@ -3071,7 +3111,19 @@ def main():
             for camera_name in cameras
         }
 
-        update_journey_for_frame(journey, target_matched_by_cam_id)
+        # [신규] 알림 팝업에 표시할 번호판 - 카메라별로 매칭된 관심 차량이
+        # 여럿이어도(이론상 거의 없음) 하나만 대표로 쓴다. 정확한 번호판
+        # 매칭이 아니라 "이 카메라에서 지금 관심 차량이 잡혔다"는 표시 용도이므로
+        # 첫 번째 값으로 충분하다.
+        plate_by_cam_id = {
+            cameras[camera_name]["camId"]: next(
+                iter(target_matched_vehicles[camera_name].values())
+            )["plate"]
+            for camera_name in cameras
+            if target_matched_vehicles[camera_name]
+        }
+
+        update_journey_for_frame(journey, target_matched_by_cam_id, plate_by_cam_id)
 
 
         # ====================================================
