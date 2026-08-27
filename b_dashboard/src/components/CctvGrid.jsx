@@ -6,6 +6,7 @@ import Badge from './Badge'
 import FrameImage from './FrameImage'
 import LiveHlsVideoWithDetections from './LiveHlsVideoWithDetections'
 import CameraManagerModal from './CameraManagerModal'
+import WantedPersonManagerModal from './WantedPersonManagerModal'
 
 // 아직 이벤트가 안 들어온 카메라도 그리드에 자리를 채워두기 위한 기본 목록.
 // 실제 카메라 목록 API가 생기면 이 상수 대신 그걸 쓰면 됨. 3분할 모드(모니터
@@ -55,6 +56,7 @@ export default function CctvGrid({ events, focusedEvent, onSelectCam, camOffset 
 
   // 카메라 마스터 데이터 관리 모달. 3분할 모드(fixedCount)에서는 안 띄운다(운영 화면이라).
   const [showCameraManager, setShowCameraManager] = useState(false)
+  const [showWantedPersonManager, setShowWantedPersonManager] = useState(false)
 
   // 실시간 영상이 연결된 카메라 목록. 이제 하드코딩된 realCameras.js가 아니라
   // "카메라 관리"에서 등록한 DB(camera 테이블) 데이터를 직접 불러온다 — 등록 즉시
@@ -255,6 +257,9 @@ export default function CctvGrid({ events, focusedEvent, onSelectCam, camOffset 
             <button type="button" className="cam-manage-btn" onClick={() => setShowCameraManager(true)}>
               카메라 관리
             </button>
+            <button type="button" className="cam-manage-btn" onClick={() => setShowWantedPersonManager(true)}>
+              수배자 관리
+            </button>
             <div className="cam-count-toggle">
               {CAM_COUNT_OPTIONS.map((n) => (
                 <button
@@ -376,6 +381,12 @@ export default function CctvGrid({ events, focusedEvent, onSelectCam, camOffset 
         <CameraManagerModal
           onClose={() => setShowCameraManager(false)}
           onChanged={loadLiveCameras}
+        />
+      )}
+
+      {showWantedPersonManager && (
+        <WantedPersonManagerModal
+          onClose={() => setShowWantedPersonManager(false)}
         />
       )}
     </section>
