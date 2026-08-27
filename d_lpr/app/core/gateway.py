@@ -22,7 +22,9 @@ import json
 import os
 import logging
 import threading
+import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime
 from queue import Empty, Queue
@@ -95,7 +97,14 @@ def to_gateway_payload(
     payload: dict[str, Any] = {
         "camId": ev.cam_id,
         # 규격상 trackId 는 문자열이다 (내부는 정수)
-        "trackId": f"trk-{ev.track_id}" if ev.track_id is not None else None,
+        # [수정] trackId를 "trk-{정수}"로만 만들면, 다른 프로세스/모듈(예: e_tracking/
+        # SmartCCTV의 지도 캡처 서버)이 독립적으로 1부터 세는 자기 track_id와 우연히
+        # 같은 문자열("trk-1" 등)을 만들 수 있다. 그러면 PATCH /api/events/by-track/
+        # {trackId}/captures가 trackId만으로 "가장 최근 이벤트"를 찾기 때문에, 전혀
+        # 관계없는 다른 카메라/모듈의 캡처가 이 이벤트를 덮어쓸 수 있다(실제로 L010263
+        # 불법유턴 이벤트의 "사건 발생 전" 이미지가 다른 모듈이 보낸 새까만 프레임으로
+        # 덮어써진 사례 확인). camId를 trackId에 포함시켜 이런 충돌 자체를 막는다.
+        "trackId": f"trk-{ev.cam_id}-{ev.track_id}" if ev.track_id is not None else None,
         "eventType": event_type,
         "objectClass": OBJECT_CLASS_VEHICLE,
         "bbox": box,
@@ -175,6 +184,16 @@ class GatewayClient:
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self.stats = {"sent": 0, "failed": 0, "dropped": 0}
+        # [버그 수정: "신호위반 캡처 사진이 '이미지 없음'으로 뜬다"] update_captures()는
+        # delay_sec(번호판 확정 대기 등으로 보통 2~3초)만큼 daemon 스레드 안에서
+        # time.sleep()한 뒤에야 실제로 PATCH를 보낸다. 그런데 이 스레드를 어디서도
+        # 추적/join하지 않아서, 영상 처리가 끝나 프로세스가 그냥 종료돼 버리면
+        # (daemon=True라 메인 프로세스 종료 시 자동으로 죽는다) sleep이 끝나기도 전에
+        # 스레드가 통째로 죽어서 PATCH 자체가 나가지 못했다 - 특히 영상 끝부분에서
+        # 잡힌 위반(신호위반의 "정지선 통과+2초 뒤" 캡처처럼 영상이 끝나기 직전에
+        # 걸리는 경우)에서 자주 발생한다. run_uturn.py가 종료 직전 join_captures()로
+        # 이 스레드들이 끝날 때까지 잠깐 기다려주면 해결된다.
+        self._capture_threads: list[threading.Thread] = []
 
     # ------------------------------------------------------------------
     def start(self) -> "GatewayClient":
@@ -185,6 +204,17 @@ class GatewayClient:
         self._thread.start()
         log.info("게이트웨이 전송 시작: %s", self.url)
         return self
+
+    def join_captures(self, timeout: float = 5.0) -> None:
+        """update_captures()가 띄운 지연 전송 스레드가 끝날 때까지 기다린다.
+
+        run_uturn.py가 영상 처리를 마치고 프로세스를 종료하기 직전에 반드시
+        호출해야 한다 - 안 그러면 delay_sec만큼 아직 sleep 중이던 캡처 PATCH가
+        전송되지 못한 채로 프로세스와 함께 죽는다(위 __init__ 주석 참고).
+        """
+        for t in self._capture_threads:
+            t.join(timeout=timeout)
+        self._capture_threads = [t for t in self._capture_threads if t.is_alive()]
 
     def stop(self, drain: bool = True) -> None:
         if drain:
@@ -212,6 +242,62 @@ class GatewayClient:
             log.warning("게이트웨이 큐가 가득 참 — 이벤트 폐기 (%s)", ev.event_id)
             return False
 
+    # ------------------------------------------------------------------
+    # [신규] 사건 전/후 캡처 이미지 반영.
+    #
+    # 이벤트 자체(POST /api/events)는 `_emit()`이 위반을 확정한 그 순간 버스로
+    # 이미 나가버린다(위 `subscribe_to_bus`/`send` 참고) - 그 시점엔 아직 "사건
+    # 전/후" 캡처 이미지를 만들 수 없다(전 프레임은 버퍼에서, 후 프레임은 바로
+    # 이 프레임에서 떠야 하는데, 이벤트 발행 자체가 그 계산보다 먼저 끝난다).
+    #
+    # 그래서 e_tracking(SmartCCTV)의 server/gatewayForward.js가 이미 쓰고 있는
+    # 것과 똑같은 2단계 패턴을 따른다:
+    #   1) 위반이 잡히면 이벤트를 먼저 보낸다(캡처 없이, 지금처럼)
+    #   2) run_uturn.py가 그 직후 전/후 프레임을 JPEG로 저장하고, 이 메서드로
+    #      PATCH /api/events/by-track/{trackId}/captures 를 호출해 방금 만든
+    #      이벤트에 frameRefBefore/frameRefAfter만 채워 넣는다.
+    #
+    # 실패해도(게이트웨이가 꺼져 있거나 아직 그 trackId 이벤트가 없어도) 조용히
+    # 넘어간다 - 캡처 반영 실패가 위반 감지 자체를 막으면 안 된다. 프레임 처리
+    # 루프를 절대 막지 않도록 별도 스레드에서 fire-and-forget으로 보낸다.
+    def update_captures(self, track_id: str, frame_before: Optional[str],
+                         frame_after: Optional[str], delay_sec: float = 0.0) -> None:
+        if not self.enabled or (not frame_before and not frame_after):
+            return
+
+        def _worker() -> None:
+            # [신규] --plate-hold로 이벤트 POST 자체가 지연될 수 있어서, 그 이벤트가
+            # 실제로 게이트웨이에 생기기 전에 PATCH가 먼저 도착하면 "그 trackId
+            # 이벤트가 아직 없음"으로 조용히 무시된다. 호출자가 넘긴 만큼 먼저 기다린다.
+            if delay_sec > 0:
+                time.sleep(delay_sec)
+            url = self.url.rsplit("/api/events", 1)[0] + \
+                f"/api/events/by-track/{urllib.parse.quote(track_id, safe='')}/captures"
+            data = json.dumps(
+                {"frameRefBefore": frame_before, "frameRefAfter": frame_after},
+                ensure_ascii=False,
+            ).encode("utf-8")
+            req = urllib.request.Request(
+                url, data=data, method="PATCH",
+                headers={
+                    "Content-Type": "application/json; charset=utf-8",
+                    "X-API-Key": self.api_key,
+                },
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=self.timeout) as r:
+                    if not (200 <= r.status < 300):
+                        log.warning("캡처 이미지 반영 실패 (HTTP %s): %s", r.status, track_id)
+            except Exception as e:
+                log.warning("캡처 이미지 반영 중 오류(%s): %s", track_id, e)
+
+        t = threading.Thread(target=_worker, daemon=True, name="gateway-captures")
+        # 이미 끝난 스레드는 목록에서 정리해서 무한정 쌓이지 않게 한다.
+        self._capture_threads = [x for x in self._capture_threads if x.is_alive()]
+        self._capture_threads.append(t)
+        t.start()
+
+    # ------------------------------------------------------------------
     def enqueue(self, payload: dict[str, Any]) -> bool:
         """이미 규격 변환이 끝난 payload 를 전송 큐에 넣는다.
 
@@ -266,15 +352,24 @@ class GatewayClient:
                 self._q.task_done()
 
     # ------------------------------------------------------------------
-    def subscribe_to_bus(self) -> None:
+    def subscribe_to_bus(self, excluded_types=None) -> None:
         """이벤트 버스에 붙여 위반 이벤트를 자동 전송한다.
 
         엔진이 이벤트를 낼 때마다 게이트웨이로 흘러간다.
+
+        excluded_types: 이 프로세스(--mode)가 담당하지 않는 위반 유형 문자열 집합
+        (예: {"illegal_uturn"}). run_uturn.py가 --mode uturn/signal로 각각 별도
+        프로세스를 띄우는데, ViolationEngine은 --zones에 있는 설정을 전부 로드해서
+        두 프로세스 모두 같은 위반을 독립적으로 감지·publish하므로, 여기서 걸러주지
+        않으면 같은 이벤트가 게이트웨이에 두 번 전송된다(PlateHoldForwarder의
+        excluded_types와 동일한 이유 - 그쪽 주석 참고).
         """
         from .bus import TOPIC_VIOLATION, bus
 
         def _on(topic: str, payload: dict) -> None:
             if topic != TOPIC_VIOLATION:
+                return
+            if excluded_types and payload.get("type") in excluded_types:
                 return
             # 버스에는 이미 직렬화된 dict 가 오므로 최소 변환만 한다
             try:
@@ -295,7 +390,8 @@ def _payload_from_bus(p: dict[str, Any]) -> dict[str, Any]:
     loc = p.get("location")
     return {
         "camId": p.get("cam_id"),
-        "trackId": f"trk-{p.get('track_id')}" if p.get("track_id") is not None else None,
+        # 위 to_gateway_payload()와 동일한 이유로 camId를 trackId에 포함시킨다.
+        "trackId": f"trk-{p.get('cam_id')}-{p.get('track_id')}" if p.get("track_id") is not None else None,
         "eventType": type_map.get(p.get("type", ""), "UNREGISTERED_VEHICLE"),
         "objectClass": OBJECT_CLASS_VEHICLE,
         "bbox": [0, 0, 0, 0],

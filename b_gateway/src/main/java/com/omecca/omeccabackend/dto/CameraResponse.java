@@ -20,6 +20,7 @@ public class CameraResponse {
     private Boolean violationDetectionEnabled;
     private Boolean uturnDetectionEnabled;
     private Boolean signalDetectionEnabled;
+    private Boolean personRiskDetectionEnabled;
     private LocalDateTime createdAt;
 
     public static CameraResponse from(Camera camera) {
@@ -34,6 +35,7 @@ public class CameraResponse {
                 .violationDetectionEnabled(camera.getViolationDetectionEnabled())
                 .uturnDetectionEnabled(camera.getUturnDetectionEnabled())
                 .signalDetectionEnabled(camera.getSignalDetectionEnabled())
+                .personRiskDetectionEnabled(camera.getPersonRiskDetectionEnabled())
                 .createdAt(camera.getCreatedAt())
                 .build();
     }

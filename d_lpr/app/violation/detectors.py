@@ -116,8 +116,6 @@ class RedLightDetector:
         last, prev = track.last, track.prev
         if last is None or prev is None:
             return None
-        if track.speed() < self.min_speed:
-            return None
 
         p_cur = last.as_xy()
 
@@ -143,15 +141,32 @@ class RedLightDetector:
             # --- 1) 정지선 통과 감지 -----------------------------------
             if stop_cross is not None and stop_line.is_forward(stop_cross):
                 track.crossings[stop_line.line_id] = (stop_cross, last.ts, last.frame_no)
+                # [수정] min_speed 검사는 원래 함수 맨 위에서 통째로 걸었었다 - 그러면
+                # 정지선을 넘은 뒤 신호대기로 속도가 잠깐 0.5px/f 아래로 떨어지는
+                # "정상적인" 순간에 check() 자체가 즉시 리턴돼서, 바로 아래 2)번
+                # 진출선 확인/타임아웃 정리 로직까지 통째로 건너뛰어 버렸다. 실제로
+                # signal_timeline이 계속 빨간불인 영상을 디버그 로그로 추적해보니
+                # 정지선 후보 등록까지는 매번 되는데 진출선 확인 로그가 단 한 번도
+                # 안 찍히는 게 확인됨 - 이 속도 게이트 때문에 진출선을 실제로
+                # 넘었어도 그 프레임에서 check()가 아예 실행이 안 됐던 것.
+                # 저속 통과를 "후보 등록"에서만 걸러내고(오탐 방지 목적은 유지),
+                # 이미 등록된 후보의 진출선 확인/타임아웃 정리는 저속이어도 계속
+                # 진행되도록 검사 위치를 여기로 좁혔다.
+                if track.speed() < self.min_speed:
+                    continue
                 sig_id = spec.get("signal_id", int_id)
                 phase = self.signal.phase_at(sig_id, last.ts)
                 if phase is SignalPhase.RED:
                     changed_at = self.signal.last_change(sig_id, last.ts)
                     if last.ts - changed_at >= self.grace_sec:
                         self._pending[key] = (last.ts, last.frame_no, p_cur)
+                        print(f"  ⚠ 정지선 적색 통과(후보) t={last.ts:6.2f}s track=#{track.track_id}  {int_id}")
                         log.debug("정지선 적색 통과 후보: %s track=%s", int_id, track.track_id)
                     else:
+                        print(f"  · 신호 전환 직후 유예 적용 t={last.ts:6.2f}s track=#{track.track_id}")
                         log.debug("신호 전환 직후 유예 적용: track=%s", track.track_id)
+                elif phase is SignalPhase.UNKNOWN:
+                    print(f"  · 정지선 통과했지만 신호 상태 UNKNOWN(타임라인 범위 밖) t={last.ts:6.2f}s track=#{track.track_id}")
                 continue
 
             # --- 2) 진출선 통과로 위반 확정 -----------------------------
@@ -161,6 +176,8 @@ class RedLightDetector:
             start_ts, start_frame, start_pt = pend
 
             if last.ts - start_ts > self.exit_timeout_sec:
+                print(f"  · 위반 후보 취소(진출선 {self.exit_timeout_sec:.0f}초 내 미확인) "
+                      f"t={last.ts:6.2f}s track=#{track.track_id}")
                 del self._pending[key]      # 정지선 넘고 멈춰 섰다 → 위반 아님
                 continue
 

@@ -1,3 +1,4 @@
+import argparse
 import os
 import sys
 import time
@@ -14,7 +15,8 @@ from face_detect import FaceDetector
 from event_publisher import send_event
 
 COOLDOWN_SEC = 3.0
-PKL_CHECK_INTERVAL = 1.0  # ← 추가: Hot-Reload 폴링 주기(초)
+PKL_CHECK_INTERVAL = 1.0  # Hot-Reload 폴링 주기(초)
+
 
 def resize_for_display(frame, max_width=960):
     """화면 표시용으로만 축소. 탐지/좌표 계산은 이미 끝난 뒤라 정확도에 영향 없음"""
@@ -24,6 +26,7 @@ def resize_for_display(frame, max_width=960):
     scale = max_width / w
     return cv2.resize(frame, (max_width, int(h * scale)))
 
+
 def clip_bbox_xyxy(bbox, w, h):
     """좌표 클리핑 (화면 밖 좌표 이탈 방어)"""
     if not bbox or len(bbox) != 4:
@@ -31,6 +34,7 @@ def clip_bbox_xyxy(bbox, w, h):
     x1, y1, x2, y2 = bbox
     return [max(0, min(w, int(x1))), max(0, min(h, int(y1))),
             max(0, min(w, int(x2))), max(0, min(h, int(y2)))]
+
 
 def is_point_in_bbox(point, bbox):
     """흉기 중심점이 사람 바운딩 박스 내부에 포함되는지 판정"""
@@ -40,12 +44,15 @@ def is_point_in_bbox(point, bbox):
     x1, y1, x2, y2 = bbox
     return (x1 <= px <= x2) and (y1 <= py <= y2)
 
-def run_pipeline(video_source=0, conf_threshold=0.50, skip_frames=15):
-    print(f'[*] C파트 통합 파이프라인 가동 (Conf: {conf_threshold}, Skip: {skip_frames})')
-    
+
+def run_pipeline(video_source=0, conf_threshold=0.50, skip_frames=15,
+                  cam_id='CAM_01', no_display=False, tolerance=0.48):
+    print(f'[*] C파트 통합 파이프라인 가동 (Cam: {cam_id}, Conf: {conf_threshold}, '
+          f'Skip: {skip_frames}, Tolerance: {tolerance}, Display: {not no_display})')
+
     weapon_det = WeaponDetector(conf_threshold=conf_threshold)
-    face_det = FaceDetector(tolerance=0.55)
-    
+    face_det = FaceDetector(tolerance=tolerance)
+
     cap = cv2.VideoCapture(video_source)
     if not cap.isOpened():
         print(f'[ERROR] 비디오 소스를 열 수 없습니다: {video_source}')
@@ -53,9 +60,12 @@ def run_pipeline(video_source=0, conf_threshold=0.50, skip_frames=15):
 
     frame_idx = 0
     cached_faces = []
-    last_pkl_check = 0.0  # ← 추가: 마지막으로 pkl 변경 확인한 시각
+    last_pkl_check = 0.0  # 마지막으로 pkl 변경 확인한 시각
 
     # 쿨다운 관리 딕셔너리 (인물 ID별 / 무기 라벨별)
+    # [참고] 카메라 여러 대를 동시에 감시하는 구조에서도 이 쿨다운은 프로세스(=카메라)별로
+    # 완전히 독립돼 있어 문제 없음 - camera_watcher.py가 카메라마다 별도 프로세스로
+    # 이 스크립트를 띄우는 구조이기 때문.
     last_sent_wanted = {}
     last_sent_weapon = {}
 
@@ -63,23 +73,23 @@ def run_pipeline(video_source=0, conf_threshold=0.50, skip_frames=15):
         ret, frame = cap.read()
         if not ret:
             break
-            
+
         frame_idx += 1
         h, w = frame.shape[:2]
         now = time.time()
 
-        # 0. Hot-Reload 폴링 (1초 간격으로 face_embeddings.pkl 변경 확인)  ← 추가
+        # 0. Hot-Reload 폴링 (1초 간격으로 face_embeddings.pkl 변경 확인)
         if now - last_pkl_check > PKL_CHECK_INTERVAL:
             face_det.check_and_reload()
             last_pkl_check = now
-        
+
         # 1. 흉기 탐지 (실시간 GPU 추론)
         weapons = weapon_det.detect_weapons(frame)
-        
+
         # 2. 얼굴 인식 (skip_frames 주기로 갱신)
         if frame_idx % skip_frames == 0 or frame_idx == 1:
             cached_faces = face_det.detect_faces_with_person_crop(frame)
-            
+
         # 3. 수배자 이벤트 처리 (WANTED_PERSON)
         for face in cached_faces:
             matched_id = face.get('matchedDbId')
@@ -88,7 +98,7 @@ def run_pipeline(video_source=0, conf_threshold=0.50, skip_frames=15):
                 p_bbox = face.get('personBbox')
                 is_armed = False
                 armed_weapon_type = None
-                
+
                 if p_bbox:
                     for w_obj in weapons:
                         w_box = w_obj['bbox']
@@ -97,14 +107,14 @@ def run_pipeline(video_source=0, conf_threshold=0.50, skip_frames=15):
                             is_armed = True
                             armed_weapon_type = w_obj['label']
                             break
-                
+
                 # BBox 안전성: personBbox 없을 경우 얼굴 박스(location: t,r,b,l)를 fallback 좌표로 활용
                 if p_bbox:
                     target_bbox = clip_bbox_xyxy(p_bbox, w, h)
                 else:
                     loc = face['location']
                     target_bbox = clip_bbox_xyxy([loc[3], loc[0], loc[1], loc[2]], w, h)
-                
+
                 # 쿨다운 검사 후 전송
                 if now - last_sent_wanted.get(matched_id, 0) >= COOLDOWN_SEC:
                     meta = {
@@ -117,7 +127,7 @@ def run_pipeline(video_source=0, conf_threshold=0.50, skip_frames=15):
                         event_type='WANTED_PERSON',
                         confidence=face['faceMatchScore'],
                         bbox=target_bbox,
-                        cam_id='CAM_01',
+                        cam_id=cam_id,  # [수정] 하드코딩된 'CAM_01' -> 인자로 받은 실제 camId
                         meta=meta
                     )
                     last_sent_wanted[matched_id] = now
@@ -130,7 +140,7 @@ def run_pipeline(video_source=0, conf_threshold=0.50, skip_frames=15):
                 w_box = w_obj['bbox']
                 w_center = ((w_box[0] + w_box[2]) / 2.0, (w_box[1] + w_box[3]) / 2.0)
                 holder_face = None
-                
+
                 for face in cached_faces:
                     p_bbox = face.get('personBbox')
                     if p_bbox and is_point_in_bbox(w_center, p_bbox):
@@ -148,39 +158,77 @@ def run_pipeline(video_source=0, conf_threshold=0.50, skip_frames=15):
                     event_type='WEAPON',
                     confidence=w_obj['confidence'],
                     bbox=clip_bbox_xyxy(w_box, w, h),
-                    cam_id='CAM_01',
+                    cam_id=cam_id,  # [수정] 하드코딩된 'CAM_01' -> 인자로 받은 실제 camId
                     meta=meta
                 )
                 last_sent_weapon[w_label] = now
 
         # 5. 시연 화면 렌더링 (수배자만 강조, Unknown 일반인 박스 숨김)
-        for f in cached_faces:
-            if f.get('matchedDbId') is not None: # Unknown 필터링 (수배자만 렌더링)
-                loc = f['location'] # [t, r, b, l]
-                t, r, b, l = loc[0], loc[1], loc[2], loc[3]
-                cv2.rectangle(frame, (l, t), (r, b), (0, 255, 0), 2)
-                cv2.putText(frame, f"{f['name']} ({f['faceMatchScore']:.2f})", (l, max(15, t - 10)),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-                
-                if f.get('personBbox'):
-                    px1, py1, px2, py2 = clip_bbox_xyxy(f['personBbox'], w, h)
-                    cv2.rectangle(frame, (px1, py1), (px2, py2), (255, 200, 0), 1)
+        # [수정] --no-display면 렌더링/imshow 자체를 건너뜀 - camera_watcher.py가
+        # subprocess로 백그라운드 실행할 때 GUI 창이 뜨면 헤드리스 서버 환경에서
+        # 에러로 죽는 걸 방지 (yolo_infer.py --no-display와 동일한 목적)
+        if not no_display:
+            for f in cached_faces:
+                if f.get('matchedDbId') is not None:  # Unknown 필터링 (수배자만 렌더링)
+                    loc = f['location']  # [t, r, b, l]
+                    t, r, b, l = loc[0], loc[1], loc[2], loc[3]
+                    cv2.rectangle(frame, (l, t), (r, b), (0, 255, 0), 2)
+                    cv2.putText(frame, f"{f['name']} ({f['faceMatchScore']:.2f})", (l, max(15, t - 10)),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
 
-        # 흉기 렌더링
-        for w_item in weapons:
-            bx = clip_bbox_xyxy(w_item['bbox'], w, h)
-            cv2.rectangle(frame, (bx[0], bx[1]), (bx[2], bx[3]), (0, 0, 255), 2)
-            cv2.putText(frame, f"{w_item['label']} {w_item['confidence']:.2f}", (bx[0], max(15, bx[1] - 10)),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
-        display_frame = resize_for_display(frame, max_width=960)
-        cv2.imshow("C-Part Test", display_frame)
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
+                    if f.get('personBbox'):
+                        px1, py1, px2, py2 = clip_bbox_xyxy(f['personBbox'], w, h)
+                        cv2.rectangle(frame, (px1, py1), (px2, py2), (255, 200, 0), 1)
+
+            # 흉기 렌더링
+            for w_item in weapons:
+                bx = clip_bbox_xyxy(w_item['bbox'], w, h)
+                cv2.rectangle(frame, (bx[0], bx[1]), (bx[2], bx[3]), (0, 0, 255), 2)
+                cv2.putText(frame, f"{w_item['label']} {w_item['confidence']:.2f}", (bx[0], max(15, bx[1] - 10)),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+
+            display_frame = resize_for_display(frame, max_width=960)
+            cv2.imshow(f"C-Part [{cam_id}]", display_frame)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
 
     cap.release()
-    cv2.destroyAllWindows()
-    print('[*] 파이프라인 정상 종료')
+    if not no_display:
+        cv2.destroyAllWindows()
+    print(f'[*] 파이프라인 정상 종료 ({cam_id})')
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="C파트(수배자/흉기) 실시간 감지 파이프라인")
+    parser.add_argument("--video", default="c_person_risk/sample.mp4",
+                         help="비디오 소스 경로 또는 URL (기본: sample.mp4)")
+    parser.add_argument("--cam-id", default="CAM_01",
+                         help="이벤트에 실어 보낼 카메라 ID (camera_watcher.py가 실제 등록된 "
+                              "camId를 넘겨줌)")
+    parser.add_argument("--conf-threshold", type=float, default=0.50,
+                         help="흉기 탐지 confidence threshold (기본 0.50, 어제 확정값)")
+    parser.add_argument("--skip-frames", type=int, default=15,
+                         help="얼굴 인식 프레임 스킵 간격 (기본 15)")
+    parser.add_argument("--tolerance", type=float, default=0.48,
+                         help="얼굴 매칭 tolerance (기본 0.48, False Accept 실험 최종 확정값)")
+    parser.add_argument("--no-display", action="store_true",
+                         help="화면 렌더링 없이 헤드리스로 실행 (camera_watcher.py 자동 실행용)")
+    return parser.parse_args()
+
 
 if __name__ == '__main__':
-    src = sys.argv[1] if len(sys.argv) > 1 else 'c_person_risk/sample.mp4'
-    run_pipeline(video_source=src, conf_threshold=0.50, skip_frames=15)
+    # [하위 호환] "python test_run.py my_video.mp4"처럼 위치 인자로 예전 방식대로
+    # 호출해도 여전히 동작하게 유지 - camera_watcher.py 연동 전까지 수동 테스트하던
+    # 방식을 안 깨트리기 위함.
+    if len(sys.argv) > 1 and not sys.argv[1].startswith("--"):
+        run_pipeline(video_source=sys.argv[1], conf_threshold=0.50, skip_frames=15)
+    else:
+        args = parse_args()
+        run_pipeline(
+            video_source=args.video,
+            conf_threshold=args.conf_threshold,
+            skip_frames=args.skip_frames,
+            cam_id=args.cam_id,
+            no_display=args.no_display,
+            tolerance=args.tolerance,
+        )

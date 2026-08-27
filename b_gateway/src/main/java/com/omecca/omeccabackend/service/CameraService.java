@@ -61,6 +61,7 @@ public class CameraService {
                         || (request.getUturnDetectionEnabled() == null && Boolean.TRUE.equals(request.getViolationDetectionEnabled())))
                 .signalDetectionEnabled(Boolean.TRUE.equals(request.getSignalDetectionEnabled())
                         || (request.getSignalDetectionEnabled() == null && Boolean.TRUE.equals(request.getViolationDetectionEnabled())))
+                .personRiskDetectionEnabled(Boolean.TRUE.equals(request.getPersonRiskDetectionEnabled()))
                 .build();
 
         return CameraResponse.from(cameraRepository.save(camera));
@@ -111,6 +112,9 @@ public class CameraService {
             camera.setViolationDetectionEnabled(
                     Boolean.TRUE.equals(camera.getUturnDetectionEnabled()) || Boolean.TRUE.equals(camera.getSignalDetectionEnabled())
             );
+        }
+        if (request.getPersonRiskDetectionEnabled() != null) {
+            camera.setPersonRiskDetectionEnabled(request.getPersonRiskDetectionEnabled());
         }
 
         return CameraResponse.from(camera);

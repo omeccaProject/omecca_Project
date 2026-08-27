@@ -54,7 +54,12 @@ class PlateReader:
     """
 
     def __init__(self, weights: str | None = None, mock: bool = False,
-                 interval: int = DEFAULT_INTERVAL, log_prefix: str = "[LPR]"):
+                 interval: int = DEFAULT_INTERVAL, log_prefix: str = "[LPR]",
+                 mock_plates: list[str] | None = None):
+        """mock_plates: mock=True 일 때만 쓰인다. easyocr 없이(설치 전) 매칭
+        파이프라인(관심 대상 대조 -> Journey)만 먼저 검증하고 싶을 때, 여기
+        넣은 번호판 풀 중 하나가 무작위로 "인식된 번호판"으로 나온다. 어떤
+        차량에 어떤 번호가 붙었는지는 [LPR-TEST] 콘솔 로그로 확인한다."""
         self.available = False
         self.log_prefix = log_prefix
         self.interval = max(1, int(interval))
@@ -63,7 +68,7 @@ class PlateReader:
         self._calls = 0
 
         try:
-            self._pipeline = self._build(weights, mock)
+            self._pipeline = self._build(weights, mock, mock_plates)
             self.available = self._pipeline is not None
         except Exception as e:  # d_lpr 미설치/의존성 부족 등 — 여기서 죽지 않는다
             print(f"{log_prefix} 번호판 인식을 켜지 못했습니다({type(e).__name__}: {e}). "
@@ -71,7 +76,7 @@ class PlateReader:
             self.available = False
 
     # ------------------------------------------------------------------
-    def _build(self, weights: str | None, mock: bool):
+    def _build(self, weights: str | None, mock: bool, mock_plates: list[str] | None = None):
         if _D_LPR_DIR not in sys.path:
             # append 로 붙인다 - insert(0) 로 앞에 두면 d_lpr 의 일반적인 모듈명
             # (`app` 등)이 이 프로세스의 다른 import 를 가릴 수 있다.
@@ -88,8 +93,12 @@ class PlateReader:
 
         if mock:
             print(f"{self.log_prefix} MOCK 모드 — 더미 번호판입니다(실제 번호 아님).")
+            recognizer = PlateRecognizer(mock=True)
+            if mock_plates:
+                recognizer.set_mock_plates(mock_plates)
+                print(f"{self.log_prefix} MOCK 번호판 풀: {mock_plates}")
             return LPRPipeline(detector=PlateDetector(mock=True),
-                               recognizer=PlateRecognizer(mock=True))
+                               recognizer=recognizer)
 
         path = weights or DEFAULT_PLATE_WEIGHTS
         if os.path.exists(path):

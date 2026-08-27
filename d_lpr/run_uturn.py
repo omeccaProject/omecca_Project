@@ -39,6 +39,7 @@ import json
 import sys
 import time
 import uuid
+from collections import deque
 from pathlib import Path
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -48,25 +49,45 @@ if hasattr(sys.stdout, "reconfigure"):
 BASE = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE))
 
-CAPTURES_DIR = BASE.parent / "b_dashboard" / "public" / "captures"
-try:
-    CAPTURES_DIR.mkdir(parents=True, exist_ok=True)
-except Exception:
-    pass
+# [신규] 사건 전/후 캡처 이미지.
+#
+# a_core(낙하물)와 e_tracking(SmartCCTV, 이상운전)이 이미 쓰고 있는 것과 동일한
+# 패턴 - 위반이 잡힌 "그 순간"의 프레임을 "후" 캡처로, 그보다 BEFORE_CAPTURE_SECONDS
+# 초 전 프레임을 "전" 캡처로 저장해서 b_dashboard/public/captures/ 에 JPEG로 둔다.
+# b_dashboard가 이 폴더를 정적으로 그대로 서빙하므로, 대시보드/리포트는
+# "/captures/<uuid>.jpg" 경로만 그대로 쓰면 된다.
+PROJECT_ROOT = BASE.parent
+CAPTURES_DIR = PROJECT_ROOT / "b_dashboard" / "public" / "captures"
+BEFORE_CAPTURE_SECONDS = 2.0
+# [신규: 사용자 요청 - "차 뒷바퀴가 정지선을 넘어서 한 번 찍고, 다 넘고 2초 뒤 한 번
+# 더 찍어달라"] 신호위반(RED_LIGHT)은 유턴과 캡처 타이밍 개념이 다르다 - 유턴은
+# "위반 전 상태"를 보여주는 게 중요해서 판정 이전 프레임을 쓰지만, 신호위반은
+# "정지선을 넘는 그 순간"이 이미 위반 증거이므로 그걸 첫 캡처로 쓰고, 두 번째
+# 캡처는 그로부터 AFTER_CAPTURE_SIGNAL_SECONDS(영상 시각 기준)초 뒤 - 차량이
+# 교차로를 완전히 통과한 모습을 보여준다.
+AFTER_CAPTURE_SIGNAL_SECONDS = 2.0
 
 
-def save_capture(cv2, frame, cam_id, tag):
-    """사건 전/후 캡처 이미지를 b_dashboard/public/captures에 저장하고 경로 반환."""
+def save_capture(cv2, frame, cam_id: str, tag: str) -> str | None:
+    """프레임 1장을 JPEG로 저장하고 "/captures/<uuid>.jpg" 경로를 돌려준다.
+
+    frame이 없거나 저장에 실패해도 None만 돌려주고 예외를 던지지 않는다 -
+    캡처 실패가 위반 감지 루프를 멈추면 안 된다.
+    """
     if frame is None:
         return None
-    filename = f"{cam_id}_{tag}_{uuid.uuid4().hex[:8]}.jpg"
+    CAPTURES_DIR.mkdir(parents=True, exist_ok=True)
+    filename = f"{uuid.uuid4().hex}.jpg"
+    filepath = CAPTURES_DIR / filename
     try:
-        ok = cv2.imwrite(str(CAPTURES_DIR / filename), frame)
-        if ok:
-            return f"/captures/{filename}"
+        ok = cv2.imwrite(str(filepath), frame)
     except Exception as e:
-        print(f"  ⚠ 캡처 이미지 저장 오류: {e}")
-    return None
+        print(f"[CAPTURE] {cam_id}/{tag}: 캡쳐 저장 중 오류: {e}")
+        return None
+    if not ok:
+        print(f"[CAPTURE] {cam_id}/{tag}: 캡쳐 이미지 저장 실패 ({filepath})")
+        return None
+    return f"/captures/{filename}"
 
 from app.core.schemas import ViolationType                       # noqa: E402
 from app.violation.engine import ViolationEngine                 # noqa: E402
@@ -237,6 +258,89 @@ def update_demo_moving_roi(cz, ts, spec):
         line.p1 = lerp_point(motion["p1_start"], motion["p1_end"], ratio)
         line.p2 = lerp_point(motion["p2_start"], motion["p2_end"], ratio)
 
+# 새로 추가 (main() 함수 정의 바로 위)
+def run_journey_follow(a) -> None:
+    """--journey-role follow 전용 경로. ROI(config_zones.json)도, ViolationEngine도
+    거치지 않는다 - 이 카메라는 실제 위반을 판정하지 않고, 영상에 차량이 처음
+    나타나는 순간 이전 카메라(--journey-peer-cam)의 확정 번호판을 그대로 이어받아
+    /api/cctv/journey 로 Journey 연장만 보낸다."""
+    if not a.video:
+        sys.exit("--journey-role follow 는 --video 가 필요합니다.")
+    if not a.gateway:
+        sys.exit("--journey-role follow 는 --gateway 가 필요합니다 "
+                 "(이전 카메라 번호판 조회 + Journey 전송).")
+
+    # 변경 후
+    from app.core.journey import (
+        fetch_latest_plate, send_journey_update, CAMERA_LOCATIONS, build_route_points,
+    )
+
+    if a.cam not in CAMERA_LOCATIONS:
+        sys.exit(f"'{a.cam}' 의 위경도가 app/core/journey.py CAMERA_LOCATIONS 에 없습니다. "
+                 f"먼저 한 줄 추가하세요.")
+
+    plate = fetch_latest_plate(a.gateway, a.journey_peer_cam) if a.journey_peer_cam else ""
+    if plate:
+        print(f"Journey: {a.journey_peer_cam}에서 확정된 번호판 '{plate}'을 이어받습니다.")
+    else:
+        print(f"Journey: {a.journey_peer_cam}의 확정 번호판을 아직 못 찾았습니다 "
+              f"(먼저 그 카메라를 --journey-role start 로 돌려 위반을 확정시켜 두세요). "
+              f"번호판 없이 이어집니다.")
+
+    try:
+        import cv2
+    except ImportError:
+        sys.exit("OpenCV 가 필요합니다:  pip install opencv-python")
+    try:
+        from app.violation.vehicle_track import VehicleSource
+    except ImportError:
+        sys.exit("ultralytics 가 필요합니다:  pip install ultralytics")
+
+    src = VehicleSource(a.video, cam_id=a.cam, weights=a.weights, conf=a.conf,
+                        stride=a.stride, imgsz=a.imgsz)
+
+    sent = False
+    processed = 0
+    t_start = time.time()
+    for frame_no, ts, frame, dets in src.frames():
+        processed += 1
+
+        # 변경 후
+        if not sent and dets:
+            peer_loc = CAMERA_LOCATIONS.get(a.journey_peer_cam)
+            here_loc = CAMERA_LOCATIONS[a.cam]
+            if peer_loc:
+                # 직선이 아니라 실제 도로를 따라가는 경로로 이어준다(OSRM).
+                points = build_route_points(peer_loc, here_loc)
+            else:
+                points = [{"lat": here_loc["lat"], "lng": here_loc["lng"]}]
+            send_journey_update(a.gateway, True, a.cam, points)
+            print(f"\n  ★ Journey 연장  t={ts:6.2f}s  {a.journey_peer_cam} → {a.cam}"
+                  + (f"  번호판={plate}" if plate else ""))
+            sent = True
+            if not a.show:
+                break  # --show 없으면 트리거 즉시 종료 (영상 끝까지 돌 필요 없음)
+
+        if a.show:
+            vis = frame.copy()
+            for d in dets:
+                x1, y1, x2, y2 = d.bbox.to_xyxy()
+                cv2.rectangle(vis, (x1, y1), (x2, y2), (0, 200, 0), 2)
+            cv2.imshow("journey-follow", cv2.resize(vis, None, fx=0.6, fy=0.6))
+            if cv2.waitKey(1) & 0xFF == ord("q"):
+                break
+
+        if processed % 30 == 0:
+            print(f"\r  {frame_no+1}/{src.total or '?'} 프레임  "
+                  f"({processed / max(1e-6, time.time() - t_start):.1f} fps 처리)",
+                  end="", flush=True)
+
+    if a.show:
+        cv2.destroyAllWindows()
+    if not sent:
+        print("\n  ⚠ 영상 전체에서 차량이 한 번도 감지되지 않아 Journey를 보내지 못했습니다.")
+    print(f"\n처리 프레임 {processed}")
+
 
 # --------------------------------------------------------------------------
 def main() -> None:
@@ -271,8 +375,18 @@ def main() -> None:
     ap.add_argument("--plate-hold", type=float, default=2.0, metavar="SEC",
                     help="위반이 잡혔는데 번호판이 아직 확정 전이면 이만큼(영상 시각 기준 초) "
                          "기다렸다 전송한다. 0 이면 기다리지 않고 예전처럼 즉시 보낸다")
+    # 변경 후
     ap.add_argument("--mode", choices=["all", "uturn", "signal"], default="all",
                     help="감지 모드 (all: 불법유턴+신호위반, uturn: 불법유턴만, signal: 신호위반만)")
+    ap.add_argument("--journey-role", choices=["", "start", "follow"], default="",
+                    help="GIS 이동 경로(Journey) 데모용. 'start': 이 카메라에서 위반이 잡히면 "
+                         "여정을 시작한다(예: 한강중학교/L010321). 'follow': 이전 카메라"
+                         "(--journey-peer-cam)에서 확정된 번호판을 그대로 이어받아 이 카메라"
+                         "에서도 같은 차량으로 잡은 것처럼 여정을 연장한다(예: 녹사평역/L010062).")
+    ap.add_argument("--journey-peer-cam", default="", metavar="CAM_ID",
+                    help="--journey-role follow 일 때, 바로 이전 지점의 cam_id. 그 카메라의 "
+                         "가장 최근 확정 번호판을 자동으로 가져와 이 카메라 LPR 결과 대신 "
+                         "강제로 사용한다.")
     ap.add_argument(
         "--demo-moving-roi",
         default="",
@@ -280,14 +394,27 @@ def main() -> None:
         help="1인칭 게임 신호위반 데모 전용 이동 ROI 설정 파일. "
             "정지선/진출선에만 적용하며 불법유턴 ROI에는 적용하지 않음.",
     )
+    # 변경 후
     a = ap.parse_args()
+
+    if a.journey_role == "follow":
+        # 이 카메라는 ROI도 ViolationEngine도 필요 없다 - 차량이 나타나는 순간
+        # 이전 카메라의 확정 번호판을 그대로 이어받아 Journey만 보낸다.
+        run_journey_follow(a)
+        return
 
     if a.mode == "uturn":
         watched_types = (ViolationType.ILLEGAL_UTURN,)
+        # [버그 수정] 반대쪽(--mode signal) 프로세스가 담당하는 유형은 게이트웨이로
+        # 보내지 않는다 - 안 그러면 중앙선+정지선이 둘 다 있는 카메라에서 두 프로세스가
+        # 같은 위반을 각자 감지해 이벤트가 중복으로 뜬다 (plate_hold.py 주석 참고).
+        excluded_types = {ViolationType.RED_LIGHT.value}
     elif a.mode == "signal":
         watched_types = (ViolationType.RED_LIGHT,)
+        excluded_types = {ViolationType.ILLEGAL_UTURN.value}
     else:
         watched_types = (ViolationType.ILLEGAL_UTURN, ViolationType.RED_LIGHT)
+        excluded_types = set()
 
     # 1인칭 게임 신호위반 데모 전용 이동 ROI 설정
     moving_roi = None
@@ -394,23 +521,44 @@ def main() -> None:
     # --- 엔진 --------------------------------------------------------
     engine = ViolationEngine(zones=zones, signal_provider=signal, lpr=lpr_pipeline)
 
+    # 변경 후
     gw = None
     forwarder = None
     if a.gateway:
         gw = GatewayClient(base_url=a.gateway).start()
-        if a.lpr and a.plate_hold > 0:
-            # 위반은 라인을 넘는 "그 순간" 확정되고, 번호판은 여러 프레임을 모아
-            # 확정된다. 즉시 보내면 이벤트 리포트의 "차량 번호판"이 빈 채로 굳는다.
-            # subscribe_to_bus() 와 둘 다 붙이면 같은 이벤트가 두 번 나가므로 하나만.
+
+        force_plate = ""
+        if a.journey_role == "follow" and a.journey_peer_cam:
+            from app.core.journey import fetch_latest_plate  # noqa: E402
+
+            force_plate = fetch_latest_plate(a.gateway, a.journey_peer_cam)
+            if force_plate:
+                print(f"Journey: {a.journey_peer_cam}에서 확정된 번호판 '{force_plate}'을 "
+                      f"이어받아 이 카메라에서 강제로 사용합니다.")
+            else:
+                print(f"Journey: {a.journey_peer_cam}의 확정 번호판을 아직 못 찾았습니다 "
+                      f"(먼저 그 카메라를 --journey-role start 로 돌려 위반을 확정시켜 두세요). "
+                      f"이번 실행에서는 번호판 없이 이어집니다.")
+
+        # 위반은 라인을 넘는 "그 순간" 확정되고, 번호판은 여러 프레임을 모아
+        # 확정된다. 즉시 보내면 이벤트 리포트의 "차량 번호판"이 빈 채로 굳는다.
+        # subscribe_to_bus() 와 둘 다 붙이면 같은 이벤트가 두 번 나가므로 하나만.
+        # journey_role이 설정된 경우, --lpr 없이도 force_plate만으로 이어지도록
+        # forwarder를 만든다(신호위반2 카메라는 자체 LPR 없이도 동작해야 하므로).
+        if (a.lpr and a.plate_hold > 0) or a.journey_role:
             from app.core.plate_hold import PlateHoldForwarder  # noqa: E402
 
             forwarder = PlateHoldForwarder(
-                gateway=gw, lpr=engine.lpr, matcher=engine.matcher,
-                hold_sec=a.plate_hold,
+                gateway=gw, lpr=engine.lpr if a.lpr else None, matcher=engine.matcher,
+                hold_sec=a.plate_hold, excluded_types=frozenset(excluded_types),
+                gateway_origin=a.gateway,
+                journey_role=a.journey_role,
+                journey_peer_cam_id=a.journey_peer_cam,
+                force_plate=force_plate,
             ).attach()
             print(f"게이트웨이 전송: {gw.url}  (번호판 확정 대기 {a.plate_hold:g}초)")
         else:
-            gw.subscribe_to_bus()
+            gw.subscribe_to_bus(excluded_types=excluded_types)
             print(f"게이트웨이 전송: {gw.url}")
 
     # --- 차량 검출 ---------------------------------------------------
@@ -443,6 +591,26 @@ def main() -> None:
     t_start = time.time()
     processed = 0
 
+    # 최근 BEFORE_CAPTURE_SECONDS초 분량의 (영상 시각, 프레임)만 들고 있는다.
+    # 위반이 잡히는 순간 frame_buffer[0]이 "그 몇 초 전" 프레임이 된다 - a_core/
+    # e_tracking의 first_frame/frame_buffer와 동일한 역할.
+    frame_buffer: deque = deque()
+    # [신규] 신호위반 전용 - "정지선 넘는 순간" 캡처는 이미 찍어서 PATCH까지 보냈고,
+    # "그로부터 2초 뒤" 캡처만 기다리는 중인 건들. {track_id, target_ts} 형태.
+    pending_signal_after: list[dict] = []
+    # [신규] "차 뒷바퀴가 정지선을 넘는 그 순간"의 프레임을 신호위반 확정 전에 미리
+    # 캡처해 둔다 - (cam_id, track_id, intersection_id) -> "/captures/....jpg".
+    # RedLightDetector.check()는 진출선까지 넘어야 위반이 "확정"되는데, 그 확정
+    # 시점의 frame은 이미 교차로를 다 지나간 뒤라 정지선을 넘는 순간이 아니다.
+    # engine.red_light._pending에 막 후보로 등록된 바로 그 프레임을 여기서 미리
+    # 캡처해 뒀다가, 나중에 확정되면 "전" 캡처로 재사용한다.
+    signal_before_captures: dict[tuple, str] = {}
+    # 위반 잡힌 순간 곧바로 PATCH를 보내면, --plate-hold로 이벤트 POST 자체가
+    # 뒤로 미뤄져 있을 때 캡처 PATCH가 이벤트 생성보다 먼저 게이트웨이에 도착해
+    # "그 trackId 이벤트가 아직 없음"으로 조용히 무시될 수 있다. 이벤트가 실제로
+    # 나갈 시점 이후에 PATCH가 도착하도록 그만큼 지연을 준다.
+    capture_delay_sec = (a.plate_hold + 0.5) if (forwarder is not None) else 0.0
+
     for frame_no, ts, frame, dets in src.frames():
         processed += 1
 
@@ -459,6 +627,10 @@ def main() -> None:
                 src.fps / a.stride,
                 src.size,
             )
+
+        frame_buffer.append((ts, frame))
+        while frame_buffer and ts - frame_buffer[0][0] > BEFORE_CAPTURE_SECONDS:
+            frame_buffer.popleft()
 
         watching: dict[int, tuple] = {}
         for d in dets:
@@ -490,7 +662,75 @@ def main() -> None:
                 print(f"\n  ★ {VTYPE_KO[ev.violation_type]}  t={ts:6.2f}s  "
                       f"track=#{ev.track_id}  "
                       f"{ev.subtype or ev.zone_id}  {ev.detail}")
+
+                if ev.violation_type == ViolationType.RED_LIGHT:
+                    # [수정] "전" 캡처 = 차 뒷바퀴가 정지선을 "넘는 바로 그 순간"의
+                    # 프레임(위 signal_before_captures에 미리 캡처해 둔 것을 재사용) -
+                    # 여기 확정 시점의 frame은 이미 교차로를 다 지나간 뒤라서 안 쓴다.
+                    # "후"는 지금 당장이 아니라 AFTER_CAPTURE_SIGNAL_SECONDS초 뒤(영상
+                    # 시각 기준, 교차로를 다 통과한 모습)로 미룬다 - 그래서 여기선
+                    # "전"만 즉시 전송하고, "후"는 아래 pending_signal_after 큐에
+                    # 넣어 이후 프레임에서 채운다.
+                    before_key = (ev.cam_id, ev.track_id, ev.zone_id)
+                    frame_ref_before = signal_before_captures.pop(before_key, None)
+                    if frame_ref_before is None:
+                        # 못 찾았으면(캐시가 이미 정리됐거나 등) 예전처럼 확정 시점
+                        # 프레임으로라도 대체한다 - "전" 사진이 아예 안 남는 것보다 낫다.
+                        frame_ref_before = save_capture(cv2, frame, a.cam, "signal-before")
+                    if gw is not None and frame_ref_before:
+                        gw.update_captures(
+                            f"trk-{ev.cam_id}-{ev.track_id}", frame_ref_before, None,
+                            delay_sec=capture_delay_sec,
+                        )
+                    pending_signal_after.append({
+                        "track_id": ev.track_id,
+                        "cam_id": ev.cam_id,
+                        "target_ts": ts + AFTER_CAPTURE_SIGNAL_SECONDS,
+                    })
+                else:
+                    # [기존] 유턴 - "전"은 frame_buffer에 남아있는 가장 오래된
+                    # (=이 순간 기준 BEFORE_CAPTURE_SECONDS초 전) 프레임, "후"는 위반이
+                    # 확정된 바로 이 프레임.
+                    before_frame = frame_buffer[0][1] if frame_buffer else None
+                    frame_ref_before = save_capture(cv2, before_frame, a.cam, "before")
+                    frame_ref_after = save_capture(cv2, frame, a.cam, "after")
+                    if gw is not None and (frame_ref_before or frame_ref_after):
+                        gw.update_captures(
+                            f"trk-{ev.cam_id}-{ev.track_id}", frame_ref_before, frame_ref_after,
+                            delay_sec=capture_delay_sec,
+                        )
             watching[d.track_id] = (d.bbox, state)
+
+        # [신규] 방금 정지선을 넘어 후보로 등록된 건이 있으면, 지금 이 프레임을
+        # "정지선을 넘는 순간"의 캡처로 미리 저장해 둔다. frame_no가 pending에
+        # 기록된 값과 같아야 "막 등록된" 것이므로 중복 캡처하지 않는다.
+        for key, (_p_ts, p_frame_no, _p_pt) in engine.red_light._pending.items():
+            if p_frame_no == frame_no and key not in signal_before_captures:
+                cap_path = save_capture(cv2, frame, a.cam, "signal-before")
+                if cap_path:
+                    signal_before_captures[key] = cap_path
+        # 확정됐거나(위에서 이미 소비) 타임아웃/취소돼 _pending에서 사라진 건은
+        # 여기 캐시에도 계속 남아있을 이유가 없다 - 메모리 누수 방지.
+        for stale_key in [k for k in signal_before_captures if k not in engine.red_light._pending]:
+            del signal_before_captures[stale_key]
+
+        # [신규] 신호위반 "2초 뒤" 캡처 - 목표 시각(target_ts)에 도달한 건부터
+        # 지금 프레임을 "후" 캡처로 저장해서 PATCH로 채워 넣는다. frame_ref_before를
+        # None으로 보내므로(EventService가 null 필드는 덮어쓰지 않음) 이미 저장된
+        # "전" 캡처는 그대로 유지된다.
+        if pending_signal_after:
+            still_pending = []
+            for item in pending_signal_after:
+                if ts >= item["target_ts"]:
+                    frame_ref_after = save_capture(cv2, frame, a.cam, "signal-after")
+                    if gw is not None and frame_ref_after:
+                        gw.update_captures(
+                            f"trk-{item['cam_id']}-{item['track_id']}", None, frame_ref_after,
+                            delay_sec=capture_delay_sec,
+                        )
+                else:
+                    still_pending.append(item)
+            pending_signal_after = still_pending
 
         # 보류 중인 위반 이벤트 중 번호판이 확정됐거나 대기 시간을 넘긴 건을 내보낸다.
         if forwarder is not None:
@@ -514,6 +754,19 @@ def main() -> None:
                   f"({processed / max(1e-6, time.time() - t_start):.1f} fps 처리)",
                   end="", flush=True)
 
+    # [신규] 영상이 끝날 때까지 target_ts(정지선 통과 +2초)에 못 미친 신호위반
+    # 건이 남아있으면 - 있는 그대로 마지막 프레임을 "후" 캡처로 써서 보낸다
+    # (forwarder.flush()와 같은 취지: 캡처가 아예 안 붙은 채로 끝나는 일은 없게 한다).
+    if pending_signal_after:
+        for item in pending_signal_after:
+            frame_ref_after = save_capture(cv2, frame, a.cam, "signal-after")
+            if gw is not None and frame_ref_after:
+                gw.update_captures(
+                    f"trk-{item['cam_id']}-{item['track_id']}", None, frame_ref_after,
+                    delay_sec=capture_delay_sec,
+                )
+        pending_signal_after = []
+
     if api_signal is not None:
         api_signal.stop()
         print(f"\n신호 API 폴링 {api_signal.stats['polls']}회 "
@@ -524,6 +777,11 @@ def main() -> None:
         forwarder.detach()
         print(f"번호판 대기 결과: {forwarder.stats}")
     if gw is not None:
+        # update_captures()가 delay_sec만큼 지연 후 PATCH를 보내는 백그라운드 스레드를
+        # daemon으로 띄우기 때문에, 여기서 join하지 않고 바로 stop()/프로세스 종료로 넘어가면
+        # 아직 sleep 중이던 캡처 전송 스레드가 통째로 죽어 "이미지 없음"이 발생한다.
+        # 반드시 stop()보다 먼저 호출해서 지연 전송이 끝날 때까지 기다려야 한다.
+        gw.join_captures(timeout=capture_delay_sec + 3.0)
         gw.stop(drain=True)
         print(f"게이트웨이 전송 결과: {gw.stats}")
     if writer is not None:

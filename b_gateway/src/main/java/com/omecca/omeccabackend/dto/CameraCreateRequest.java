@@ -33,4 +33,7 @@ public class CameraCreateRequest {
 
     /** 신호위반 자동 감지 사용 여부 */
     private Boolean signalDetectionEnabled;
+
+    /** 수배자/흉기(C파트) 자동 감지 사용 여부. 안 보내면 false로 시작 */
+    private Boolean personRiskDetectionEnabled;
 }
