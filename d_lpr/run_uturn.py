@@ -598,6 +598,13 @@ def main() -> None:
     # [신규] 신호위반 전용 - "정지선 넘는 순간" 캡처는 이미 찍어서 PATCH까지 보냈고,
     # "그로부터 2초 뒤" 캡처만 기다리는 중인 건들. {track_id, target_ts} 형태.
     pending_signal_after: list[dict] = []
+    # [신규] "차 뒷바퀴가 정지선을 넘는 그 순간"의 프레임을 신호위반 확정 전에 미리
+    # 캡처해 둔다 - (cam_id, track_id, intersection_id) -> "/captures/....jpg".
+    # RedLightDetector.check()는 진출선까지 넘어야 위반이 "확정"되는데, 그 확정
+    # 시점의 frame은 이미 교차로를 다 지나간 뒤라 정지선을 넘는 순간이 아니다.
+    # engine.red_light._pending에 막 후보로 등록된 바로 그 프레임을 여기서 미리
+    # 캡처해 뒀다가, 나중에 확정되면 "전" 캡처로 재사용한다.
+    signal_before_captures: dict[tuple, str] = {}
     # 위반 잡힌 순간 곧바로 PATCH를 보내면, --plate-hold로 이벤트 POST 자체가
     # 뒤로 미뤄져 있을 때 캡처 PATCH가 이벤트 생성보다 먼저 게이트웨이에 도착해
     # "그 trackId 이벤트가 아직 없음"으로 조용히 무시될 수 있다. 이벤트가 실제로
@@ -657,12 +664,19 @@ def main() -> None:
                       f"{ev.subtype or ev.zone_id}  {ev.detail}")
 
                 if ev.violation_type == ViolationType.RED_LIGHT:
-                    # [신규] 신호위반 - "뒷바퀴가 정지선을 넘어서" 확정된 이 순간을
-                    # 첫 캡처("전")로 쓰고, "후"는 지금 당장이 아니라 AFTER_CAPTURE_
-                    # SIGNAL_SECONDS초 뒤(영상 시각 기준, 교차로를 다 통과한 모습)로
-                    # 미룬다 - 그래서 여기선 "전"만 즉시 캡처/전송하고, "후"는 아래
-                    # pending_signal_after 큐에 넣어 이후 프레임에서 채운다.
-                    frame_ref_before = save_capture(cv2, frame, a.cam, "signal-before")
+                    # [수정] "전" 캡처 = 차 뒷바퀴가 정지선을 "넘는 바로 그 순간"의
+                    # 프레임(위 signal_before_captures에 미리 캡처해 둔 것을 재사용) -
+                    # 여기 확정 시점의 frame은 이미 교차로를 다 지나간 뒤라서 안 쓴다.
+                    # "후"는 지금 당장이 아니라 AFTER_CAPTURE_SIGNAL_SECONDS초 뒤(영상
+                    # 시각 기준, 교차로를 다 통과한 모습)로 미룬다 - 그래서 여기선
+                    # "전"만 즉시 전송하고, "후"는 아래 pending_signal_after 큐에
+                    # 넣어 이후 프레임에서 채운다.
+                    before_key = (ev.cam_id, ev.track_id, ev.zone_id)
+                    frame_ref_before = signal_before_captures.pop(before_key, None)
+                    if frame_ref_before is None:
+                        # 못 찾았으면(캐시가 이미 정리됐거나 등) 예전처럼 확정 시점
+                        # 프레임으로라도 대체한다 - "전" 사진이 아예 안 남는 것보다 낫다.
+                        frame_ref_before = save_capture(cv2, frame, a.cam, "signal-before")
                     if gw is not None and frame_ref_before:
                         gw.update_captures(
                             f"trk-{ev.cam_id}-{ev.track_id}", frame_ref_before, None,
@@ -686,6 +700,19 @@ def main() -> None:
                             delay_sec=capture_delay_sec,
                         )
             watching[d.track_id] = (d.bbox, state)
+
+        # [신규] 방금 정지선을 넘어 후보로 등록된 건이 있으면, 지금 이 프레임을
+        # "정지선을 넘는 순간"의 캡처로 미리 저장해 둔다. frame_no가 pending에
+        # 기록된 값과 같아야 "막 등록된" 것이므로 중복 캡처하지 않는다.
+        for key, (_p_ts, p_frame_no, _p_pt) in engine.red_light._pending.items():
+            if p_frame_no == frame_no and key not in signal_before_captures:
+                cap_path = save_capture(cv2, frame, a.cam, "signal-before")
+                if cap_path:
+                    signal_before_captures[key] = cap_path
+        # 확정됐거나(위에서 이미 소비) 타임아웃/취소돼 _pending에서 사라진 건은
+        # 여기 캐시에도 계속 남아있을 이유가 없다 - 메모리 누수 방지.
+        for stale_key in [k for k in signal_before_captures if k not in engine.red_light._pending]:
+            del signal_before_captures[stale_key]
 
         # [신규] 신호위반 "2초 뒤" 캡처 - 목표 시각(target_ts)에 도달한 건부터
         # 지금 프레임을 "후" 캡처로 저장해서 PATCH로 채워 넣는다. frame_ref_before를
