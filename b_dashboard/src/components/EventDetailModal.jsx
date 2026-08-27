@@ -32,6 +32,31 @@ function fmtLocationLabel(ev) {
   return ev.meta?.locationLabel ?? ev.meta?.location ?? ev.location?.label ?? fmtLocation(ev)
 }
 
+// 차량 DB 대조 결과. d_lpr(LPR 모듈)이 번호판을 읽은 뒤 vehicle 테이블과 맞춰 보고
+// meta.vehicleStatus 로 실어 보낸다 — 값은 진작 오고 있었는데 화면에 그리질 않아서
+// "미등록인지 등록인지 안 보인다"는 얘기가 나왔다.
+const VEHICLE_STATUS_LABEL = {
+  registered: '등록 차량',
+  unregistered: 'DB 미등록',
+  stolen: '도난 신고',
+  wanted: '수배 차량',
+  fake_plate: '대포차 의심',
+  impound: '과태료 체납 영치 대상',
+  insurance_expired: '책임보험 만료',
+}
+
+// 등록 차량만 평범하게, 나머지는 전부 눈에 띄게. 미등록도 고위험으로 본다
+// (수배·도난 차량이 번호판을 갈아 끼우면 DB 에 없는 번호로 나타나기 때문).
+const VEHICLE_STATUS_ALERT = new Set([
+  'unregistered', 'stolen', 'wanted', 'fake_plate', 'impound', 'insurance_expired',
+])
+
+function fmtVehicleStatus(ev) {
+  const s = ev.meta?.vehicleStatus
+  if (!s) return null
+  return { key: s, label: VEHICLE_STATUS_LABEL[s] ?? s, alert: VEHICLE_STATUS_ALERT.has(s) }
+}
+
 export default function EventDetailModal({ event, onClose }) {
   const [generating, setGenerating] = useState(false)
   // "카메라 / 위치" 행의 위치는 event.location(lat/lng)이 a_core에서 항상 null로 오기
@@ -91,6 +116,20 @@ export default function EventDetailModal({ event, onClose }) {
             <tr><th>카메라 / 위치</th><td>{event.camId || '-'} · {cameraName || fmtLocationLabel(event)}</td></tr>
             <tr><th>추적 ID</th><td>{event.trackId || '-'}</td></tr>
             <tr><th>차량 번호판</th><td>{fmtPlate(event)}</td></tr>
+            {(() => {
+              const vs = fmtVehicleStatus(event)
+              // 번호판을 못 읽은 이벤트에는 대조 결과 자체가 없다. 그럴 때 '-' 를
+              // 띄우면 "조회했는데 아무것도 아님"처럼 보이므로 행을 아예 감춘다.
+              if (!vs) return null
+              return (
+                <tr>
+                  <th>차량 조회</th>
+                  <td style={vs.alert ? { color: '#d92d20', fontWeight: 600 } : undefined}>
+                    {vs.label}
+                  </td>
+                </tr>
+              )
+            })()}
             <tr><th>탐지 신뢰도</th><td>{event.confidence != null ? `${(event.confidence * 100).toFixed(1)}%` : '-'}</td></tr>
           </tbody>
         </table>

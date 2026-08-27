@@ -35,6 +35,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
+from . import journey
 from .bus import TOPIC_VIOLATION, bus
 from .gateway import GatewayClient, payload_from_bus
 
@@ -66,10 +67,31 @@ class PlateHoldForwarder:
     반드시 루프 안과 종료 직전에 한 번씩 부른다.
     """
 
+    # 변경 후
     gateway: GatewayClient
     lpr: Any                       # LPRPipeline (confirmed_plate/confidence_of 만 쓴다)
     matcher: Any = None            # VehicleMatcher (선택) — 뒤늦게 붙은 번호판의 DB 대조용
     hold_sec: float = 2.0          # 영상 시각 기준 보류 시간(초)
+
+    # [버그 수정: "유턴+신호위반 ROI가 둘 다 있는 카메라에서 같은 위반이 이벤트에
+    # 두 번(중복) 뜬다"] camera_watcher.py는 이런 카메라에 대해 --mode uturn과
+    # --mode signal, 두 개의 run_uturn.py 프로세스를 동시에 켠다. 그런데 각 프로세스의
+    # ViolationEngine은 --zones에 있는 설정을 전부 로드하므로, 두 프로세스 모두 같은
+    # 영상에서 같은 위반(예: 유턴)을 각자 독립적으로 감지해서 버스에 publish한다
+    # (engine.py의 bus.publish는 --mode와 무관하게 항상 실행됨). 지금까지는 여기서
+    # 그걸 걸러주는 게 하나도 없어서 두 프로세스 모두 게이트웨이로 전송 → 이벤트 중복
+    # + 그 중 한쪽만 사건 전/후 캡처(PATCH)를 붙이는 경로를 타서, PATCH가 엉뚱한
+    # (사진 없는) 중복 이벤트에 붙어 "사건 발생 전" 사진이 검게 나오는 문제까지 이어졌다.
+    # run_uturn.py가 자기 프로세스가 담당하지 않는 위반 유형(반대쪽 --mode가 담당하는
+    # 유형)의 값을 넘겨주면, 그 유형은 여기서 조용히 무시한다. high_risk_vehicle처럼
+    # 어느 --mode에도 안 걸리는 유형은 그대로 다 통과시킨다(빈 집합이면 필터 없음).
+    excluded_types: frozenset = field(default_factory=frozenset)
+
+    # --- GIS 이동 경로(Journey) 데모 전용 (선택) --------------------------------
+    gateway_origin: str = ""       # journey POST용 base URL (예: http://localhost:8080)
+    journey_role: str = ""         # "" | "start" | "follow"
+    journey_peer_cam_id: str = ""  # journey_role="follow"일 때, 이전 카메라의 cam_id
+    force_plate: str = ""          # 설정돼 있으면 LPR 결과 대신 이 번호판으로 강제 고정
 
     _pending: list[_Pending] = field(default_factory=list, init=False)
     _attached: bool = field(default=False, init=False)
@@ -105,11 +127,24 @@ class PlateHoldForwarder:
         if topic != TOPIC_VIOLATION:
             return
 
+        # 이 프로세스(--mode)가 담당하지 않는 위반 유형이면 아예 받지 않는다
+        # (위 excluded_types 주석 참고 - 중복 이벤트 방지).
+        if self.excluded_types and payload.get("type") in self.excluded_types:
+            return
+
         # Deduplicate by cam_id+track_id: if already sent, ignore
         track_id = _as_int(payload.get("track_id"))
         cam_id = str(payload.get("cam_id") or "")
         if (cam_id, track_id) in self._sent_tracks:
             return
+
+        # 변경 후
+        if not payload.get("plate_no") and self.force_plate:
+            # journey_role="follow"용: 이 카메라 LPR 결과를 기다리지 않고, 이전 카메라
+            # (journey_peer_cam_id)에서 이미 확정된 번호판으로 강제 고정한다. 두 영상이
+            # 실제로는 다른 차량을 찍었더라도(데모 특성상) Journey 상에서는 같은 차량으로
+            # 대시보드/지도에 표시하기 위함이다.
+            payload["plate_no"] = self.force_plate
 
         if payload.get("plate_no"):
             # 이미 번호판이 붙어 있다 — 기다릴 이유가 없다.
@@ -216,6 +251,7 @@ class PlateHoldForwarder:
         if conf > 0:
             payload["plate_confidence"] = round(conf, 4)
 
+    # 변경 후
     def _send(self, payload: dict[str, Any]) -> None:
         try:
             track_id = _as_int(payload.get("track_id"))
@@ -226,8 +262,32 @@ class PlateHoldForwarder:
             sent = self.gateway.enqueue(payload_from_bus(payload))
             if sent:
                 self._sent_tracks.add((cam_id, track_id))
+                self._post_journey(cam_id)
         except Exception:
             log.exception("게이트웨이 전송 큐 적재 실패")
+
+    # 변경 후
+    def _post_journey(self, cam_id: str) -> None:
+        """이 이벤트가 GIS 이동 경로(Journey) 데모용으로 설정돼 있으면
+        /api/cctv/journey에도 함께 알려서 대시보드 지도에 polyline이 그려지게 한다."""
+        if not self.journey_role or not self.gateway_origin:
+            return
+        if self.journey_role == "start":
+            here = journey.CAMERA_LOCATIONS.get(cam_id)
+            if not here:
+                return
+            points = [{"lat": here["lat"], "lng": here["lng"]}]
+        elif self.journey_role == "follow":
+            peer = journey.CAMERA_LOCATIONS.get(self.journey_peer_cam_id)
+            here = journey.CAMERA_LOCATIONS.get(cam_id)
+            if not peer or not here:
+                return
+            # 직선이 아니라 실제 도로를 따라가는 경로로 이어준다(OSRM).
+            points = journey.build_route_points(peer, here)
+        else:
+            return
+        if points:
+            journey.send_journey_update(self.gateway_origin, True, cam_id, points)
 
 
 # --------------------------------------------------------------------------

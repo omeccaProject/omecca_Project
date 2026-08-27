@@ -102,6 +102,46 @@ class VehicleSource:
         self.use_bytetrack = use_bytetrack
 
     # ------------------------------------------------------------------
+    @staticmethod
+    def _resolve_local_video(video: str) -> tuple[str, Optional[str]]:
+        """http(s) URL이면 임시 파일로 통째로 내려받아 로컬 경로를 반환한다.
+
+        반환값: (cv2.VideoCapture에 넘길 경로, 나중에 지워야 할 임시파일 경로 또는 None)
+        로컬 파일 경로가 그대로 들어오면 다운로드 없이 그대로 통과시킨다.
+        """
+        if not (video.startswith("http://") or video.startswith("https://")):
+            return video, None
+
+        import tempfile
+        import requests
+
+        suffix = ".mp4"
+        if "." in video.rsplit("/", 1)[-1]:
+            suffix = "." + video.rsplit(".", 1)[-1].split("?", 1)[0]
+
+        fd, tmp_path = tempfile.mkstemp(prefix="d_lpr_dl_", suffix=suffix)
+        try:
+            with requests.get(video, stream=True, timeout=(10, 60)) as resp:
+                resp.raise_for_status()
+                with open(fd, "wb", closefd=True) as f:
+                    for chunk in resp.iter_content(chunk_size=1 << 20):
+                        if chunk:
+                            f.write(chunk)
+            log.info("영상 사전 다운로드 완료(스트림 끊김 방지): %s → %s", video, tmp_path)
+            return tmp_path, tmp_path
+        except Exception:
+            import os
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
+
+    # ------------------------------------------------------------------
     def frames(self) -> Iterator[tuple[int, float, Any, list[Detection]]]:
         """(frame_no, ts, frame, detections) 를 순서대로 내보낸다.
 
@@ -109,8 +149,23 @@ class VehicleSource:
         """
         import cv2
 
-        cap = cv2.VideoCapture(self.video)
+        # [버그 수정: HTTP 스트림 중간 끊김 - "Stream ends prematurely"/"partial file"]
+        # 예전엔 cv2.VideoCapture(self.video)에 게이트웨이 URL을 그대로 넘겨서 ffmpeg가
+        # 프레임을 읽을 때마다 HTTP로 직접 스트리밍해왔다. 문제는 한 프레임 읽고 바로
+        # YOLO 추론(CPU 부하 큰 작업)을 하는 구조라서, 카메라 2대(신호위반+불법유턴)를
+        # 동시에 돌리면 추론 사이 간격이 벌어지고 그 사이 서버(Tomcat) 쪽 커넥션이
+        # 유휴 타임아웃으로 끊기거나 소켓이 밀려서 중간에 스트림이 잘린다.
+        # 실제로 처리 속도가 0.7fps까지 떨어지는 로그로 확인됨 - 순수 CPU 경합 문제.
+        # 고쳐야 할 건 타임아웃 숫자가 아니라 구조: 네트워크 전송(빠름)과 CPU 추론(느림)을
+        # 분리해서, 영상을 로컬 파일로 먼저 통째로 내려받은 뒤 그 로컬 파일을 읽게 한다.
+        # 이러면 추론이 아무리 느려도 HTTP 커넥션은 이미 끝난 뒤라 끊길 일이 없다.
+        local_video, tmp_download = self._resolve_local_video(self.video)
+
+        cap = cv2.VideoCapture(local_video)
         if not cap.isOpened():
+            if tmp_download:
+                import os
+                os.unlink(tmp_download)
             raise RuntimeError(f"영상을 열 수 없습니다: {self.video}")
         self.fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
         self.size = (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
@@ -130,6 +185,12 @@ class VehicleSource:
                 yield frame_no, ts, frame, self._detect(frame, frame_no, ts)
         finally:
             cap.release()
+            if tmp_download:
+                import os
+                try:
+                    os.unlink(tmp_download)
+                except OSError:
+                    pass
 
     # ------------------------------------------------------------------
     def _detect(self, frame, frame_no: int, ts: float) -> list[Detection]:
