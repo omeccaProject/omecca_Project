@@ -4365,7 +4365,7 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
-      if (isTarget && !duiVisuallyDone) {
+      if (isTarget && !duiVisuallyDone && duiJourneyStartedAt !== null) {
         if (targetJourneyStartedAt === null) {
           targetJourneyStartedAt = Date.now();
         }

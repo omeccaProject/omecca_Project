@@ -272,7 +272,10 @@ def run_journey_follow(a) -> None:
         sys.exit(f"'{a.cam}' 의 위경도가 app/core/journey.py CAMERA_LOCATIONS 에 없습니다. "
                  f"먼저 한 줄 추가하세요.")
 
-    plate = fetch_latest_plate(a.gateway, a.journey_peer_cam) if a.journey_peer_cam else ""
+    # 변경 후
+    plate = (fetch_latest_plate(a.gateway, a.journey_peer_cam,
+                               event_type=a.journey_peer_event_type)
+             if a.journey_peer_cam else "")
     if plate:
         print(f"Journey: {a.journey_peer_cam}에서 확정된 번호판 '{plate}'을 이어받습니다.")
     else:
@@ -380,6 +383,11 @@ def main() -> None:
                     help="--journey-role follow 일 때, 바로 이전 지점의 cam_id. 그 카메라의 "
                          "가장 최근 확정 번호판을 자동으로 가져와 이 카메라 LPR 결과 대신 "
                          "강제로 사용한다.")
+    ap.add_argument("--journey-peer-event-type", default="SIGNAL_VIOLATION",
+                choices=["SIGNAL_VIOLATION", "UTURN_VIOLATION"],
+                help="--journey-role follow 일 때, 이전 카메라(--journey-peer-cam)에서 "
+                        "어떤 종류의 위반 이벤트로 확정된 번호판을 찾을지. 신호위반 여정이면 "
+                        "SIGNAL_VIOLATION(기본값), 불법유턴 여정이면 UTURN_VIOLATION.")
     ap.add_argument(
         "--demo-moving-roi",
         default="",
@@ -518,7 +526,8 @@ def main() -> None:
         if a.journey_role == "follow" and a.journey_peer_cam:
             from app.core.journey import fetch_latest_plate  # noqa: E402
 
-            force_plate = fetch_latest_plate(a.gateway, a.journey_peer_cam)
+            force_plate = fetch_latest_plate(a.gateway, a.journey_peer_cam,
+                                            event_type=a.journey_peer_event_type)
             if force_plate:
                 print(f"Journey: {a.journey_peer_cam}에서 확정된 번호판 '{force_plate}'을 "
                       f"이어받아 이 카메라에서 강제로 사용합니다.")

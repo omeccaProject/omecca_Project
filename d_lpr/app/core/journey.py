@@ -27,6 +27,8 @@ log = logging.getLogger("omeca.journey")
 CAMERA_LOCATIONS = {
     "L010321": {"name": "한강중학교", "lat": 37.526369, "lng": 126.991889},
     "L010062": {"name": "녹사평역", "lat": 37.53396, "lng": 126.98769},
+    "L010322": {"name": "한남고가", "lat": 37.53337, "lng": 127.00729},
+    "L010116": {"name": "북한남", "lat": 37.54405, "lng": 127.00155},
 }
 
 GATEWAY_API_KEY = os.environ.get("GATEWAY_API_KEY", "omecca-dev-key-2026")
@@ -121,7 +123,7 @@ def get_road_segment(from_loc: dict, to_loc: dict, cache: Optional[dict] = None)
     # 변경 후
     url = (
         f"{OSRM_BASE_URL}/{from_loc['lng']},{from_loc['lat']};{to_loc['lng']},{to_loc['lat']}"
-        f"?overview=full&geometries=geojson&radiuses=20;20"
+        f"?overview=full&geometries=geojson"
     )
 
     try:
@@ -146,12 +148,15 @@ def build_route_points(from_loc: dict, to_loc: dict) -> list:
     path = get_road_segment(from_loc, to_loc)
     return [{"lat": lat, "lng": lng} for lat, lng in path]
 
+    # 변경 후
 def send_journey_update(gateway_origin: str, active: bool, cam_id: Optional[str],
                          points: list) -> None:
     """VehicleJourneyController(/api/cctv/journey)로 여정 상태를 보낸다.
 
-    실패해도(게이트웨이 미기동 등) 예외를 던지지 않는다 - 지도 표시 실패가 위반 감지
-    자체를 막으면 안 된다(test_suspicious_driving.py의 send_journey_update와 같은 방침).
+    reason="TARGET" 고정: DTO에 이 필드가 추가된 뒤로, 프론트(map.js)가 이 값이
+    없으면(null) "DUI" 흐름으로 간주해서 "CCTV 바로가기 클릭 전까지 버퍼링만 하고
+    polyline을 안 그리는" 별도 로직을 타 버린다(실측 확인됨). 이 데모는 음주운전
+    알림이 아니라 번호판 매칭 기반 일반 차량 추적이므로 TARGET으로 명시한다.
     """
     loc = CAMERA_LOCATIONS.get(cam_id) if active and cam_id else None
     payload = {
@@ -161,6 +166,7 @@ def send_journey_update(gateway_origin: str, active: bool, cam_id: Optional[str]
         "currentLat": loc["lat"] if loc else None,
         "currentLng": loc["lng"] if loc else None,
         "points": points,
+        "reason": "TARGET",
     }
     url = gateway_origin.rstrip("/") + "/api/cctv/journey"
     headers = {"X-API-Key": GATEWAY_API_KEY, "Content-Type": "application/json"}
