@@ -252,8 +252,14 @@
         {
           "line_id": "center_1",
           "name": "중앙선 · 유턴 금지",
-          "p1": [641, 146],
-          "p2": [596, 711],
+          "p1": [
+            640,
+            147
+          ],
+          "p2": [
+            593,
+            714
+          ],
           "direction": "both",
           "line_type": "center",
           "uturn_allowed": false,
@@ -262,16 +268,77 @@
         {
           "line_id": "center_2",
           "name": "중앙선 · 유턴 금지",
-          "p1": [693, 714],
-          "p2": [648, 150],
+          "p1": [
+            650,
+            149
+          ],
+          "p2": [
+            665,
+            707
+          ],
           "direction": "both",
           "line_type": "center",
+          "uturn_allowed": false,
+          "signal_id": "SIG-1"
+        },
+        {
+          "line_id": "center_3",
+          "name": "중앙선 · 유턴 허용",
+          "p1": [
+            652,
+            156
+          ],
+          "p2": [
+            691,
+            710
+          ],
+          "direction": "both",
+          "line_type": "center",
+          "uturn_allowed": true,
+          "signal_id": "SIG-1"
+        },
+        {
+          "line_id": "stop_1",
+          "name": "정지선",
+          "p1": [
+            657,
+            148
+          ],
+          "p2": [
+            866,
+            145
+          ],
+          "direction": "both",
+          "line_type": "stop",
+          "uturn_allowed": false,
+          "signal_id": "SIG-1"
+        },
+        {
+          "line_id": "exit_1",
+          "name": "진출선",
+          "p1": [
+            657,
+            130
+          ],
+          "p2": [
+            837,
+            128
+          ],
+          "direction": "both",
+          "line_type": "exit",
           "uturn_allowed": false,
           "signal_id": "SIG-1"
         }
       ],
       "zones": [],
-      "intersections": []
+      "intersections": [
+        {
+          "intersection_id": "INT-L010263",
+          "stop_line": "stop_1",
+          "exit_line": "exit_1",
+          "signal_id": "SIG-1"
+        }
+      ]
     },
     {
       "cam_id": "L010321",
@@ -316,6 +383,53 @@
         126.978
       ],
       "lines": []
+    },
+    {
+      "cam_id": "L010321",
+      "name": "L010321",
+      "lines": [
+        {
+          "line_id": "stop_1",
+          "name": "정지선",
+          "p1": [
+            398,
+            416
+          ],
+          "p2": [
+            1024,
+            416
+          ],
+          "direction": "both",
+          "line_type": "stop",
+          "uturn_allowed": false,
+          "signal_id": "SIG-1"
+        },
+        {
+          "line_id": "exit_1",
+          "name": "진출선",
+          "p1": [
+            409,
+            383
+          ],
+          "p2": [
+            1011,
+            383
+          ],
+          "direction": "both",
+          "line_type": "exit",
+          "uturn_allowed": false,
+          "signal_id": "SIG-1"
+        }
+      ],
+      "zones": [],
+      "intersections": [
+        {
+          "intersection_id": "INT-L010321",
+          "stop_line": "stop_1",
+          "exit_line": "exit_1",
+          "signal_id": "SIG-1"
+        }
+      ]
     }
   ]
 }
