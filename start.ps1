@@ -12,6 +12,17 @@
 
   DB 는 손댈 필요 없다. 게이트웨이가 뜨면서 Flyway 가 데이터베이스·테이블·시드를
   전부 만든다. schema.sql 을 직접 실행하던 방식은 이제 쓰지 않는다.
+
+  [2026-08-27 수정 - 이시헌]
+  1. 게이트웨이를 예전엔 미리 빌드된 jar로 바로 실행했는데, 다들 코드 계속 
+     고치는 지금 시기엔 "빌드를 깜빡해서 옛날 코드가 실행되는" 사고가 나기 
+     쉽다(예: 오늘 WantedPerson 관련 새 파일 추가 후 jar 재빌드 안 하면 
+     반영 안 됨). 그래서 실행 직전에 항상 자동으로 재빌드하도록 바꿈 - 
+     시간이 조금 더 걸리는 대신(수십 초) "왜 안 바뀌지" 삽질을 원천 차단.
+  2. camera_watcher.py를 그냥 "python"으로 실행하면, 그 파이썬이 venv가 
+     아니라 시스템 기본 파이썬이면 face_recognition 등을 못 찾아 
+     ModuleNotFoundError로 죽는다(오늘 실제로 겪음). venv\Scripts\python.exe가 
+     있으면 그걸 우선 쓰고, 없으면 기존처럼 python으로 폴백하게 함.
 #>
 
 param([switch]$Run, [switch]$Mock)
@@ -58,9 +69,11 @@ if (-not (Test-Path $mapEnv)) {
 Chk "지도 서버 .env" (Test-Path $mapEnv) "e_tracking\SmartCCTV\.env.example 을 .env 로 복사"
 
 # ---------------------------------------------------------------- 빌드 산출물
-$jar = Get-ChildItem (Join-Path $ROOT "b_gateway\target") -Filter "*.jar" -EA SilentlyContinue |
-       Where-Object { $_.Name -notlike "*sources*" } | Select-Object -First 1
-Chk "게이트웨이 jar" ($null -ne $jar) "cd b_gateway;  .\mvnw clean package -DskipTests"
+# [수정] jar 존재 여부만 확인하던 것에서, "빌드는 실행 직전에 항상 새로 한다"로
+# 바뀌었으므로 여기서는 mvnw 존재 여부만 확인한다 - 실제 재빌드는 아래 실행
+# 단계에서 수행.
+Chk "게이트웨이 mvnw" (Test-Path (Join-Path $ROOT "b_gateway\mvnw.cmd")) `
+    "b_gateway 폴더에 mvnw.cmd 가 있는지 확인하세요"
 Chk "대시보드 패키지" (Test-Path (Join-Path $ROOT "b_dashboard\node_modules")) `
     "cd b_dashboard;  npm install"
 Chk "지도 서버 패키지" (Test-Path (Join-Path $ROOT "e_tracking\SmartCCTV\server\node_modules")) `
@@ -90,9 +103,17 @@ function Launch($title, $dir, $cmd) {
     )
 }
 
+# [수정] 게이트웨이는 창 안에서 "재빌드 후 실행"을 한 번에 하도록 명령을 합쳐서 넣는다.
+# mvnw.cmd 는 Windows 배치파일이라 PowerShell에서 직접 호출 시 & 로 감싸야 안전하다.
+# clean package 가 몇십 초 걸릴 수 있으니, 아래 Start-Sleep 대기시간도 12초 → 40초로
+# 늘렸다(테스트는 스킵하지만 컴파일+패키징 자체는 시간이 걸림).
+$gatewayCmd = "& .\mvnw.cmd clean package -DskipTests; " +
+              "`$jar = Get-ChildItem target -Filter '*.jar' | Where-Object { `$_.Name -notlike '*sources*' } | Select-Object -First 1; " +
+              "java -jar `$jar.FullName"
+
 Write-Host ""
-Launch "omecca - gateway :8080" (Join-Path $ROOT "b_gateway") "java -jar '$($jar.FullName)'"
-Start-Sleep -Seconds 12       # Flyway 마이그레이션 + 기동을 기다린다
+Launch "omecca - gateway :8080" (Join-Path $ROOT "b_gateway") $gatewayCmd
+Start-Sleep -Seconds 40       # 재빌드 + Flyway 마이그레이션 + 기동을 기다린다 (기존 12초 → 40초)
 Launch "omecca - map :4000"      (Join-Path $ROOT "e_tracking\SmartCCTV\server") "node server.js"
 Launch "omecca - dashboard :5173" (Join-Path $ROOT "b_dashboard") "npm run dev"
 
@@ -100,9 +121,17 @@ Launch "omecca - dashboard :5173" (Join-Path $ROOT "b_dashboard") "npm run dev"
 # 워처도 매번 손으로 켜지 않고 여기서 같이 띄운다. 간격을 2초로 짧게 줘서, 카메라
 # 등록 후 체감상 거의 즉시 감지가 시작되는 것처럼 보이게 한다 (여전히 폴링 방식이지만
 # 2초면 데모/실사용에서는 "바로 반영된다"로 느껴진다 - 진짜 이벤트 기반 트리거는 아님).
+#
+# [수정] venv\Scripts\python.exe가 있으면 그걸 우선 사용 - face_recognition 등
+# 의존성이 venv에만 설치돼 있는 경우, 시스템 기본 python으로 실행하면
+# ModuleNotFoundError로 곧바로 죽는다(camera_watcher.py가 켜지자마자 실패하는데
+# 워처 자체는 죽지 않고 계속 재시도만 반복해서, 언뜻 보면 떠 있는 것처럼 보여
+# 원인 파악이 늦어지기 쉽다).
 $watcher = Join-Path $ROOT "a_core\camera_watcher.py"
+$venvPython = Join-Path $ROOT "venv\Scripts\python.exe"
+$pythonForWatcher = if (Test-Path $venvPython) { $venvPython } else { "python" }
 if (Test-Path $watcher) {
-    Launch "omecca - camera_watcher" (Join-Path $ROOT "a_core") "python camera_watcher.py --interval 2"
+    Launch "omecca - camera_watcher" (Join-Path $ROOT "a_core") "& '$pythonForWatcher' camera_watcher.py --interval 2"
 } else {
     Write-Host "  [건너뜀] a_core\camera_watcher.py 없음 - 낙하물 자동 감지는 수동 실행 필요" -ForegroundColor DarkGray
 }
