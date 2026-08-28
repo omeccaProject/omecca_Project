@@ -6,6 +6,7 @@ import Badge from './Badge'
 import FrameImage from './FrameImage'
 import LiveHlsVideoWithDetections from './LiveHlsVideoWithDetections'
 import CameraManagerModal from './CameraManagerModal'
+import WantedPersonManagerModal from './WantedPersonManagerModal'
 
 // 아직 이벤트가 안 들어온 카메라도 그리드에 자리를 채워두기 위한 기본 목록.
 const FALLBACK_CAMS = [
@@ -59,6 +60,7 @@ export default function CctvGrid({
 
   // 카메라 관리 모달
   const [showCameraManager, setShowCameraManager] = useState(false)
+  const [showWantedPersonManager, setShowWantedPersonManager] = useState(false)
 
   // 실시간 영상이 연결된 카메라 목록
   const [liveCameras, setLiveCameras] = useState(
@@ -461,6 +463,9 @@ export default function CctvGrid({
               카메라 관리
             </button>
 
+            <button type="button" className="cam-manage-btn" onClick={() => setShowWantedPersonManager(true)}>
+              수배자 관리
+            </button>
             <div className="cam-count-toggle">
               {CAM_COUNT_OPTIONS.map(
                 (n) => (
@@ -795,6 +800,12 @@ export default function CctvGrid({
           onChanged={
             loadLiveCameras
           }
+        />
+      )}
+
+      {showWantedPersonManager && (
+        <WantedPersonManagerModal
+          onClose={() => setShowWantedPersonManager(false)}
         />
       )}
     </section>

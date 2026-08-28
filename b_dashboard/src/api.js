@@ -178,3 +178,51 @@ export async function rejectUser(id) {
   if (!res.ok) throw new Error(await parseErrorMessage(res, '거절 처리에 실패했습니다.'))
   return res.json()
 }
+
+// ============================================================
+// api.js 맨 아래에 추가할 내용 (기존 함수들은 그대로 둠)
+// ============================================================
+// [수정] authHeaders는 파일 5번째 줄에 이미 import돼 있음(관리자 API에서 사용 중) -
+// 다시 import하면 "Duplicate import" 빌드 에러가 나므로 여기선 추가하지 않는다.
+// 아래 코드를 그대로 파일 맨 끝에 붙여넣기만 하면 됨.
+//
+// 수배자 얼굴 등록 API. 다른 등록형 API(카메라 등)와 달리 X-API-Key만으로는 부족하고
+// 실제 로그인한 사용자(JWT)여야 한다 - "누가 수배자를 등록했는지" 감사기록이 남아야
+// 하는 민감한 기능이라, authHeaders()(Authorization: Bearer)를 반드시 같이 보낸다.
+// [참고] 관리자 API 3개(fetchPendingUsers 등)는 authHeaders()만 쓰고 X-API-Key는
+// 안 붙이는데, 여기서는 둘 다 붙인다 - 이 경로가 ApiKeyFilter(X-API-Key 검사)와
+// SecurityConfig(로그인 검사)를 동시에 통과해야 하는 경로일 수 있어 안전하게 둘 다
+// 보냄(성혁 확인 시 실제로 필요 없다고 하면 AUTH_HEADERS는 빼도 무방).
+
+export async function fetchWantedPersons() {
+  const res = await fetch('/api/wanted-persons', {
+    headers: { ...AUTH_HEADERS, ...authHeaders() },
+  })
+  if (!res.ok) throw new Error(`수배자 목록 조회 실패: ${res.status}`)
+  return res.json()
+}
+
+export async function createWantedPerson({ wantedId, name, file }) {
+  const formData = new FormData()
+  formData.append('wantedId', wantedId)
+  formData.append('name', name)
+  formData.append('file', file)
+
+  const res = await fetch('/api/wanted-persons', {
+    method: 'POST',
+    // FormData 전송 시 Content-Type은 브라우저가 boundary까지 포함해 자동으로
+    // 설정해야 하므로, 여기서 수동으로 넣지 않는다(넣으면 boundary 누락으로 깨짐).
+    headers: { ...AUTH_HEADERS, ...authHeaders() },
+    body: formData,
+  })
+  if (!res.ok) throw new Error(await parseErrorMessage(res, '수배자 등록에 실패했습니다.'))
+  return res.json()
+}
+
+export async function deleteWantedPerson(id) {
+  const res = await fetch(`/api/wanted-persons/${id}`, {
+    method: 'DELETE',
+    headers: { ...AUTH_HEADERS, ...authHeaders() },
+  })
+  if (!res.ok) throw new Error(await parseErrorMessage(res, '수배자 삭제에 실패했습니다.'))
+}

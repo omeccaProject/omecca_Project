@@ -2074,3 +2074,54 @@ body {
   opacity: .6;
   cursor: default;
 }
+
+/* --- WantedPersonManagerModal (수배자 얼굴 등록 관리) ---
+   전체 레이아웃(overlay/box/head/form/list/row-actions/danger-zone)은
+   CameraManagerModal과 완전히 동일한 cam-mgr-* 클래스를 그대로 재사용한다 -
+   두 관리 화면을 오가도 이질감이 없어야 하므로. 여기서는 카메라에는 없는
+   두 가지(등록 사진 썸네일, 임베딩 생성 상태 배지)만 새로 추가한다. */
+.wp-mgr-thumb {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  object-fit: cover;
+  border: 1px solid var(--c-border);
+  background: var(--c-bg2);
+}
+.wp-mgr-thumb-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10.5px;
+  color: var(--c-muted2);
+}
+.wp-mgr-status {
+  margin-left: 8px;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  vertical-align: middle;
+}
+/* 임베딩 생성 중 - 아직 실제 감지에는 반영 안 된 상태임을 명확히 구분 */
+.wp-mgr-status-pending {
+  color: var(--c-muted);
+  background: var(--c-bg2);
+  border: 1px solid var(--c-border2);
+}
+.wp-mgr-status-registered {
+  color: var(--c-green);
+  background: color-mix(in srgb, var(--c-green) 16%, transparent);
+  background: rgba(74, 222, 128, .16);
+}
+.wp-mgr-status-failed {
+  color: var(--c-red);
+  background: rgba(220, 38, 38, .16);
+}
+.wp-mgr-failure-reason {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--c-red);
+  line-height: 1.4;
+}
