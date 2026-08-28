@@ -1,20 +1,21 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { fetchCameras } from '../api'
 import LiveHlsVideoWithDetections from './LiveHlsVideoWithDetections'
 
-// 대시보드 오른쪽 패널의 "CCTV" 탭.
-// CctvGrid(여러 칸 그리드)는 380px짜리 좁은 패널에
-// 넣기엔 너무 빽빽해지므로, 여기서는 카메라 하나를 크게 보여주고
-// 드롭다운으로 바꾸는 방식으로 따로 만든다.
-// 데이터 소스(카메라 관리에 등록된 목록)는 CctvGrid와 동일하다.
-export default function DashboardCctvPanel({ focusedEvent, requestedCamId }) {
+export default function DashboardCctvPanel({ requestedCamId }) {
   const [cameras, setCameras] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedCamId, setSelectedCamId] = useState(null)
 
+  // 지도에서 전달된 requestedCamId를 마지막으로 적용한 값
+  const lastAppliedRequestedCamId = useRef(null)
+
+  // =========================================================
+  // CCTV 목록 조회
+  // =========================================================
   const load = useCallback(() => {
     fetchCameras()
-      .then((list) =>
+      .then((list) => {
         setCameras(
           Array.isArray(list)
             ? list.filter(
@@ -22,130 +23,92 @@ export default function DashboardCctvPanel({ focusedEvent, requestedCamId }) {
               )
             : []
         )
-      )
-      .catch(() => setCameras([]))
-      .finally(() => setLoading(false))
+      })
+      .catch((error) => {
+        console.error('[CCTV] 카메라 목록 조회 실패:', error)
+        setCameras([])
+      })
+      .finally(() => {
+        setLoading(false)
+      })
   }, [])
 
+  // 최초 로딩 + 15초마다 카메라 목록 갱신
   useEffect(() => {
     load()
 
-    // 카메라 관리에서 새로 등록/수정한 게 바로 반영되도록
-    // 짧은 주기로 갱신한다.
     const timer = setInterval(load, 15000)
 
     return () => clearInterval(timer)
   }, [load])
 
-  // 방금 클릭한 이벤트의 카메라가 목록에 있으면
-  // 그 카메라로 자동 전환
+  // =========================================================
+  // 지도에서 전달된 requestedCamId 처리
+  //
+  // 지도 카메라 아이콘 클릭
+  //        ↓
+  // map.js
+  //        ↓
+  // MainDashboard
+  //        ↓
+  // requestedCamId
+  //        ↓
+  // 해당 CCTV 선택
+  //
+  // 같은 requestedCamId가 cameras 갱신 때문에
+  // 반복 적용되지 않도록 마지막 적용값을 기억한다.
+  // =========================================================
   useEffect(() => {
-    if (!focusedEvent?.camId) return
-
-    if (
-      cameras.some(
-        (c) => c.camId === focusedEvent.camId
-      )
-    ) {
-      setSelectedCamId(focusedEvent.camId)
+    if (!requestedCamId) {
+      return
     }
-  }, [focusedEvent, cameras])
 
-  // [신규] 지도(map.js)에서 "연결된 CCTV" 클릭 → MainDashboard가 'cctv:select'
-  // postMessage를 받아 이 컴포넌트가 마운트되도록 화면/탭을 먼저 전환해준 뒤,
-  // 그 camId를 requestedCamId prop으로 내려준다. 여기서는 그걸 실제 선택값으로
-  // 반영하기만 하면 된다 - 예전엔 이 패널이 직접 'message' 이벤트를 들었지만,
-  // 이 패널이 아직 마운트되지 않은 시점(다른 화면을 보고 있던 경우)에는 메시지를
-  // 놓쳤다. MainDashboard가 항상 마운트돼 있어 대신 받아준다.
-  useEffect(() => {
-    if (!requestedCamId) return
+    // 이미 처리한 동일 요청이면 다시 처리하지 않는다.
     if (
-      cameras.some(
-        (c) => c.camId === requestedCamId
-      )
+      lastAppliedRequestedCamId.current === requestedCamId
     ) {
-      setSelectedCamId(requestedCamId)
+      return
     }
+
+    const targetCamera = cameras.find(
+      (camera) => camera.camId === requestedCamId
+    )
+
+    if (!targetCamera) {
+      return
+    }
+
+    console.log(
+      '[CCTV] 지도에서 CCTV 선택:',
+      targetCamera.name,
+      targetCamera.camId
+    )
+
+    setSelectedCamId(targetCamera.camId)
+
+    // 요청 처리 완료
+    lastAppliedRequestedCamId.current = requestedCamId
   }, [requestedCamId, cameras])
 
   // =========================================================
-  // Real Journey → CCTV 바로가기
-  // map.js에서:
-  //
-  // window.dispatchEvent(
-  //   new CustomEvent("cctv:select", {
-  //     detail: { camId: "L010111" }
-  //   })
-  // )
-  //
-  // 를 보내면 여기서 받아서 React state를 변경한다.
+  // 지도 iframe에서 직접 cctv:select 메시지를 받는 경우
   // =========================================================
   useEffect(() => {
-    console.log('[CCTV] DashboardCctvPanel 이벤트 리스너 등록')
-    const handleJourneyCctvSelect = (event) => {
-      const camId = event.detail?.camId
-
-      if (!camId) return
-
-      console.log(
-        '[CCTV] Real Journey CCTV 바로가기 요청:',
-        camId
-      )
-
-      // 현재 등록된 CCTV 목록에 존재하는 카메라인지 확인
-      const targetCamera = cameras.find(
-        (camera) => camera.camId === camId
-      )
-
-      if (!targetCamera) {
-        console.warn(
-          '[CCTV] 요청한 카메라를 현재 목록에서 찾을 수 없습니다:',
-          camId
-        )
+    const handleJourneyCctvMessage = (event) => {
+      // 지도 서버에서 온 메시지만 처리
+      if (event.origin !== 'http://localhost:4000') {
         return
       }
 
-      console.log(
-        '[CCTV] CCTV 전환:',
-        targetCamera.name,
-        targetCamera.camId
-      )
-
-      // React state를 변경하면
-      // select와 LiveHlsVideoWithDetections가 자동으로 갱신된다.
-      setSelectedCamId(targetCamera.camId)
-    }
-
-    window.addEventListener(
-      'cctv:select',
-      handleJourneyCctvSelect
-    )
-
-    return () => {
-      window.removeEventListener(
-        'cctv:select',
-        handleJourneyCctvSelect
-      )
-    }
-  }, [cameras])
-  
-
-    // iframe의 map.js에서 postMessage로 전달된
-  // Real Journey CCTV 전환 요청 처리
-  useEffect(() => {
-    const handleJourneyCctvMessage = (event) => {
-      if (event.origin !== 'http://localhost:4000') return
-
-      if (event.data?.type !== 'cctv:select') return
+      if (event.data?.type !== 'cctv:select') {
+        return
+      }
 
       const camId = event.data?.camId
 
-      if (!camId) return
-
-      console.log(
-        '[CCTV] 부모로부터 Real Journey CCTV 전환 요청:',
-        camId
-      )
+      if (!camId) {
+        return
+      }
 
       const targetCamera = cameras.find(
         (camera) => camera.camId === camId
@@ -153,19 +116,22 @@ export default function DashboardCctvPanel({ focusedEvent, requestedCamId }) {
 
       if (!targetCamera) {
         console.warn(
-          '[CCTV] 요청한 카메라를 현재 목록에서 찾을 수 없습니다:',
+          '[CCTV] 지도에서 요청한 CCTV를 현재 목록에서 찾을 수 없습니다:',
           camId
         )
         return
       }
 
       console.log(
-        '[CCTV] CCTV 전환:',
+        '[CCTV] 지도 CCTV 전환:',
         targetCamera.name,
         targetCamera.camId
       )
 
       setSelectedCamId(targetCamera.camId)
+
+      // 동일한 지도 요청이 다시 적용되지 않도록 기록
+      lastAppliedRequestedCamId.current = camId
     }
 
     window.addEventListener(
@@ -180,29 +146,72 @@ export default function DashboardCctvPanel({ focusedEvent, requestedCamId }) {
       )
     }
   }, [cameras])
-  
-  // cameras가 변경됐을 때 현재 선택된 CCTV가 없으면
-  // 첫 번째 CCTV를 기본 선택
+
+  // =========================================================
+  // CCTV 기본 선택 및 선택 상태 유지
+  //
+  // 최초 진입:
+  //   이수역
+  //
+  // 사용자가 CCTV 선택:
+  //   선택한 CCTV 유지
+  //
+  // 15초 후 cameras 갱신:
+  //   기존 선택 CCTV가 존재하면 그대로 유지
+  //
+  // 선택한 CCTV가 목록에서 사라진 경우:
+  //   이수역 → 없으면 첫 번째 CCTV
+  // =========================================================
   useEffect(() => {
+    if (cameras.length === 0) {
+      return
+    }
+
+    // 현재 선택한 CCTV가 아직 목록에 존재하면
+    // 다른 CCTV로 바꾸지 않는다.
     if (
       selectedCamId &&
       cameras.some(
-        (c) => c.camId === selectedCamId
+        (camera) => camera.camId === selectedCamId
       )
     ) {
       return
     }
 
-    setSelectedCamId(
-      cameras[0]?.camId ?? null
+    // 현재 선택값이 없거나
+    // 선택했던 CCTV가 목록에서 사라진 경우
+    // 이수역을 기본 CCTV로 사용
+    const defaultCamera = cameras.find(
+      (camera) => camera.name === '이수역'
     )
+
+    const fallbackCamId =
+      defaultCamera?.camId ??
+      cameras[0]?.camId ??
+      null
+
+    console.log(
+      '[CCTV] 기본 CCTV 선택:',
+      defaultCamera?.name ??
+        cameras[0]?.name ??
+        '없음',
+      fallbackCamId
+    )
+
+    setSelectedCamId(fallbackCamId)
   }, [cameras, selectedCamId])
 
+  // =========================================================
+  // 현재 선택된 CCTV
+  // =========================================================
   const selected =
     cameras.find(
-      (c) => c.camId === selectedCamId
+      (camera) => camera.camId === selectedCamId
     ) || null
 
+  // =========================================================
+  // 로딩
+  // =========================================================
   if (loading) {
     return (
       <div className="control-events-empty">
@@ -211,6 +220,9 @@ export default function DashboardCctvPanel({ focusedEvent, requestedCamId }) {
     )
   }
 
+  // =========================================================
+  // CCTV 없음
+  // =========================================================
   if (cameras.length === 0) {
     return (
       <div className="control-events-empty">
@@ -222,21 +234,32 @@ export default function DashboardCctvPanel({ focusedEvent, requestedCamId }) {
     )
   }
 
+  // =========================================================
+  // CCTV 화면
+  // =========================================================
   return (
     <div className="dash-cctv-panel">
       <select
         className="dash-cctv-select"
         value={selectedCamId || ''}
-        onChange={(e) =>
-          setSelectedCamId(e.target.value)
-        }
+        onChange={(event) => {
+          const camId = event.target.value
+
+          console.log(
+            '[CCTV] 사용자가 CCTV 선택:',
+            camId
+          )
+
+          // 사용자가 직접 선택한 CCTV
+          setSelectedCamId(camId)
+        }}
       >
-        {cameras.map((c) => (
+        {cameras.map((camera) => (
           <option
-            key={c.camId}
-            value={c.camId}
+            key={camera.camId}
+            value={camera.camId}
           >
-            {c.name}
+            {camera.name}
           </option>
         ))}
       </select>

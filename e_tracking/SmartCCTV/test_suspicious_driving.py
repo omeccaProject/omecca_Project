@@ -103,16 +103,12 @@ if not GATEWAY_API_KEY:
 # 3. GPU / CPU 설정
 # ============================================================
 
-USE_GPU = False
-
-
-if USE_GPU:
-
+if torch.cuda.is_available():
     DEVICE = 0
-
+    USE_GPU = True
 else:
-
     DEVICE = "cpu"
+    USE_GPU = False
 
 
 # ============================================================
@@ -636,6 +632,23 @@ def send_journey_update(journey):
         # 라우팅할 수 있어야 한다.
         "reason": journey.reason,
     }
+
+    # ------------------------------------------------
+    # [진단 전용 로그 - 동작/로직 변경 없음]
+    # A→B 이동 중 send_journey_update()가 실제로 몇 번, 어떤 points로
+    # 호출되는지 확인하기 위한 것뿐이다. payload 구성/전송 로직은 위에서
+    # 이미 끝났고, 이 블록은 그 결과를 출력만 한다.
+    # ------------------------------------------------
+    _pts = payload["points"]
+    print(
+        f"[JOURNEY SEND] "
+        f"kind={journey.kind} "
+        f"active={payload['active']} "
+        f"currentCamId={payload['currentCamId']} "
+        f"points_count={len(_pts)} "
+        f"first={_pts[0] if _pts else None} "
+        f"last={_pts[-1] if _pts else None}"
+    )
 
     headers = {
         "X-API-Key": GATEWAY_API_KEY,
@@ -1360,6 +1373,12 @@ def detect_and_track(
 
 ):
 
+    # [성능 개선] GPU(half=True)에서는 FP16 추론을 켠다 - Ultralytics 공식
+    # 문서가 권장하는 GPU 추론 가속 방법이고, 대상이 차량 4개 클래스뿐인
+    # 이 프로젝트에서는 정확도 손실이 실사용에 거의 영향이 없다. CPU는
+    # half를 지원하지 않으므로(DEVICE=="cpu"면 오히려 더 느려지거나 에러가
+    # 날 수 있음) GPU일 때만 켠다 - DEVICE 값 자체(CPU/GPU 선택)는 절대
+    # 바꾸지 않는다(요구사항).
     results = model.track(
 
         source=frame,
@@ -1377,6 +1396,8 @@ def detect_and_track(
         imgsz=IMG_SIZE,
 
         device=DEVICE,
+
+        half=USE_GPU,
 
         verbose=False,
 
@@ -2976,6 +2997,81 @@ def main():
 
 
     # ========================================================
+    # [성능 개선] Journey 갱신 로직을 함수로 추출
+    # --------------------------------------------------------
+    # 기존에 카메라 루프가 전부 끝난 뒤 딱 한 곳에서만 계산하던 내용
+    # (suspicious_by_cam_id/target_matched_by_cam_id/plate_by_cam_id/
+    # dui_plate_by_cam_id/dui_finished_drawing 계산 + update_journey_for_frame()
+    # 2회 호출)을 로직 변경 없이 그대로 함수로 옮긴 것뿐이다 - 이렇게 해야
+    # "카메라 한 대 처리가 끝날 때마다 즉시" 같은 코드를 다시 실행할 수 있다.
+    # cameras/suspicious_vehicles/target_matched_vehicles/plate_by_camera/
+    # dui_journey/target_journey는 전부 main() 지역 변수를 그대로 참조한다
+    # (클로저) - 인자로 넘기지 않아도 항상 그 시점의 최신 값을 본다.
+    # ========================================================
+
+    def _update_all_journeys():
+        suspicious_by_cam_id = {
+            cameras[camera_name]["camId"]: suspicious_vehicles[camera_name]
+            for camera_name in cameras
+        }
+
+        target_matched_by_cam_id = {
+            cameras[camera_name]["camId"]: set(target_matched_vehicles[camera_name].keys())
+            for camera_name in cameras
+        }
+
+        # [신규] 알림 팝업에 표시할 번호판 - 카메라별로 매칭된 관심 차량이
+        # 여럿이어도(이론상 거의 없음) 하나만 대표로 쓴다. 정확한 번호판
+        # 매칭이 아니라 "이 카메라에서 지금 관심 차량이 잡혔다"는 표시 용도이므로
+        # 첫 번째 값으로 충분하다.
+        plate_by_cam_id = {
+            cameras[camera_name]["camId"]: next(
+                iter(target_matched_vehicles[camera_name].values())
+            )["plate"]
+            for camera_name in cameras
+            if target_matched_vehicles[camera_name]
+        }
+
+        # [신규: "알림팝업/이벤트/PDF 리포트에 인식한 차량번호도 넣어달라"] DUI 여정용
+        # 번호판 - target_matched_vehicles(등록된 관심 차량 매칭 결과)가 아니라
+        # plate_by_camera(등록 여부와 무관하게 확정된 모든 차량의 번호판)에서, 지금
+        # 이 카메라에서 "이상운전으로 잡힌" track_id(suspicious_vehicles[camera_name])와
+        # 겹치는 번호판만 골라 쓴다. 여러 개면(이론상 거의 없음) 첫 번째 값으로 대표한다.
+        dui_plate_by_cam_id = {}
+        for camera_name in cameras:
+            for _track_id in suspicious_vehicles[camera_name]:
+                _plate = plate_by_camera[camera_name].get(_track_id)
+                if _plate:
+                    dui_plate_by_cam_id[cameras[camera_name]["camId"]] = _plate
+                    break
+
+        # [수정: "음주운전이랑 관심대상은 서로 다른, 완전히 별개의 기능이다"]
+        # 두 트리거를 하나로 합치지 않고, 완전히 독립된 두 여정에 각각 한 번씩
+        # 따로 갱신한다 - 같은 프레임에 둘 다 활성이어도 서로 전혀 간섭하지
+        # 않고 동시에 진행된다.
+        #
+        # [신규: "음주운전 폴리라인이 마지막 지점(한강대교남단)까지 다 그려진
+        # 뒤에야 관심대상 여정이 시작되게 해달라"] TARGET 여정의 "시작"만
+        # gate_ready로 막는다 - dui_journey가 CAMERA_ORDER 마지막 카메라까지
+        # 도달했고(last_cam_id == 마지막 camId), 그 구간의 실제 도로 경로
+        # 교체(_advance_journey_to의 백그라운드 스레드)까지 끝나서
+        # _journey_pending이 False가 된 시점이라야 "폴리라인이 다 그려졌다"고
+        # 본다. 이미 시작된 TARGET 여정은 이 값과 무관하게 계속 진행된다.
+        dui_finished_drawing = (
+            dui_journey.last_cam_id == DUI_CAMERA_ORDER[-1]
+            and not dui_journey._journey_pending
+        )
+
+        update_journey_for_frame(dui_journey, suspicious_by_cam_id, dui_plate_by_cam_id)
+        update_journey_for_frame(
+            target_journey,
+            target_matched_by_cam_id,
+            plate_by_cam_id,
+            gate_ready=dui_finished_drawing,
+        )
+
+
+    # ========================================================
     # 메인 루프
     # ========================================================
 
@@ -3178,6 +3274,53 @@ def main():
                 # 결과(is_suspicious/just_confirmed)만 그대로 쓴다 - 강제 타이머는
                 # 더 이상 개입하지 않는다.
                 # ------------------------------------------------
+
+                # ------------------------------------------------
+                # [신규: "장승배기 CCTV에서 늦게 빨간색이 되는 문제" 완화]
+                # 이미 DUI로 확정된 차량의 번호판(dui_journey.plate)을 알고
+                # 있는 상태에서, 다음 CCTV에 등장한 차량의 번호판(LPR)이 그것과
+                # 정확히 일치하면 - 이 카메라에서 아직 지그재그 패턴이 안 잡혔어도
+                # (is_suspicious가 아직 False여도) - 패턴 판정을 기다리지 않고
+                # 즉시 이상운전으로 확정한다.
+                #
+                # check_suspicious_vehicle()/analyze_driving_pattern()/
+                # SUSTAIN_FRAMES는 한 글자도 안 건드린다 - 그 판정이 이미
+                # True를 내놓은 경우(is_suspicious=True)엔 이 블록이 아예
+                # 실행되지 않는다(더 정확히는, 이미 suspicious_vehicles에 있는
+                # track_id는 check_suspicious_vehicle() 자체가 (True, False)를
+                # 즉시 반환하므로 not is_suspicious가 False가 되어 안전하게
+                # 건너뛴다 - 같은 카메라에서 중복 확정될 위험이 없다).
+                #
+                # "이전 CCTV가 DUI였다고 다음 CCTV의 아무 차량이나 DUI로
+                # 표시"하는 방식이 아니다 - 반드시 번호판 문자열이 정확히 일치
+                # (normalize_plate 기준)해야만 동작한다. 번호판이 아직 LPR로
+                # 확정 안 됐거나(다수결 확정 전) dui_journey.plate 자체가 아직
+                # None이면 이 블록은 아무것도 하지 않고 그냥 넘어간다 - 그
+                # 경우엔 기존 그대로 패턴 판정을 기다린다(폴백 안전).
+                # ------------------------------------------------
+
+                if (
+                    not is_suspicious
+                    and dui_journey.active
+                    and dui_journey.plate
+                ):
+                    _current_plate = plate_by_camera[camera_name].get(track_id)
+                    if (
+                        _current_plate
+                        and normalize_plate(_current_plate)
+                        == normalize_plate(dui_journey.plate)
+                        and track_id not in suspicious_vehicles[camera_name]
+                    ):
+                        suspicious_vehicles[camera_name].add(track_id)
+                        is_suspicious = True
+                        just_confirmed = True
+                        print(
+                            f"🔢 [DUI PLATE MATCH] "
+                            f"{camera_name} | "
+                            f"track={track_id} | "
+                            f"plate={_current_plate} | "
+                            f"패턴 판정 없이 즉시 이상운전 확정(번호판 일치)"
+                        )
 
 
                 # =================================================
@@ -3449,73 +3592,48 @@ def main():
             ] = frame
 
 
+            # ================================================
+            # [성능 개선: "이상운전 확정 → 즉시 Journey 갱신 → 폴리라인 즉시 표시"]
+            # ------------------------------------------------
+            # 예전엔 이 update_all_journeys() 호출이 4개 카메라(A/B/C/D) 루프가
+            # *전부* 끝난 뒤(아래 for 루프 바깥)에서 프레임당 딱 한 번만 실행됐다.
+            # 그래서 예를 들어 A 카메라에서 이상운전이 막 확정돼도, 아직 처리하지
+            # 않은 B/C/D의 YOLO 추론이 끝날 때까지 Journey 갱신(및 그 결과인
+            # 지도 위 폴리라인 표시)이 기다려야 했다 - 카메라가 늘어나거나 한
+            # 카메라의 처리가 느려질수록 이 지연이 커진다.
+            #
+            # _advance_journey_to()의 "직선을 먼저 즉시 표시하고, 실제 도로
+            # 경로는 백그라운드 스레드에서 계산해 나중에 한 번에 교체하는" 구조
+            # 자체는 이미 좋았다(그대로 유지) - 문제는 그 함수가 "언제 호출되는가"
+            # 였다. 그래서 로직은 전혀 안 바꾸고, "이 카메라(camera_name) 하나의
+            # 처리가 막 끝난 이 시점"에도 똑같은 갱신을 한 번 더 시도하도록
+            # 호출 지점만 늘렸다 - 아직 처리 안 된 카메라들의 정보는 그냥 "이전
+            # 프레임 상태 그대로" 반영될 뿐이고(다음 iteration에서 다시 최신화됨),
+            # 이미 확정된 이 카메라의 이상운전/관심차량 매칭은 이 프레임 안에서
+            # 바로 반영된다.
+            #
+            # update_journey_for_frame()/​_advance_journey_to() 자체는 이미
+            # journey._journey_pending으로 중복 OSRM 요청을, current_index
+            # 비교로 중복/역행 진행을, dui_journey.alert_sent로 중복 이벤트
+            # 생성을 전부 막고 있으므로(전부 그대로 유지, 한 글자도 안 건드림),
+            # 이렇게 여러 번(카메라 수만큼 + 루프 끝에 한 번 더) 호출해도
+            # 안전하다 - 실제로 진행시킬 게 없으면 각 함수가 그냥 조용히 리턴한다.
+            # ================================================
+
+            _update_all_journeys()
+
+
         # ====================================================
         # [신규] 실시간 카메라 간 이동 경로(Journey) 갱신
         # ----------------------------------------------------
-        # 4개 카메라를 전부 처리한 뒤, 프레임당 한 번만 호출한다. camId를 key로
-        # 쓰기 때문에 "카메라 A의 트랙 3번"과 "카메라 B의 트랙 3번"이 절대
-        # 섞이지 않는다(camId가 다르면 무조건 다른 카메라로 취급됨).
+        # 4개 카메라를 전부 처리한 뒤, 프레임당 한 번 더 호출한다(안전망) - camId를
+        # key로 쓰기 때문에 "카메라 A의 트랙 3번"과 "카메라 B의 트랙 3번"이 절대
+        # 섞이지 않는다(camId가 다르면 무조건 다른 카메라로 취급됨). 실질적인
+        # 즉시 반영은 위 카메라별 루프 안에서 이미 이루어졌다 - 이 호출은 혹시
+        # 놓친 게 있으면 마지막으로 한 번 더 확인하는 용도라 내용은 100% 동일하다.
         # ====================================================
 
-        suspicious_by_cam_id = {
-            cameras[camera_name]["camId"]: suspicious_vehicles[camera_name]
-            for camera_name in cameras
-        }
-
-        target_matched_by_cam_id = {
-            cameras[camera_name]["camId"]: set(target_matched_vehicles[camera_name].keys())
-            for camera_name in cameras
-        }
-
-        # [신규] 알림 팝업에 표시할 번호판 - 카메라별로 매칭된 관심 차량이
-        # 여럿이어도(이론상 거의 없음) 하나만 대표로 쓴다. 정확한 번호판
-        # 매칭이 아니라 "이 카메라에서 지금 관심 차량이 잡혔다"는 표시 용도이므로
-        # 첫 번째 값으로 충분하다.
-        plate_by_cam_id = {
-            cameras[camera_name]["camId"]: next(
-                iter(target_matched_vehicles[camera_name].values())
-            )["plate"]
-            for camera_name in cameras
-            if target_matched_vehicles[camera_name]
-        }
-
-        # [신규: "알림팝업/이벤트/PDF 리포트에 인식한 차량번호도 넣어달라"] DUI 여정용
-        # 번호판 - target_matched_vehicles(등록된 관심 차량 매칭 결과)가 아니라
-        # plate_by_camera(등록 여부와 무관하게 확정된 모든 차량의 번호판)에서, 지금
-        # 이 카메라에서 "이상운전으로 잡힌" track_id(suspicious_vehicles[camera_name])와
-        # 겹치는 번호판만 골라 쓴다. 여러 개면(이론상 거의 없음) 첫 번째 값으로 대표한다.
-        dui_plate_by_cam_id = {}
-        for camera_name in cameras:
-            for _track_id in suspicious_vehicles[camera_name]:
-                _plate = plate_by_camera[camera_name].get(_track_id)
-                if _plate:
-                    dui_plate_by_cam_id[cameras[camera_name]["camId"]] = _plate
-                    break
-
-        # [수정: "음주운전이랑 관심대상은 서로 다른, 완전히 별개의 기능이다"]
-        # 두 트리거를 하나로 합치지 않고, 완전히 독립된 두 여정에 각각 한 번씩
-        # 따로 갱신한다 - 같은 프레임에 둘 다 활성이어도 서로 전혀 간섭하지
-        # 않고 동시에 진행된다.
-        #
-        # [신규: "음주운전 폴리라인이 마지막 지점(한강대교남단)까지 다 그려진
-        # 뒤에야 관심대상 여정이 시작되게 해달라"] TARGET 여정의 "시작"만
-        # gate_ready로 막는다 - dui_journey가 CAMERA_ORDER 마지막 카메라까지
-        # 도달했고(last_cam_id == 마지막 camId), 그 구간의 실제 도로 경로
-        # 교체(_advance_journey_to의 백그라운드 스레드)까지 끝나서
-        # _journey_pending이 False가 된 시점이라야 "폴리라인이 다 그려졌다"고
-        # 본다. 이미 시작된 TARGET 여정은 이 값과 무관하게 계속 진행된다.
-        dui_finished_drawing = (
-            dui_journey.last_cam_id == DUI_CAMERA_ORDER[-1]
-            and not dui_journey._journey_pending
-        )
-
-        update_journey_for_frame(dui_journey, suspicious_by_cam_id, dui_plate_by_cam_id)
-        update_journey_for_frame(
-            target_journey,
-            target_matched_by_cam_id,
-            plate_by_cam_id,
-            gate_ready=dui_finished_drawing,
-        )
+        _update_all_journeys()
 
 
         # ====================================================

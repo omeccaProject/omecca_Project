@@ -1876,6 +1876,36 @@ class RealVehicleMarker {
     this._frameLogCounter = 0;
     this._isAnimating = false;
     this._label = null;
+
+    // [신규: "직선→실제 도로 업그레이드 시 진행률 유지"] 직전 animateAlong() 호출의
+    // 시작점/끝점/전체 길이/그 시점까지 이동한 거리를 기억해둔다. 다음 animateAlong()
+    // 호출이 "같은 A→B 구간"(시작점·끝점이 정확히 같음)이면, 지리적 최단거리 대신
+    // 이 진행률을 그대로 새 points 배열에 적용해서 뒤로 튀는 걸 막는다.
+    this._lastAnimStartPoint = null;
+    this._lastAnimEndPoint = null;
+    this._lastAnimPointsCount = null;
+    this._lastAnimTotalLen = 0;
+    this._lastAnimTraveledLen = 0;
+  }
+
+  // [버그 수정: "A→B 애니메이션 도중 대각선으로 가다가 갑자기 A로 순간이동"]
+  // 예전엔 위경도 좌표가 소수점 7자리(약 1cm) 이내로 완전히 똑같아야만 "같은
+  // 구간의 업그레이드"로 인정했다. 그런데 Python의 get_multi_point_road_route()는
+  // OSRM이 도로에 스냅한 좌표를 그대로 쓰고, 카메라의 원래 GPS 좌표로 다시 고정하지
+  // 않는다(test_suspicious_driving.py 확인 완료) - 그래서 직선 payload의 시작/끝점
+  // (카메라 원본 좌표)과 그 뒤에 오는 실제 도로 payload의 시작/끝점(OSRM 스냅
+  // 좌표)은 몇 미터씩 항상 어긋난다. 1cm 허용오차로는 이 정상적인 스냅 오차조차
+  // "다른 구간"으로 오판해서, 진행률을 이어받는 대신 "마커의 현재 위치와 지리적으로
+  // 가장 가까운 점"을 새 배열(도로 경로)에서 다시 찾는 폴백 경로로 빠졌다 - 도로
+  // 경로가 직선과 다른 모양으로 휘어 있으면 그 최단거리 점이 새 배열의 시작(A) 쪽에서
+  // 잡히기 쉬워, 애니메이션 도중 갑자기 A 근처로 튀는 것처럼 보였다.
+  // 이제는 실제 거리(미터) 기준으로 판정한다 - 도시 내 OSRM 스냅 오차는 보통
+  // 수 미터~수십 미터 수준이고, 카메라 사이 실제 거리는 최소 수백 미터~킬로미터
+  // 단위이므로, 150m 허용오차는 "같은 구간의 스냅 보정"과 "진짜 다음 구간(B→C 등)"을
+  // 절대 혼동하지 않을 만큼 충분히 크면서도 안전하다.
+  _pointsEqual(a, b, toleranceMeters = 150) {
+    if (!a || !b) return false;
+    return haversineMeters(a, b) <= toleranceMeters;
   }
 
   _createIcon() {
@@ -1971,12 +2001,65 @@ class RealVehicleMarker {
     if (!points || points.length === 0) return;
     this._label = label;
 
+    // [신규: "직선→실제 도로 업그레이드" 판정] 새로 들어온 points의 시작점·
+    // 끝점이 직전 애니메이션과 정확히 같으면(=같은 A→B 구간이 직선에서 실제
+    // 도로 형태로 바뀐 것뿐), 지리적 최단거리를 다시 찾지 않는다 - 대신 직전
+    // 애니메이션에서 이미 이동한 "거리 비율(progress)"을 그대로 이어받는다.
+    // 시작점·끝점이 다르면(진짜 새로운 구간, 예: B→C) 아래 else 분기의 기존
+    // 최단거리 로직을 그대로 쓴다 - 그쪽은 한 글자도 안 바뀌었다.
+    const isSameSegmentUpgrade =
+      !!this.marker &&
+      points.length >= 2 &&
+      this._lastAnimStartPoint &&
+      this._lastAnimEndPoint &&
+      this._lastAnimTotalLen > 0 &&
+      this._pointsEqual(points[0], this._lastAnimStartPoint) &&
+      this._pointsEqual(points[points.length - 1], this._lastAnimEndPoint);
+
+    const progress = isSameSegmentUpgrade
+      ? Math.min(1, this._lastAnimTraveledLen / this._lastAnimTotalLen)
+      : null;
+
     this._cancelAnimation();
 
-    // 현재 마커 위치에서 새 points 배열상 가장 가까운 지점을 찾아 그 지점부터
-    // 이어서 애니메이션한다 - 뒤로 순간이동하는 부자연스러운 점프를 막는다.
+    // 이번 points 배열 전체의 구간별 길이/총 길이 - 진행률 계산과 startIdx 탐색
+    // 양쪽에서 재사용한다(요구사항 5: index가 아니라 실제 이동 거리 기준).
+    const fullSegLens = [];
+    let fullTotalLen = 0;
+    for (let i = 1; i < points.length; i++) {
+      const d = haversineMeters(points[i - 1], points[i]);
+      fullSegLens.push(d);
+      fullTotalLen += d;
+    }
+
     let startIdx = 0;
-    if (this.marker) {
+
+    if (isSameSegmentUpgrade) {
+      // [신규] 진행률(progress) 기반 대응 - "직전에 진행한 비율만큼, 새 배열의
+      // 실제 거리 기준으로" 재생 시작 지점을 찾는다. 요구사항 3/4: 절대로
+      // points[0](A 지점)로 되돌리지 않는다.
+      const targetDist = progress * fullTotalLen;
+      let acc = 0;
+      startIdx = fullSegLens.length; // 못 찾으면(부동소수점 오차 등) 마지막 구간부터
+      for (let i = 0; i < fullSegLens.length; i++) {
+        if (acc + fullSegLens[i] >= targetDist) {
+          startIdx = i;
+          break;
+        }
+        acc += fullSegLens[i];
+      }
+
+      console.log(
+        `[REAL JOURNEY] route upgrade ` +
+        `oldPoints=${this._lastAnimPointsCount != null ? this._lastAnimPointsCount : "?"} ` +
+        `newPoints=${points.length} ` +
+        `progress=${progress.toFixed(2)} ` +
+        `resumeIndex=${startIdx}`
+      );
+    } else if (this.marker) {
+      // [유지: 기존 로직 그대로] 진짜 새로운 구간(예: B→C)이거나 위 업그레이드
+      // 조건을 만족하지 못하면, 현재 마커 위치에서 지리적으로 가장 가까운
+      // 지점을 찾는 기존 방식을 그대로 쓴다.
       const cur = this.marker.getLatLng();
       let bestDist = Infinity;
       for (let i = 0; i < points.length; i++) {
@@ -1988,6 +2071,14 @@ class RealVehicleMarker {
       }
     }
 
+    // [신규] 다음 업그레이드 판정을 위해 이번 payload의 시작점/끝점/전체 길이와
+    // 지금 위치(startIdx까지의 누적 거리)를 기억해둔다.
+    this._lastAnimStartPoint = points[0];
+    this._lastAnimEndPoint = points[points.length - 1];
+    this._lastAnimPointsCount = points.length;
+    this._lastAnimTotalLen = fullTotalLen;
+    this._lastAnimTraveledLen = fullSegLens.slice(0, startIdx).reduce((a, b) => a + b, 0);
+
     const passedPoints = points.slice(0, startIdx + 1);
     const remaining = points.slice(startIdx);
 
@@ -1995,16 +2086,23 @@ class RealVehicleMarker {
       // 더 이동할 구간이 없다 - 위치만 즉시 맞추고 폴리라인은 전체 좌표로 그린다.
       const [lat, lng] = points[points.length - 1];
       this.setPosition(lat, lng, label);
+      this._lastAnimTraveledLen = fullTotalLen; // 다 왔음 - 다음 업그레이드 판정에 100%로 반영
       if (onFrame) onFrame(points);
       if (onComplete) onComplete();
       return;
     }
 
+    if (isSameSegmentUpgrade) {
+      console.log(
+        `[REAL JOURNEY] animation resume from=${JSON.stringify(remaining[0])}`
+      );
+    }
+
     this._isAnimating = true;
-    this._runAnimatedSegments(remaining, passedPoints, label, onFrame, onComplete);
+    this._runAnimatedSegments(remaining, passedPoints, label, onFrame, onComplete, fullTotalLen, this._lastAnimTraveledLen);
   }
 
-  _runAnimatedSegments(remaining, passedPoints, label, onFrame, onComplete) {
+  _runAnimatedSegments(remaining, passedPoints, label, onFrame, onComplete, baseTotalLen, baseTraveledLen) {
     const self = this;
     const segLengths = [];
     for (let i = 1; i < remaining.length; i++) {
@@ -2013,12 +2111,17 @@ class RealVehicleMarker {
 
     const SPEED_METERS_PER_SEC = 300;
     let segIdx = 0;
+    let completedSegLen = 0; // remaining 안에서 이미 다 지나온 구간들의 누적 길이
 
     const runSegment = () => {
       if (segIdx >= segLengths.length) {
         console.log("[REAL JOURNEY] 🚗 애니메이션 구간 이동 완료");
         self._animFrameId = null;
         self._isAnimating = false;
+        // [신규] 이번 애니메이션(A→B 구간)을 끝까지 다 왔으므로 진행률을 100%로 확정
+        // - 만약 이 뒤에 "같은 구간"의 또 다른 업그레이드가 온다면(이론상 드묾) 정확히
+        // 반영되도록.
+        if (baseTotalLen != null) self._lastAnimTraveledLen = baseTotalLen;
         if (onComplete) onComplete();
         return;
       }
@@ -2036,6 +2139,13 @@ class RealVehicleMarker {
         self.setPosition(lat, lng, label);
         if (onFrame) onFrame(passedPoints.concat([[lat, lng]]));
 
+        // [신규] "지금까지 실제로 이동한 거리"를 매 프레임 갱신한다 - 다음에 같은
+        // 구간이 업그레이드될 때 진행률 계산의 기준이 된다(요구사항 5: index가
+        // 아니라 실제 이동 거리 기준).
+        if (baseTotalLen != null) {
+          self._lastAnimTraveledLen = baseTraveledLen + completedSegLen + segLen * t;
+        }
+
         self._frameLogCounter += 1;
         if (self._frameLogCounter % 10 === 0) {
           console.log("[REAL JOURNEY] 🚗 현재 위치", lat, lng);
@@ -2044,6 +2154,7 @@ class RealVehicleMarker {
         if (t < 1) {
           self._animFrameId = requestAnimationFrame(step);
         } else {
+          completedSegLen += segLen;
           passedPoints.push(to);
           segIdx += 1;
           runSegment();
@@ -2061,6 +2172,21 @@ class RealVehicleMarker {
       this._animFrameId = null;
     }
     this._isAnimating = false;
+  }
+
+  // [신규: "CCTV 바로가기 클릭 직후 첫 DUI 경로는 애니메이션 없이 즉시 표시"]
+  // animateAlong()과 달리 구간을 실제 속도로 재생하지 않고, 진행 중이던
+  // 애니메이션을 안전하게 취소한 뒤(_cancelAnimation 재사용) 마커를 마지막
+  // 지점으로 곧바로 옮긴다. 폴리라인 자체는 이 메서드가 그리지 않는다 -
+  // 호출부(processRealJourneyPayload)가 animateAlong()의 onFrame과 동일한
+  // 방식으로 routeManager.setCurrentRealJourneySegment()를 직접 불러서
+  // 전체 좌표를 한 번에 그린다.
+  snapTo(points, label) {
+    if (!points || points.length === 0) return;
+    this._cancelAnimation();
+    this._label = label;
+    const [lat, lng] = points[points.length - 1];
+    this.setPosition(lat, lng, label);
   }
 
   // [유지: 사각지대 연출] 카메라 사이 "사각지대" 구간(예: 동교동삼거리)
@@ -4080,6 +4206,12 @@ document.addEventListener("DOMContentLoaded", () => {
   // 실시간으로 바로바로 반영되니, 클릭 이후부터는 정말 "실시간 차량 추적"
   // 그대로 이어진다.
   function releaseDuiJourney() {
+    // [진단 전용 로그] 이 함수 자체가 실제로 몇 번 "호출 시도"되는지(플래그 때문에
+    // 실제 실행은 1번뿐이어야 정상) 먼저 남긴다.
+    console.log(
+      `[REAL JOURNEY:DUI] releaseDuiJourney() 호출됨 - 이미 released? ${duiJourneyReleased}`
+    );
+
     if (duiJourneyReleased) return;
     duiJourneyReleased = true;
 
@@ -4092,7 +4224,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (buffered.length) {
       const latest = buffered[buffered.length - 1].payload;
-      processRealJourneyPayload("DUI", false, latest);
+      // [진단 전용 로그] release가 실제로 쓰는 "마지막 payload"가 무엇인지 명시.
+      console.log(
+        `[REAL JOURNEY:DUI] release가 사용할 마지막 payload: currentCamId=${latest.currentCamId}, ` +
+        `points_count=${(latest.points || []).length}`
+      );
+      // [신규] immediate=true - 버퍼 해제 직후 첫 표시는 애니메이션 없이 즉시 스냅한다.
+      processRealJourneyPayload("DUI", false, latest, true);
     }
 
     // 폴리라인이 이미 화면에 나왔으니 TARGET도 더 기다릴 필요 없다.
@@ -4117,7 +4255,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // 실제 STOMP payload 처리 로직 - 예전 콜백 본문 그대로이며, 버퍼 재생일 때도
   // 이 함수를 그대로 재사용한다.
-  function processRealJourneyPayload(journeyKey, isTarget, payload) {
+  function processRealJourneyPayload(journeyKey, isTarget, payload, immediate = false) {
       const marker = isTarget ? targetVehicleMarker : duiVehicleMarker;
 
       console.log(
@@ -4194,9 +4332,31 @@ document.addEventListener("DOMContentLoaded", () => {
         // DUI 여정은 사각지대(동교동삼거리) 연출이 전혀 없다 - REAL_JOURNEY_LOGIC.md
         // 확정본 그대로, payload가 올 때마다 애니메이션 + 매 프레임 폴리라인
         // 전체 재그리기만 한다.
-        marker.animateAlong(points, label, (framePoints) => {
-          routeManager.setCurrentRealJourneySegment("DUI", framePoints);
-        });
+        //
+        // [신규: "CCTV 바로가기 클릭 직후 첫 DUI 경로는 즉시 표시"] immediate가
+        // true일 때만(releaseDuiJourney()가 버퍼 해제 직후 호출할 때만) 애니메이션을
+        // 건너뛰고 snapTo()로 즉시 스냅한다 - 그 외(실시간으로 들어오는 모든 이후
+        // payload)는 기존 animateAlong()을 그대로 쓴다. immediate 기본값이 false라
+        // 이 인자를 안 넘기는 기존 호출부(실시간 payload 처리)는 전혀 안 바뀐다.
+        // [진단 전용 로그 - 로직 변경 없음] 지금 이 payload가 release()에서 온
+        // 즉시표시(immediate=true, snapTo)인지 실시간 스트림(immediate=false,
+        // animateAlong)인지, 그리고 marker.marker(Leaflet 마커 인스턴스)가 이
+        // 시점에 이미 존재했는지를 명시적으로 남긴다 - 대각선 왕복 원인 진단용.
+        console.log(
+          `[REAL JOURNEY:DUI] 분기 진입 - immediate=${immediate}, ` +
+          `markerExists=${!!marker.marker}, ` +
+          `markerCurrentPos=${marker.marker ? JSON.stringify(marker.marker.getLatLng()) : "없음"}, ` +
+          `points_count=${points.length}, first=${JSON.stringify(points[0])}, last=${JSON.stringify(points[points.length - 1])}`
+        );
+
+        if (immediate) {
+          marker.snapTo(points, label);
+          routeManager.setCurrentRealJourneySegment("DUI", points);
+        } else {
+          marker.animateAlong(points, label, (framePoints) => {
+            routeManager.setCurrentRealJourneySegment("DUI", framePoints);
+          });
+        }
       } else if (realJourneySuppressed) {
         // 이미 사각지대에 들어가서 REAL_JOURNEY_GAP_HIDE_MS 타이머가 도는
         // 중이다 - 그 사이 도착하는 payload(예: 합정역→양화대교북단 이동

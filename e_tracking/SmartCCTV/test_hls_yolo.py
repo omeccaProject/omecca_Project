@@ -25,7 +25,7 @@ CONF_THRESH = 0.30
 TRACKER_CONFIG = "bytetrack_custom.yaml"
 
 # CPU 노트북에서는 "cpu", CUDA가 있는 GPU 컴퓨터에서는 0으로 바꿔서 쓴다.
-DEVICE = 0
+DEVICE = "cpu"
 
 
 # ============================================================
