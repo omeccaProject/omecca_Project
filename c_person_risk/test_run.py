@@ -5,6 +5,7 @@ import time
 import cv2
 import torch
 import numpy as np
+from PIL import ImageFont, ImageDraw, Image
 
 base_dir = os.path.dirname(os.path.abspath(__file__))
 if base_dir not in sys.path:
@@ -16,6 +17,52 @@ from event_publisher import send_event
 
 COOLDOWN_SEC = 3.0
 PKL_CHECK_INTERVAL = 1.0  # Hot-Reload 폴링 주기(초)
+
+# [추가] cv2.putText는 한글을 지원하지 않아서 화면에 물음표(????)로 깨져 나온다
+# (인식/이벤트 로직과는 무관한, 순수 "시연 화면 표시" 문제). PIL로 한글 폰트를
+# 찾아서 그리는 방식으로 대체한다 - 서버마다 설치된 폰트가 다를 수 있어 여러
+# 후보 경로를 순서대로 시도하고, 하나도 없으면 그냥 기본 폰트로 폴백한다
+# (그래도 최소한 프로그램이 죽지는 않게).
+_KOREAN_FONT_CANDIDATES = [
+    "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
+    "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf",
+    "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/truetype/unfonts-core/UnDotum.ttf",
+    "C:\\Windows\\Fonts\\malgun.ttf",  # 윈도우 노트북에서 돌릴 경우 대비
+]
+_font_cache = {}
+
+
+def _get_korean_font(size=20):
+    if size in _font_cache:
+        return _font_cache[size]
+    for path in _KOREAN_FONT_CANDIDATES:
+        if os.path.exists(path):
+            try:
+                font = ImageFont.truetype(path, size)
+                _font_cache[size] = font
+                return font
+            except Exception:
+                continue
+    print("[경고] 한글 폰트를 찾지 못했습니다 - 화면 표시용 이름이 깨질 수 있습니다 "
+          "(인식/이벤트 발행 자체에는 영향 없음). sudo apt install fonts-nanum 권장.")
+    font = ImageFont.load_default()
+    _font_cache[size] = font
+    return font
+
+
+def put_text_kr(frame, text, org, color_bgr, font_size=20):
+    """한글이 섞인 텍스트를 프레임에 그린다. color_bgr은 기존 cv2 색상 순서(B,G,R)
+    그대로 받아서 내부에서 RGB로 변환한다 - 호출부 수정을 최소화하기 위함."""
+    font = _get_korean_font(font_size)
+    pil_img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+    draw = ImageDraw.Draw(pil_img)
+    x, y = org
+    # cv2.putText는 org가 텍스트 "왼쪽 아래" 기준이라, PIL(왼쪽 위 기준)과 맞추려면
+    # 폰트 높이만큼 위로 보정해줘야 기존 좌표 감각과 비슷하게 나온다.
+    draw.text((x, y - font_size), text, font=font, fill=(color_bgr[2], color_bgr[1], color_bgr[0]))
+    return cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
 
 
 def resize_for_display(frame, max_width=960):
@@ -127,7 +174,7 @@ def run_pipeline(video_source=0, conf_threshold=0.50, skip_frames=15,
                         event_type='WANTED_PERSON',
                         confidence=face['faceMatchScore'],
                         bbox=target_bbox,
-                        cam_id=cam_id,  # [수정] 하드코딩된 'CAM_01' -> 인자로 받은 실제 camId
+                        cam_id=cam_id,
                         meta=meta
                     )
                     last_sent_wanted[matched_id] = now
@@ -158,7 +205,7 @@ def run_pipeline(video_source=0, conf_threshold=0.50, skip_frames=15,
                     event_type='WEAPON',
                     confidence=w_obj['confidence'],
                     bbox=clip_bbox_xyxy(w_box, w, h),
-                    cam_id=cam_id,  # [수정] 하드코딩된 'CAM_01' -> 인자로 받은 실제 camId
+                    cam_id=cam_id,
                     meta=meta
                 )
                 last_sent_weapon[w_label] = now
@@ -167,14 +214,16 @@ def run_pipeline(video_source=0, conf_threshold=0.50, skip_frames=15,
         # [수정] --no-display면 렌더링/imshow 자체를 건너뜀 - camera_watcher.py가
         # subprocess로 백그라운드 실행할 때 GUI 창이 뜨면 헤드리스 서버 환경에서
         # 에러로 죽는 걸 방지 (yolo_infer.py --no-display와 동일한 목적)
+        # [수정] cv2.putText -> put_text_kr로 교체 - 한글 이름이 물음표로 깨지던 문제 해결.
+        # 사각형(cv2.rectangle)은 폰트와 무관하니 그대로 둔다.
         if not no_display:
             for f in cached_faces:
                 if f.get('matchedDbId') is not None:  # Unknown 필터링 (수배자만 렌더링)
                     loc = f['location']  # [t, r, b, l]
                     t, r, b, l = loc[0], loc[1], loc[2], loc[3]
                     cv2.rectangle(frame, (l, t), (r, b), (0, 255, 0), 2)
-                    cv2.putText(frame, f"{f['name']} ({f['faceMatchScore']:.2f})", (l, max(15, t - 10)),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                    frame = put_text_kr(frame, f"{f['name']} ({f['faceMatchScore']:.2f})",
+                                        (l, max(20, t - 6)), (0, 255, 0), font_size=20)
 
                     if f.get('personBbox'):
                         px1, py1, px2, py2 = clip_bbox_xyxy(f['personBbox'], w, h)
@@ -184,8 +233,8 @@ def run_pipeline(video_source=0, conf_threshold=0.50, skip_frames=15,
             for w_item in weapons:
                 bx = clip_bbox_xyxy(w_item['bbox'], w, h)
                 cv2.rectangle(frame, (bx[0], bx[1]), (bx[2], bx[3]), (0, 0, 255), 2)
-                cv2.putText(frame, f"{w_item['label']} {w_item['confidence']:.2f}", (bx[0], max(15, bx[1] - 10)),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                frame = put_text_kr(frame, f"{w_item['label']} {w_item['confidence']:.2f}",
+                                    (bx[0], max(20, bx[1] - 6)), (0, 0, 255), font_size=20)
 
             display_frame = resize_for_display(frame, max_width=960)
             cv2.imshow(f"C-Part [{cam_id}]", display_frame)
