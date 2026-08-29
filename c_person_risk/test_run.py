@@ -13,23 +13,18 @@ if base_dir not in sys.path:
 
 from weapon_detect import WeaponDetector
 from face_detect import FaceDetector
-from event_publisher import send_event
+from event_publisher import send_event, service_pending_after_captures
 
 COOLDOWN_SEC = 3.0
 PKL_CHECK_INTERVAL = 1.0  # Hot-Reload 폴링 주기(초)
 
-# [추가] cv2.putText는 한글을 지원하지 않아서 화면에 물음표(????)로 깨져 나온다
-# (인식/이벤트 로직과는 무관한, 순수 "시연 화면 표시" 문제). PIL로 한글 폰트를
-# 찾아서 그리는 방식으로 대체한다 - 서버마다 설치된 폰트가 다를 수 있어 여러
-# 후보 경로를 순서대로 시도하고, 하나도 없으면 그냥 기본 폰트로 폴백한다
-# (그래도 최소한 프로그램이 죽지는 않게).
 _KOREAN_FONT_CANDIDATES = [
     "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
     "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf",
     "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
     "/usr/share/fonts/truetype/unfonts-core/UnDotum.ttf",
-    "C:\\Windows\\Fonts\\malgun.ttf",  # 윈도우 노트북에서 돌릴 경우 대비
+    "C:\\Windows\\Fonts\\malgun.ttf",
 ]
 _font_cache = {}
 
@@ -53,8 +48,6 @@ def _get_korean_font(size=20):
 
 
 def put_text_kr(frame, text, org, color_bgr, font_size=20):
-    """한글이 섞인 텍스트를 프레임에 그린다. color_bgr은 기존 cv2 색상 순서(B,G,R)
-    그대로 받아서 내부에서 RGB로 변환한다 - 호출부 수정을 최소화하기 위함."""
     font = _get_korean_font(font_size)
     pil_img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
     draw = ImageDraw.Draw(pil_img)
@@ -64,7 +57,6 @@ def put_text_kr(frame, text, org, color_bgr, font_size=20):
 
 
 def resize_for_display(frame, max_width=960):
-    """화면 표시용으로만 축소. 탐지/좌표 계산은 이미 끝난 뒤라 정확도에 영향 없음"""
     h, w = frame.shape[:2]
     if w <= max_width:
         return frame
@@ -73,7 +65,6 @@ def resize_for_display(frame, max_width=960):
 
 
 def clip_bbox_xyxy(bbox, w, h):
-    """좌표 클리핑 (화면 밖 좌표 이탈 방어)"""
     if not bbox or len(bbox) != 4:
         return [0, 0, 0, 0]
     x1, y1, x2, y2 = bbox
@@ -82,7 +73,6 @@ def clip_bbox_xyxy(bbox, w, h):
 
 
 def is_point_in_bbox(point, bbox):
-    """흉기 중심점이 사람 바운딩 박스 내부에 포함되는지 판정"""
     if not point or not bbox or len(bbox) != 4:
         return False
     px, py = point
@@ -105,7 +95,7 @@ def run_pipeline(video_source=0, conf_threshold=0.50, skip_frames=15,
 
     frame_idx = 0
     cached_faces = []
-    last_pkl_check = 0.0  # 마지막으로 pkl 변경 확인한 시각
+    last_pkl_check = 0.0
 
     last_sent_wanted = {}
     last_sent_weapon = {}
@@ -122,6 +112,11 @@ def run_pipeline(video_source=0, conf_threshold=0.50, skip_frames=15,
         if now - last_pkl_check > PKL_CHECK_INTERVAL:
             face_det.check_and_reload()
             last_pkl_check = now
+
+        # [추가] 예약된 "사건 발생 후" 캡처가 있으면 지금 이 프레임으로 찍는다.
+        # 3~5초 전에 발생한 이벤트의 after 사진이 여기서 채워진다 - 매 프레임
+        # 호출해도 내부에서 시간 안 된 항목은 그냥 건너뛰므로 가볍다.
+        service_pending_after_captures(frame)
 
         weapons = weapon_det.detect_weapons(frame)
 
@@ -164,7 +159,7 @@ def run_pipeline(video_source=0, conf_threshold=0.50, skip_frames=15,
                         bbox=target_bbox,
                         cam_id=cam_id,
                         meta=meta,
-                        frame=frame  # [추가] 이벤트 발생 순간 프레임을 캡처 이미지로 저장하기 위해 전달
+                        frame=frame
                     )
                     last_sent_wanted[matched_id] = now
 
@@ -195,7 +190,7 @@ def run_pipeline(video_source=0, conf_threshold=0.50, skip_frames=15,
                     bbox=clip_bbox_xyxy(w_box, w, h),
                     cam_id=cam_id,
                     meta=meta,
-                    frame=frame  # [추가] 이벤트 발생 순간 프레임을 캡처 이미지로 저장하기 위해 전달
+                    frame=frame
                 )
                 last_sent_weapon[w_label] = now
 
