@@ -180,6 +180,32 @@ class LPRPipeline:
         t = self._tracks.get((cam_id, track_id))
         return t.confirmed if t else None
 
+        # 새로 추가
+    def leading_plate(self, cam_id: str, track_id: int) -> tuple[Optional[str], bool]:
+        """확정 여부와 무관하게, 지금까지 모인 표 중 가장 유력한 후보를 돌려준다.
+
+        화면에 "인식 진행 중" 표시용 - confirmed_plate()와 달리 확정되기 전에도
+        값을 준다. 반환값은 (번호판 또는 None, 확정 여부).
+        """
+        t = self._tracks.get((cam_id, track_id))
+        if t is None or not t.votes:
+            return None, False
+        if t.confirmed is not None:
+            return t.confirmed, True
+
+        scores: dict[str, float] = defaultdict(float)
+        for r in t.votes:
+            canon = pf.canonical(r.plate_no)
+            if not canon:
+                continue
+            w = r.confidence * (1.6 if r.valid_format else 0.7)
+            scores[canon] += w
+        if not scores:
+            return None, False
+
+        winner, _ = max(scores.items(), key=lambda kv: kv[1])
+        return winner, False
+
     def confidence_of(self, cam_id: str, track_id: int) -> float:
         t = self._tracks.get((cam_id, track_id))
         return t.confirmed_conf if t else 0.0

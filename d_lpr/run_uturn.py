@@ -135,7 +135,7 @@ VTYPE_EN = {
 
 
 # --------------------------------------------------------------------------
-def draw_overlay(cv2, frame, cz, engine, ts, watching, banner):
+def draw_overlay(cv2, frame, cz, engine, ts, watching, banner, cam_id=None):
     for l in cz.lines.values():
         if l.line_type == "center":
             c = COLOR["center_allowed"] if l.uturn_allowed else COLOR["center_forbidden"]
@@ -144,12 +144,25 @@ def draw_overlay(cv2, frame, cz, engine, ts, watching, banner):
             c, th = COLOR["other_line"], 2
         cv2.line(frame, tuple(map(int, l.p1)), tuple(map(int, l.p2)), c, th)
 
+    # 변경 후
     for tid, (bbox, state) in watching.items():
         x1, y1, x2, y2 = bbox.to_xyxy()
         c = COLOR[state]
         cv2.rectangle(frame, (x1, y1), (x2, y2), c, 2 if state == "car" else 3)
         cv2.putText(frame, f"#{tid}", (x1, max(14, y1 - 6)),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, c, 2)
+
+        # 번호판 인식 상태를 박스 바로 아래에 표시한다. 확정 전(투표 중)이면
+        # 노란색 + "?", 확정되면 초록색으로 - 시연 화면에서 "인식 중"이 눈에 보이게.
+        if engine.lpr is not None and cam_id is not None:
+            plate_no, is_confirmed = engine.lpr.leading_plate(cam_id, tid)
+            if plate_no:
+                label = plate_no if is_confirmed else f"{plate_no}?"
+                plate_color = (0, 255, 0) if is_confirmed else (0, 230, 255)
+                cv2.putText(frame, label, (x1, y2 + 20),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 0), 3)
+                cv2.putText(frame, label, (x1, y2 + 20),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.55, plate_color, 2)
 
     # 상단 상태 표시줄
     h, w = frame.shape[:2]
@@ -302,7 +315,10 @@ def run_journey_follow(a) -> None:
     src = VehicleSource(a.video, cam_id=a.cam, weights=a.weights, conf=a.conf,
                         stride=a.stride, imgsz=a.imgsz)
 
+    writer = None
     sent = False
+    target_track_id = None
+
     processed = 0
     t_start = time.time()
     for frame_no, ts, frame, dets in src.frames():
@@ -310,40 +326,81 @@ def run_journey_follow(a) -> None:
 
         # 변경 후
         if not sent and dets:
+            # 변경 후
+            # dets[0]은 그냥 검출 리스트의 첫 항목일 뿐, 화면에 실제로 가장
+            # 눈에 띄는(=이어받아야 할) 차량이 아닐 수 있다(여러 대가 동시에
+            # 잡히는 영상에서 확인됨). 바운딩 박스 면적이 가장 큰 차량 - 보통
+            # 카메라에 가장 가깝고 크게 나온 차량 - 을 표적으로 삼는다.
+            def _bbox_area(d):
+                x1, y1, x2, y2 = d.bbox.to_xyxy()
+                return max(0, x2 - x1) * max(0, y2 - y1)
+
+            target_track_id = max(dets, key=_bbox_area).track_id
+
             peer_loc = CAMERA_LOCATIONS.get(a.journey_peer_cam)
             here_loc = CAMERA_LOCATIONS[a.cam]
             if peer_loc:
-                # 직선이 아니라 실제 도로를 따라가는 경로로 이어준다(OSRM).
                 points = build_route_points(peer_loc, here_loc)
             else:
                 points = [{"lat": here_loc["lat"], "lng": here_loc["lng"]}]
             send_journey_update(a.gateway, True, a.cam, points)
             print(f"\n  ★ Journey 연장  t={ts:6.2f}s  {a.journey_peer_cam} → {a.cam}"
-                  + (f"  번호판={plate}" if plate else ""))
+                  + (f"  번호판={plate}" if plate else "")
+                  + f"  track=#{target_track_id}")
             sent = True
-            if not a.show:
-                break  # --show 없으면 트리거 즉시 종료 (영상 끝까지 돌 필요 없음)
+            if not (a.show or a.save):
+                break  # --show/--save 둘 다 없으면 트리거 즉시 종료 (영상 끝까지 돌 필요 없음)
 
-        if a.show:
+        # 변경 후
+        if writer is None and a.save:
+            Path(a.save).parent.mkdir(parents=True, exist_ok=True)
+            writer = cv2.VideoWriter(
+                a.save,
+                cv2.VideoWriter_fourcc(*"mp4v"),
+                src.fps / a.stride,
+                src.size,
+            )
+
+        # 변경 후
+        if a.show or writer is not None:
             vis = frame.copy()
             for d in dets:
+                is_target = (d.track_id == target_track_id)
                 x1, y1, x2, y2 = d.bbox.to_xyxy()
-                cv2.rectangle(vis, (x1, y1), (x2, y2), (0, 200, 0), 2)
-            cv2.imshow("journey-follow", cv2.resize(vis, None, fx=0.6, fy=0.6))
-            if cv2.waitKey(1) & 0xFF == ord("q"):
-                break
+                color = (0, 200, 0) if is_target else (150, 150, 150)
+                cv2.rectangle(vis, (x1, y1), (x2, y2), color, 2)
+                cv2.putText(vis, f"#{d.track_id}", (x1, max(14, y1 - 6)),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+                # 표적 차량(트리거 시점에 잡힌 track_id)에만 이전 카메라에서
+                # 이어받은 번호판을 표시한다. 실제 재인식이 아니라 "같은 차량이
+                # 여기서도 추적되고 있다"는 시연용 오버레이일 뿐, 신호위반/불법유턴
+                # 판정은 하지 않는다.
+                if is_target and plate:
+                    cv2.putText(vis, plate, (x1, y2 + 20),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 0, 0), 3)
+                    cv2.putText(vis, plate, (x1, y2 + 20),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 0), 2)
+            if writer is not None:
+                writer.write(vis)
+            if a.show:
+                cv2.imshow("journey-follow", cv2.resize(vis, None, fx=0.6, fy=0.6))
+                if cv2.waitKey(1) & 0xFF == ord("q"):
+                    break
 
         if processed % 30 == 0:
             print(f"\r  {frame_no+1}/{src.total or '?'} 프레임  "
                   f"({processed / max(1e-6, time.time() - t_start):.1f} fps 처리)",
                   end="", flush=True)
 
+    if writer is not None:
+        writer.release()
     if a.show:
         cv2.destroyAllWindows()
     if not sent:
         print("\n  ⚠ 영상 전체에서 차량이 한 번도 감지되지 않아 Journey를 보내지 못했습니다.")
     print(f"\n처리 프레임 {processed}")
-
+    if a.save:
+        print(f"결과 영상 저장 → {a.save}")
 
 # --------------------------------------------------------------------------
 def main() -> None:
@@ -749,7 +806,7 @@ def main() -> None:
             banner = None
 
         if a.show or writer is not None:
-            vis = draw_overlay(cv2, frame.copy(), cz, engine, ts, watching, banner)
+            vis = draw_overlay(cv2, frame.copy(), cz, engine, ts, watching, banner, cam_id=a.cam)
             draw_signal(cv2, vis, signal, cz, ts)
             if writer is not None:
                 writer.write(vis)
