@@ -34,9 +34,22 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent
 
 # --scenario 단축 옵션의 기본값. 새 시나리오가 늘어나면 여기에 한 줄만 추가하면 된다.
+# signal/demo_moving_roi는 "" 로 두면 run_uturn.py에 그 옵션 자체를 안 붙인다는 뜻이다
+# (불법유턴처럼 애초에 필요 없는 시나리오용). signal 시나리오는 이전과 동일하게
+# 기본 파일을 자동으로 붙여서, 인자 없이 --scenario만 줘도 예전처럼 바로 돌아가게 한다.
 SCENARIO_DEFAULTS = {
-    "signal": {"mode": "signal", "event_type": "SIGNAL_VIOLATION"},
-    "uturn": {"mode": "uturn", "event_type": "UTURN_VIOLATION"},
+    "signal": {
+        "mode": "signal",
+        "event_type": "SIGNAL_VIOLATION",
+        "signal": "signal_timeline.json",
+        "demo_moving_roi": "demo_moving_roi_L010321.json",
+    },
+    "uturn": {
+        "mode": "uturn",
+        "event_type": "UTURN_VIOLATION",
+        "signal": "",
+        "demo_moving_roi": "",
+    },
 }
 
 
@@ -85,6 +98,8 @@ def main() -> None:
     defaults = SCENARIO_DEFAULTS[a.scenario]
     mode = a.mode or defaults["mode"]
     event_type = a.journey_peer_event_type or defaults["event_type"]
+    signal_file = a.signal or defaults["signal"]
+    moving_roi_file = a.demo_moving_roi or defaults["demo_moving_roi"]
 
     cmd1 = [
         sys.executable, "run_uturn.py",
@@ -94,10 +109,10 @@ def main() -> None:
         "--mode", mode,
         "--journey-role", "start",
     ]
-    if a.signal:
-        cmd1 += ["--signal", a.signal]
-    if a.demo_moving_roi:
-        cmd1 += ["--demo-moving-roi", a.demo_moving_roi]
+    if signal_file:
+        cmd1 += ["--signal", signal_file]
+    if moving_roi_file:
+        cmd1 += ["--demo-moving-roi", moving_roi_file]
     if not a.no_lpr:
         cmd1.append("--lpr")
 
