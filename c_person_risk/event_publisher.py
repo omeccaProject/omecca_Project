@@ -6,23 +6,29 @@ import json
 import cv2
 from datetime import datetime, timezone
 
-# 캡처 이미지 저장 위치. b_dashboard가 공개 정적 파일로 서빙하는 폴더 바로 아래
-# 저장해야, ReportGenerationService의 frame-base-dir 설정(기본값
-# "../b_dashboard/public")과 맞아떨어져서 b_report가 같은 파일을 읽을 수 있다.
 CAPTURE_BASE_DIR = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "b_dashboard", "public", "captures"
 )
 
-# "사건 발생 후" 사진을 몇 초 뒤에 찍을지 - 매번 정확히 같은 간격이면 부자연스러워
-# 보일 수 있어 3~5초 사이 랜덤으로 잡는다.
 AFTER_CAPTURE_DELAY_MIN_SEC = 3.0
 AFTER_CAPTURE_DELAY_MAX_SEC = 5.0
 
-# [추가] 실시간 바운딩박스 스트리밍 대상 (CctvDetectionController.java 참고).
-# 기존 이벤트(/api/events, DB 저장용)와 완전히 별개의 채널 - 여기는 "지금 이 순간
-# 화면 위치"만 매 프레임 쏘고 서버가 DB에 저장하지 않는다.
-DETECTIONS_ENDPOINT = 'http://localhost:8080/api/cctv/detections'
 API_KEY_HEADERS = {'Content-Type': 'application/json', 'X-API-Key': 'omecca-dev-key-2026'}
+
+# [수정] "http://localhost:8080"을 하드코딩하지 않고, 환경변수로 override 가능하게
+# 바꿨다 - test_run.py를 우분투 서버가 아닌 "다른 컴퓨터"(예: GPU가 더 빠른
+# 팀원 노트북)에서 돌릴 때, 그 컴퓨터 입장에서 "localhost"는 자기 자신이라
+# 우분투 서버(스프링/DB/대시보드가 실제로 떠 있는 곳)로 요청이 전혀 안 간다.
+# 반드시 실제 서버의 IP나 도메인을 지정해야 한다.
+#
+# 사용법(다른 컴퓨터에서 실행할 때):
+#   Windows(cmd):  set GATEWAY_URL=http://172.30.1.33:8080 && python test_run.py ...
+#   Linux/Mac:     GATEWAY_URL=http://172.30.1.33:8080 python3 test_run.py ...
+# 지정 안 하면 기존처럼 "이 컴퓨터 자기 자신"(localhost:8080)을 그대로 사용한다
+# - 우분투 서버 위에서 직접 실행할 때는 지금처럼 아무것도 안 바꿔도 된다.
+GATEWAY_BASE_URL = os.environ.get('GATEWAY_URL', 'http://localhost:8080')
+EVENTS_ENDPOINT_DEFAULT = f'{GATEWAY_BASE_URL}/api/events'
+DETECTIONS_ENDPOINT = f'{GATEWAY_BASE_URL}/api/cctv/detections'
 
 
 def to_bbox_xywh(bbox):
@@ -33,8 +39,12 @@ def to_bbox_xywh(bbox):
 
 
 def save_capture_frame(frame, cam_id, tag):
-    """프레임을 이미지로 저장하고, b_dashboard가 서빙 가능한 상대경로
-    ("captures/파일명.jpg")를 반환한다. frame이 없으면 None."""
+    """[참고] 이 함수는 캡처 이미지를 '이 컴퓨터의' b_dashboard/public/captures/에
+    저장한다. 다른 컴퓨터(팀원 노트북)에서 test_run.py를 돌리면, 캡처 사진이
+    우분투 서버가 아니라 그 노트북 로컬 디스크에 저장되므로, 대시보드(우분투
+    서버가 서빙)에서는 해당 사진을 못 찾아 깨진 이미지로 보일 수 있다.
+    지금 단계(실시간 바운딩박스 스트리밍 검증)에서는 이 캡처 저장 자체가
+    핵심이 아니므로 일단 그대로 두되, 이 한계는 팀에 공유가 필요하다."""
     if frame is None:
         return None
     try:
@@ -48,23 +58,12 @@ def save_capture_frame(frame, cam_id, tag):
         return None
 
 
-# [추가] 실시간 바운딩박스 스트리밍. CctvDetectionController.DetectionBatch/Detection/Bbox
-# 형식에 정확히 맞춘다 - trackId는 Integer 타입이라, 문자열이 아니라 정수를 넘겨야 한다.
-# 우리는 이 프레임 안에서만 서로 안 겹치면 되는 "그 순간의 임시 번호"만 있으면 되고
-# (useCctvDetections.js가 매 프레임 통째로 교체하는 방식이라 여러 프레임에 걸친
-# 진짜 추적/트래킹 ID가 필요하지 않다), 그래서 얼굴은 1000번대, 흉기는 2000번대로
-# 겹치지 않게 간단히 번호를 매긴다.
 _last_detection_send_time = 0.0
-DETECTIONS_MIN_INTERVAL_SEC = 0.0  # 필요하면 초당 전송 횟수를 제한할 수 있게 남겨둠(기본 무제한)
+DETECTIONS_MIN_INTERVAL_SEC = 0.0
 
 
 def send_detections(cam_id, frame_width, frame_height, faces=None, weapons=None):
-    """매 프레임 호출해서 현재 화면의 얼굴/흉기 박스를 실시간 스트리밍한다.
-    faces: [{"bbox": [x1,y1,x2,y2], "alert": bool}, ...] (얼굴 - 수배자만 보통 넘김)
-    weapons: [{"bbox": [x1,y1,x2,y2]}, ...] (흉기 - 있으면 항상 alert=True로 취급)
-    실패해도 예외를 던지지 않는다 - 이 스트리밍이 막혀도 이벤트 발행(send_event)이나
-    감지 자체에는 전혀 영향이 없어야 하기 때문(화면 실시간 표시는 "덤" 기능).
-    """
+    """매 프레임 호출해서 현재 화면의 얼굴/흉기 박스를 실시간 스트리밍한다."""
     global _last_detection_send_time
     now = time.time()
     if DETECTIONS_MIN_INTERVAL_SEC and (now - _last_detection_send_time) < DETECTIONS_MIN_INTERVAL_SEC:
@@ -88,7 +87,7 @@ def send_detections(cam_id, frame_width, frame_height, faces=None, weapons=None)
         detections.append({
             "trackId": 2000 + i,
             "bbox": {"x1": float(bbox[0]), "y1": float(bbox[1]), "x2": float(bbox[2]), "y2": float(bbox[3])},
-            "alert": True,  # 흉기는 항상 위험 표시(빨간 박스)로 취급
+            "alert": True,
         })
 
     payload = {
@@ -100,15 +99,14 @@ def send_detections(cam_id, frame_width, frame_height, faces=None, weapons=None)
     try:
         requests.post(DETECTIONS_ENDPOINT, json=payload, headers=API_KEY_HEADERS, timeout=0.3)
     except Exception:
-        # 실시간 스트리밍용이라 실패해도 조용히 넘어간다(로그도 안 남김 - 매 프레임
-        # 실패할 경우 콘솔이 도배되는 걸 방지). 게이트웨이가 꺼져 있어도 감지/이벤트
-        # 발행 자체는 계속 정상 동작해야 한다.
         pass
 
 
 class EventPublisher:
-    def __init__(self, endpoint='http://localhost:8080/api/events', cooldown_sec=3.0):
-        self.endpoint = endpoint
+    def __init__(self, endpoint=None, cooldown_sec=3.0):
+        # [수정] endpoint를 명시적으로 안 넘기면, 위에서 GATEWAY_URL 환경변수를
+        # 반영한 기본값을 사용한다.
+        self.endpoint = endpoint or EVENTS_ENDPOINT_DEFAULT
         self.cooldown_sec = cooldown_sec
         self.last_sent_times = {}
         self.pending_after_captures = []
@@ -158,8 +156,7 @@ class EventPublisher:
         }
 
         try:
-            headers = {'Content-Type': 'application/json', 'X-API-Key': 'omecca-dev-key-2026'}
-            res = requests.post(self.endpoint, json=payload, headers=headers, timeout=0.5)
+            res = requests.post(self.endpoint, json=payload, headers=API_KEY_HEADERS, timeout=0.5)
             self.last_sent_times[cooldown_key] = now
             success = res.status_code in (200, 201)
 
@@ -192,7 +189,7 @@ class EventPublisher:
             return success
         except Exception as e:
             self.last_sent_times[cooldown_key] = now
-            print(f"[EVENT FAILED] {event_type} | 게이트웨이(8080) 연결 실패: {e}")
+            print(f"[EVENT FAILED] {event_type} | 게이트웨이 연결 실패({self.endpoint}): {e}")
             return False
 
     def service_pending_after_captures(self, current_frame):
@@ -212,8 +209,7 @@ class EventPublisher:
 
             try:
                 url = f"{self.endpoint}/by-track/{item['track_id']}/captures"
-                headers = {'Content-Type': 'application/json', 'X-API-Key': 'omecca-dev-key-2026'}
-                res = requests.patch(url, json={"frameRefAfter": after_ref}, headers=headers, timeout=0.5)
+                res = requests.patch(url, json={"frameRefAfter": after_ref}, headers=API_KEY_HEADERS, timeout=0.5)
                 if res.status_code == 200:
                     print(f"[AFTER CAPTURE UPDATED] trackId={item['track_id']} | {after_ref}")
                 else:
