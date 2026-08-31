@@ -18,6 +18,12 @@ CAPTURE_BASE_DIR = os.path.join(
 AFTER_CAPTURE_DELAY_MIN_SEC = 3.0
 AFTER_CAPTURE_DELAY_MAX_SEC = 5.0
 
+# [추가] 실시간 바운딩박스 스트리밍 대상 (CctvDetectionController.java 참고).
+# 기존 이벤트(/api/events, DB 저장용)와 완전히 별개의 채널 - 여기는 "지금 이 순간
+# 화면 위치"만 매 프레임 쏘고 서버가 DB에 저장하지 않는다.
+DETECTIONS_ENDPOINT = 'http://localhost:8080/api/cctv/detections'
+API_KEY_HEADERS = {'Content-Type': 'application/json', 'X-API-Key': 'omecca-dev-key-2026'}
+
 
 def to_bbox_xywh(bbox):
     if not bbox or len(bbox) != 4:
@@ -42,29 +48,72 @@ def save_capture_frame(frame, cam_id, tag):
         return None
 
 
+# [추가] 실시간 바운딩박스 스트리밍. CctvDetectionController.DetectionBatch/Detection/Bbox
+# 형식에 정확히 맞춘다 - trackId는 Integer 타입이라, 문자열이 아니라 정수를 넘겨야 한다.
+# 우리는 이 프레임 안에서만 서로 안 겹치면 되는 "그 순간의 임시 번호"만 있으면 되고
+# (useCctvDetections.js가 매 프레임 통째로 교체하는 방식이라 여러 프레임에 걸친
+# 진짜 추적/트래킹 ID가 필요하지 않다), 그래서 얼굴은 1000번대, 흉기는 2000번대로
+# 겹치지 않게 간단히 번호를 매긴다.
+_last_detection_send_time = 0.0
+DETECTIONS_MIN_INTERVAL_SEC = 0.0  # 필요하면 초당 전송 횟수를 제한할 수 있게 남겨둠(기본 무제한)
+
+
+def send_detections(cam_id, frame_width, frame_height, faces=None, weapons=None):
+    """매 프레임 호출해서 현재 화면의 얼굴/흉기 박스를 실시간 스트리밍한다.
+    faces: [{"bbox": [x1,y1,x2,y2], "alert": bool}, ...] (얼굴 - 수배자만 보통 넘김)
+    weapons: [{"bbox": [x1,y1,x2,y2]}, ...] (흉기 - 있으면 항상 alert=True로 취급)
+    실패해도 예외를 던지지 않는다 - 이 스트리밍이 막혀도 이벤트 발행(send_event)이나
+    감지 자체에는 전혀 영향이 없어야 하기 때문(화면 실시간 표시는 "덤" 기능).
+    """
+    global _last_detection_send_time
+    now = time.time()
+    if DETECTIONS_MIN_INTERVAL_SEC and (now - _last_detection_send_time) < DETECTIONS_MIN_INTERVAL_SEC:
+        return
+    _last_detection_send_time = now
+
+    detections = []
+    for i, f in enumerate(faces or []):
+        bbox = f.get("bbox")
+        if not bbox or len(bbox) != 4:
+            continue
+        detections.append({
+            "trackId": 1000 + i,
+            "bbox": {"x1": float(bbox[0]), "y1": float(bbox[1]), "x2": float(bbox[2]), "y2": float(bbox[3])},
+            "alert": bool(f.get("alert", False)),
+        })
+    for i, w in enumerate(weapons or []):
+        bbox = w.get("bbox")
+        if not bbox or len(bbox) != 4:
+            continue
+        detections.append({
+            "trackId": 2000 + i,
+            "bbox": {"x1": float(bbox[0]), "y1": float(bbox[1]), "x2": float(bbox[2]), "y2": float(bbox[3])},
+            "alert": True,  # 흉기는 항상 위험 표시(빨간 박스)로 취급
+        })
+
+    payload = {
+        "camId": cam_id,
+        "frameWidth": frame_width,
+        "frameHeight": frame_height,
+        "detections": detections,
+    }
+    try:
+        requests.post(DETECTIONS_ENDPOINT, json=payload, headers=API_KEY_HEADERS, timeout=0.3)
+    except Exception:
+        # 실시간 스트리밍용이라 실패해도 조용히 넘어간다(로그도 안 남김 - 매 프레임
+        # 실패할 경우 콘솔이 도배되는 걸 방지). 게이트웨이가 꺼져 있어도 감지/이벤트
+        # 발행 자체는 계속 정상 동작해야 한다.
+        pass
+
+
 class EventPublisher:
     def __init__(self, endpoint='http://localhost:8080/api/events', cooldown_sec=3.0):
         self.endpoint = endpoint
         self.cooldown_sec = cooldown_sec
         self.last_sent_times = {}
-        # [추가] "사건 발생 후" 사진을 나중에 찍기 위한 예약 목록.
-        # 각 항목: {"due_at": 찍을 시각(epoch), "track_id": ..., "cam_id": ...}
-        # test_run.py가 메인 루프에서 매 프레임 service_pending_after_captures()를
-        # 불러줘야 실제로 소비된다 - 별도 스레드를 안 쓰는 이유는, 영상 프레임
-        # 객체를 여러 스레드가 동시에 건드리면 경쟁 상태(race condition)가 생길
-        # 위험이 있어서, "메인 루프가 매번 알아서 확인하는" 더 단순하고 안전한
-        # 방식을 택했다.
         self.pending_after_captures = []
 
     def _cooldown_key(self, event_type, cam_id, meta):
-        """
-        쿨다운을 event_type 단위가 아니라, 대상(사람/흉기종류)별로
-        세분화하기 위한 키 생성.
-        - WANTED_PERSON: cam_id + matchedDbId 조합 (같은 카메라에서
-          다른 사람이 잡히면 별개로 취급)
-        - WEAPON: cam_id + weaponType 조합 (matchedDbId가 없을 수
-          있어서 흉기 종류로 구분)
-        """
         matched_id = meta.get('matchedDbId') if meta else None
         weapon_type = meta.get('weaponType') if meta else None
 
@@ -80,22 +129,13 @@ class EventPublisher:
         if meta is None:
             meta = {}
 
-        # 쿨다운 검사 - event_type이 아니라 대상별 세분화된 키로 확인
         cooldown_key = self._cooldown_key(event_type, cam_id, meta)
         if cooldown_key in self.last_sent_times:
             if now - self.last_sent_times[cooldown_key] < self.cooldown_sec:
                 return False
 
         xywh_bbox = to_bbox_xywh(bbox)
-
-        # "사건 발생 전" 사진은 이벤트 발생 즉시(지금 이 프레임) 찍는다.
         before_ref = save_capture_frame(frame, cam_id, f"{event_type}_before")
-
-        # [추가] 이 이벤트를 나중에 찾아서 "사건 발생 후" 사진을 업데이트할 수 있도록,
-        # 매 이벤트마다 고유한 임시 trackId를 발급해 같이 보낸다. 게이트웨이에
-        # 이미 있는 PATCH /api/events/by-track/{trackId}/captures API를 그대로
-        # 재사용하기 위한 것 - 우리는 실제 다중 프레임 추적(tracking)을 하지 않지만,
-        # "이 이벤트 하나를 나중에 다시 찾아 업데이트하는 용도"로만 trackId를 빌려 쓴다.
         track_id = f"cpart-{cam_id}-{event_type}-{int(now * 1000)}"
 
         payload = {
@@ -108,7 +148,7 @@ class EventPublisher:
             'bbox': xywh_bbox,
             'occurredAt': datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z'),
             'frameRefBefore': before_ref,
-            'frameRefAfter': before_ref,  # 3~5초 뒤 실제 "발생 후" 사진으로 PATCH 업데이트됨
+            'frameRefAfter': before_ref,
             'meta': {
                 'matchedDbId': meta.get('matchedDbId'),
                 'faceMatchScore': meta.get('faceMatchScore'),
@@ -140,8 +180,6 @@ class EventPublisher:
             tag = f"EVENT SENT {res.status_code}" if success else f"EVENT REJECTED {res.status_code}"
             print(f"[{tag}] {event_type} | {details_str}")
 
-            # [추가] 전송 성공 시에만 "발생 후" 캡처를 예약한다 - 이벤트 자체가
-            # 등록 안 됐으면 나중에 PATCH할 대상도 없기 때문.
             if success:
                 delay = random.uniform(AFTER_CAPTURE_DELAY_MIN_SEC, AFTER_CAPTURE_DELAY_MAX_SEC)
                 self.pending_after_captures.append({
@@ -158,9 +196,6 @@ class EventPublisher:
             return False
 
     def service_pending_after_captures(self, current_frame):
-        """메인 루프가 매 프레임 호출해야 하는 함수. 예약된 것 중 시간이 된 게
-        있으면 지금 프레임으로 "발생 후" 사진을 찍어서 게이트웨이에 PATCH로
-        업데이트한다. current_frame이 None이면 아무것도 안 하고 넘어간다."""
         if current_frame is None or not self.pending_after_captures:
             return
 
@@ -173,7 +208,7 @@ class EventPublisher:
 
             after_ref = save_capture_frame(current_frame, item["cam_id"], f"{item['event_type']}_after")
             if after_ref is None:
-                continue  # 저장 실패 - 조용히 포기 (before 사진은 이미 있으니 리포트 생성 자체는 가능)
+                continue
 
             try:
                 url = f"{self.endpoint}/by-track/{item['track_id']}/captures"
@@ -203,5 +238,4 @@ def send_event(event_type, confidence=0.0, bbox=None, cam_id='CAM_01', meta=None
     )
 
 def service_pending_after_captures(current_frame):
-    """test_run.py 메인 루프에서 매 프레임 호출 - '발생 후' 사진 예약 처리."""
     return _default_publisher.service_pending_after_captures(current_frame)

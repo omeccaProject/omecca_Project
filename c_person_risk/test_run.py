@@ -13,7 +13,7 @@ if base_dir not in sys.path:
 
 from weapon_detect import WeaponDetector
 from face_detect import FaceDetector
-from event_publisher import send_event, service_pending_after_captures
+from event_publisher import send_event, service_pending_after_captures, send_detections
 
 COOLDOWN_SEC = 3.0
 PKL_CHECK_INTERVAL = 1.0  # Hot-Reload 폴링 주기(초)
@@ -113,15 +113,28 @@ def run_pipeline(video_source=0, conf_threshold=0.50, skip_frames=15,
             face_det.check_and_reload()
             last_pkl_check = now
 
-        # [추가] 예약된 "사건 발생 후" 캡처가 있으면 지금 이 프레임으로 찍는다.
-        # 3~5초 전에 발생한 이벤트의 after 사진이 여기서 채워진다 - 매 프레임
-        # 호출해도 내부에서 시간 안 된 항목은 그냥 건너뛰므로 가볍다.
         service_pending_after_captures(frame)
 
         weapons = weapon_det.detect_weapons(frame)
 
         if frame_idx % skip_frames == 0 or frame_idx == 1:
             cached_faces = face_det.detect_faces_with_person_crop(frame)
+
+        # [추가] 대시보드 CCTV 그리드에 실시간 바운딩박스를 스트리밍한다.
+        # 이벤트 발행(send_event, DB 저장)과는 완전히 별개 - 이건 매 프레임
+        # "지금 화면에 뭐가 보이는지"만 쏘는 것이라 쿨다운 없이 매번 보낸다.
+        # 수배자로 매칭된 얼굴만 보낸다(Unknown 일반인은 화면 렌더링에서도
+        # 원래 숨기고 있어서 동일하게 맞춤).
+        stream_faces = []
+        for f in cached_faces:
+            if f.get('matchedDbId') is not None:
+                loc = f['location']  # [t, r, b, l]
+                stream_faces.append({
+                    "bbox": [loc[3], loc[0], loc[1], loc[2]],  # [x1,y1,x2,y2]
+                    "alert": False,
+                })
+        stream_weapons = [{"bbox": w_obj['bbox']} for w_obj in weapons]
+        send_detections(cam_id, w, h, faces=stream_faces, weapons=stream_weapons)
 
         # 3. 수배자 이벤트 처리 (WANTED_PERSON)
         for face in cached_faces:
