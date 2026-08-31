@@ -2,4 +2,5 @@ opencv-python
 requests
 ultralytics
 face_recognition
-numpypillow==12.3.0
+numpy
+pillow==12.3.0
